@@ -91,8 +91,6 @@ const menu = [
   },
 ]
 
-const isSwitcherOpen = useColorSwitcherOpen()
-
 const route = useRoute()
 const sidebarId = ref(getRouteSidebarId())
 
@@ -120,7 +118,12 @@ function getRouteSidebarId() {
     <TairoSidebarNav>
       <TairoSidebar>
         <NuxtLink to="/" class="flex items-center justify-center size-14 shrink-0">
-          <TairoLogo class="size-8 text-primary-heavy dark:text-primary-light" />
+          <div class="flex items-center space-x-2">
+            <div class="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
+              <Icon name="solar:link-linear" class="w-5 h-5 text-white" />
+            </div>
+            <span class="text-xl font-bold text-primary-600 dark:text-primary-400">SnapLink</span>
+          </div>
         </NuxtLink>
 
         <TairoSidebarLinks class="overflow-y-auto nui-slimscroll">
@@ -149,7 +152,7 @@ function getRouteSidebarId() {
               portal: { disabled: true },
             }"
           >
-            <TairoSidebarLink tabindex="0" @click="isSwitcherOpen = true">
+            <TairoSidebarLink tabindex="0">
               <Icon name="solar:palette-round-linear" class="size-5" />
             </TairoSidebarLink>
           </BaseTooltip>
@@ -221,8 +224,8 @@ function getRouteSidebarId() {
               <Icon name="lucide:menu" class="size-4" />
             </BaseButton>
             <div>
-              <h1 class="text-xl font-semibold text-muted-800 dark:text-muted-200">
-                SnapLink
+              <h1 class="text-xl font-semibold text-muted-900 dark:text-muted-100">
+                SnapLink Dashboard
               </h1>
               <p class="text-sm text-muted-500 dark:text-muted-400">
                 Professional URL Shortener & Analytics
