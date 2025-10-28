@@ -1,0 +1,36 @@
+@import 'tailwindcss';
+@import '@shuriken-ui/nuxt';
+@import '#layers/@cssninja/tairo/theme.css';
+
+@theme {
+  --font-sans: 'Inter', sans-serif;
+  --font-mono: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  --font-heading: var(--font-sans);
+
+  /* SnapLink Brand Colors */
+  --color-primary-50: var(--color-blue-50);
+  --color-primary-100: var(--color-blue-100);
+  --color-primary-200: var(--color-blue-200);
+  --color-primary-300: var(--color-blue-300);
+  --color-primary-400: var(--color-blue-400);
+  --color-primary-500: var(--color-blue-500);
+  --color-primary-600: var(--color-blue-600);
+  --color-primary-700: var(--color-blue-700);
+  --color-primary-800: var(--color-blue-800);
+  --color-primary-900: var(--color-blue-900);
+  --color-primary-950: var(--color-blue-950);
+
+  /* Analytics Chart Colors */
+  --color-chart-base: var(--color-primary-600);
+  --color-chart-gradient: var(--color-white);
+  --color-chart-title: var(--color-muted-600);
+  --color-chart-subtitle: var(--color-muted-900);
+}
+
+@layer base {
+  .dark {
+    --color-chart-gradient: var(--color-muted-950);
+    --color-chart-title: var(--color-muted-400);
+    --color-chart-subtitle: var(--color-white);
+  }
+}
