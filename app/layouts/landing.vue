@@ -69,11 +69,11 @@ const menu = computed(() => [
 
           <!-- Auth Buttons -->
           <div class="hidden sm:flex items-center gap-2">
-            <BaseButton size="sm" variant="ghost" to="/login">
-              {{ t.login }}
+            <BaseButton size="sm" variant="ghost" to="/auth/login">
+              Login
             </BaseButton>
-            <BaseButton size="sm" variant="primary" to="/register">
-              {{ t.register }}
+            <BaseButton size="sm" variant="primary" to="/auth/register">
+              Register
             </BaseButton>
           </div>
 
@@ -119,11 +119,11 @@ const menu = computed(() => [
           </NuxtLink>
           <div class="pt-2 border-t border-muted-200 dark:border-muted-700">
             <div class="flex flex-col space-y-2">
-              <BaseButton size="sm" variant="ghost" to="/login" class="justify-start">
-                {{ t.menu.login }}
+              <BaseButton size="sm" variant="ghost" to="/auth/login" class="justify-start">
+                Login
               </BaseButton>
-              <BaseButton size="sm" variant="primary" to="/register" class="justify-start">
-                {{ t.menu.register }}
+              <BaseButton size="sm" variant="primary" to="/auth/register" class="justify-start">
+                Register
               </BaseButton>
             </div>
           </div>

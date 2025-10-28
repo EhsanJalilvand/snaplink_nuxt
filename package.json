@@ -16,6 +16,9 @@
     "@iconify-json/simple-icons": "^1.2.30",
     "@nuxt/fonts": "^0.11.1",
     "@shuriken-ui/nuxt": "4.0.0-beta.4",
+    "@zxcvbn-ts/core": "^4.0.0",
+    "@zxcvbn-ts/language-common": "^4.0.0",
+    "@zxcvbn-ts/language-en": "^4.0.0",
     "nuxt": "3.16.2",
     "tailwindcss": "^4.1.3",
     "typescript": "5.8.3"

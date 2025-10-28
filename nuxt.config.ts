@@ -62,14 +62,33 @@ export default defineNuxtConfig({
   },
 
   runtimeConfig: {
+    // Private keys (only available on server-side)
+    keycloakUrl: process.env.KEYCLOAK_URL || 'http://localhost:8080',
+    keycloakRealm: process.env.KEYCLOAK_REALM || 'master',
+    keycloakClientId: process.env.KEYCLOAK_CLIENT_ID || 'snaplink-app',
+    keycloakClientSecret: process.env.KEYCLOAK_CLIENT_SECRET || '',
+    smtpHost: process.env.SMTP_HOST || '',
+    smtpPort: process.env.SMTP_PORT || '587',
+    smtpUser: process.env.SMTP_USER || '',
+    smtpPass: process.env.SMTP_PASS || '',
+    smtpFrom: process.env.SMTP_FROM || 'noreply@snaplink.com',
+    
+    // Public keys (exposed to client-side)
     public: {
-      siteUrl: '', // set it via NUXT_PUBLIC_SITE_URL
+      siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+      appName: process.env.NUXT_PUBLIC_APP_NAME || 'SnapLink',
+      keycloakUrl: process.env.KEYCLOAK_URL || 'http://localhost:8080',
+      keycloakRealm: process.env.KEYCLOAK_REALM || 'master',
+      keycloakClientId: process.env.KEYCLOAK_CLIENT_ID || 'snaplink-app',
     },
   },
 
   routeRules: {
     '/': {
       swr: 3600,
+    },
+    '/auth/**': {
+      ssr: false, // Client-side rendering for auth pages
     },
     '/dashboard/**': {
       swr: 3600,
@@ -118,6 +137,10 @@ export default defineNuxtConfig({
         'scule',
         'klona',
         'ohash',
+        // AddonInputPassword dependencies
+        '@zxcvbn-ts/core',
+        '@zxcvbn-ts/language-common',
+        '@zxcvbn-ts/language-en',
       ],
     },
   },
