@@ -1,0 +1,55 @@
+panels:
+  language:
+    title: اختر اللغة
+
+menu:
+  about: حول
+  activity: النشاطات
+  blog: المدونة
+  terms: الشروط
+  login: تسجيل الدخول
+  register: التسجيل
+
+hero:
+  title: اختصار الروابط المهني والتحليلات
+  subtitle: أنشئ واتتبع وحلل روابطك مع رؤى قوية. انضم إلى آلاف المستخدمين الذين يثقون في SnapLink لإدارة روابطهم.
+  get_started: ابدأ الآن
+  learn_more: اعرف المزيد
+
+features:
+  title: ميزات قوية
+  subtitle: كل ما تحتاجه لإدارة وتحليل روابطك بفعالية
+  url_shortening:
+    title: اختصار الروابط
+    description: أنشئ روابط قصيرة ومذكورة فوراً مع اختصار الروابط القوي لدينا.
+  analytics:
+    title: التحليلات
+    description: تتبع النقرات والمواقع والأجهزة والمزيد مع تحليلات مفصلة.
+  security:
+    title: الأمان
+    description: ميزات أمان متقدمة لحماية روابطك وبياناتك.
+  customization:
+    title: التخصيص
+    description: نطاقات مخصصة وروابط علامة تجارية وروابط قصيرة شخصية.
+  api:
+    title: الوصول إلى API
+    description: ادمج مع API القوي لدينا لأتمتة سلسة.
+  team:
+    title: إدارة الفريق
+    description: تعاون مع فريقك وأدر حسابات متعددة.
+
+footer:
+  description: منصة اختصار الروابط المهني والتحليلات. أنشئ واتتبع وحلل روابطك مع رؤى قوية.
+  product: المنتج
+  company: الشركة
+  features: الميزات
+  pricing: التسعير
+  api: API
+  integrations: التكاملات
+  about: حول
+  blog: المدونة
+  careers: الوظائف
+  contact: اتصل بنا
+  privacy: سياسة الخصوصية
+  terms: شروط الخدمة
+  copyright: © 2024 SnapLink. جميع الحقوق محفوظة.

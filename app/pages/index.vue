@@ -1,11 +1,15 @@
 <script setup lang="ts">
+import { useTranslations } from '~/composables/useTranslations'
+
 definePageMeta({
   title: 'SnapLink - Professional URL Shortener & Analytics',
   layout: 'landing',
 })
 
+const { t } = useTranslations()
+
 // Hero section data
-const heroStats = ref([
+const heroStats = computed(() => [
   { label: 'Links Created', value: '1M+' },
   { label: 'Clicks Tracked', value: '50M+' },
   { label: 'Active Users', value: '10K+' },
@@ -13,36 +17,36 @@ const heroStats = ref([
 ])
 
 // Features data
-const features = ref([
+const features = computed(() => [
   {
     icon: 'solar:link-linear',
-    title: 'URL Shortening',
-    description: 'Create short, memorable links instantly with our powerful URL shortener.',
+    title: t.value.features.urlShortening.title,
+    description: t.value.features.urlShortening.description,
   },
   {
     icon: 'solar:chart-2-linear',
-    title: 'Analytics',
-    description: 'Track clicks, locations, devices, and more with detailed analytics.',
+    title: t.value.features.analytics.title,
+    description: t.value.features.analytics.description,
   },
   {
     icon: 'solar:shield-check-linear',
-    title: 'Security',
-    description: 'Advanced security features to protect your links and data.',
+    title: t.value.features.security.title,
+    description: t.value.features.security.description,
   },
   {
     icon: 'solar:settings-linear',
-    title: 'Customization',
-    description: 'Custom domains, branded links, and personalized short URLs.',
+    title: t.value.features.customization.title,
+    description: t.value.features.customization.description,
   },
   {
     icon: 'solar:api-linear',
-    title: 'API Access',
-    description: 'Integrate with our powerful API for seamless automation.',
+    title: t.value.features.api.title,
+    description: t.value.features.api.description,
   },
   {
     icon: 'solar:users-group-linear',
-    title: 'Team Management',
-    description: 'Collaborate with your team and manage multiple accounts.',
+    title: t.value.features.team.title,
+    description: t.value.features.team.description,
   },
 ])
 </script>
@@ -54,22 +58,19 @@ const features = ref([
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="text-center">
           <h1 class="text-4xl md:text-6xl font-bold text-muted-900 dark:text-muted-100 mb-6">
-            Professional
-            <span class="text-primary-600 dark:text-primary-400">URL Shortener</span>
-            & Analytics
+            {{ t.hero.title }}
           </h1>
           <p class="text-xl text-muted-600 dark:text-muted-400 mb-8 max-w-3xl mx-auto">
-            Create, track, and analyze your links with powerful insights. 
-            Perfect for businesses, marketers, and content creators.
+            {{ t.hero.subtitle }}
           </p>
           <div class="flex flex-col sm:flex-row gap-4 justify-center mb-12">
             <BaseButton size="lg" variant="primary" to="/register">
               <Icon name="solar:add-circle-linear" class="w-5 h-5" />
-              <span>Get Started Free</span>
+              <span>{{ t.hero.getStarted }}</span>
             </BaseButton>
             <BaseButton size="lg" variant="outline" to="/demo">
               <Icon name="solar:play-circle-linear" class="w-5 h-5" />
-              <span>Watch Demo</span>
+              <span>{{ t.hero.learnMore }}</span>
             </BaseButton>
           </div>
 
@@ -97,10 +98,10 @@ const features = ref([
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="text-center mb-16">
           <h2 class="text-3xl md:text-4xl font-bold text-muted-900 dark:text-muted-100 mb-4">
-            Everything you need to manage your links
+            {{ t.features.title }}
           </h2>
           <p class="text-xl text-muted-600 dark:text-muted-400 max-w-2xl mx-auto">
-            Powerful features designed to help you create, track, and optimize your links for maximum impact.
+            {{ t.features.subtitle }}
           </p>
         </div>
 

@@ -1,12 +1,20 @@
 <script setup lang="ts">
-const isMobileMenuOpen = ref(false)
+import { SnapLinkPanelLanguage } from '#components'
+import { getLocaleFlag } from '~/utils/locale'
+import { useAppLocale } from '~/composables/useLocale'
+import { useTranslations } from '~/composables/useTranslations'
 
-const menu = [
-  { label: 'About', to: '/about' },
-  { label: 'Activity', to: '/activity' },
-  { label: 'Blog', to: '/blog' },
-  { label: 'Terms', to: '/terms' },
-]
+const isMobileMenuOpen = ref(false)
+const currentLocale = useAppLocale()
+const { open } = usePanels()
+const { t } = useTranslations()
+
+const menu = computed(() => [
+  { label: t.value.menu.about, to: '/about' },
+  { label: t.value.menu.activity, to: '/activity' },
+  { label: t.value.menu.blog, to: '/blog' },
+  { label: t.value.menu.terms, to: '/terms' },
+])
 </script>
 
 <template>
@@ -44,9 +52,17 @@ const menu = [
         <!-- Right side actions -->
         <div class="flex w-1/2 items-center justify-end gap-2 md:w-1/5">
           <!-- Language Selector -->
-          <BaseButton size="sm" variant="ghost" class="hidden sm:flex">
-            <Icon name="lucide:globe" class="w-4 h-4" />
-          </BaseButton>
+          <button
+            type="button"
+          class="border-muted-200 hover:ring-muted-200 dark:hover:ring-muted-700 dark:border-muted-700 dark:bg-muted-800 dark:ring-offset-muted-900 flex size-10 items-center justify-center rounded-full border bg-white ring-1 ring-transparent transition-all duration-300 hover:ring-offset-4"
+            @click="open(SnapLinkPanelLanguage)"
+          >
+            <img
+              class="size-8 rounded-full"
+              :src="getLocaleFlag(currentLocale)"
+              alt="flag icon"
+            >
+          </button>
 
           <!-- Dark Mode Toggle -->
           <BaseThemeToggle aria-label="Toggle darkmode" />
@@ -54,10 +70,10 @@ const menu = [
           <!-- Auth Buttons -->
           <div class="hidden sm:flex items-center gap-2">
             <BaseButton size="sm" variant="ghost" to="/login">
-              Login
+              {{ t.login }}
             </BaseButton>
             <BaseButton size="sm" variant="primary" to="/register">
-              Register
+              {{ t.register }}
             </BaseButton>
           </div>
 
@@ -104,10 +120,10 @@ const menu = [
           <div class="pt-2 border-t border-muted-200 dark:border-muted-700">
             <div class="flex flex-col space-y-2">
               <BaseButton size="sm" variant="ghost" to="/login" class="justify-start">
-                Login
+                {{ t.menu.login }}
               </BaseButton>
               <BaseButton size="sm" variant="primary" to="/register" class="justify-start">
-                Register
+                {{ t.menu.register }}
               </BaseButton>
             </div>
           </div>
@@ -133,7 +149,7 @@ const menu = [
               <span class="text-xl font-bold text-muted-900 dark:text-muted-100">SnapLink</span>
             </div>
             <p class="text-muted-600 dark:text-muted-400 mb-4 max-w-md">
-              Professional URL shortener and analytics platform. Create, track, and analyze your links with powerful insights.
+              {{ t.footer.description }}
             </p>
             <div class="flex space-x-4">
               <BaseButton size="sm" variant="ghost">
@@ -151,27 +167,27 @@ const menu = [
           <!-- Product -->
           <div>
             <h3 class="text-sm font-semibold text-muted-900 dark:text-muted-100 mb-4">
-              Product
+              {{ t.footer.product }}
             </h3>
             <ul class="space-y-2">
               <li>
                 <NuxtLink to="/features" class="text-sm text-muted-600 dark:text-muted-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
-                  Features
+                  {{ t.footer.features }}
                 </NuxtLink>
               </li>
               <li>
                 <NuxtLink to="/pricing" class="text-sm text-muted-600 dark:text-muted-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
-                  Pricing
+                  {{ t.footer.pricing }}
                 </NuxtLink>
               </li>
               <li>
                 <NuxtLink to="/api" class="text-sm text-muted-600 dark:text-muted-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
-                  API
+                  {{ t.footer.api }}
                 </NuxtLink>
               </li>
               <li>
                 <NuxtLink to="/integrations" class="text-sm text-muted-600 dark:text-muted-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
-                  Integrations
+                  {{ t.footer.integrations }}
                 </NuxtLink>
               </li>
             </ul>
@@ -180,27 +196,27 @@ const menu = [
           <!-- Company -->
           <div>
             <h3 class="text-sm font-semibold text-muted-900 dark:text-muted-100 mb-4">
-              Company
+              {{ t.footer.company }}
             </h3>
             <ul class="space-y-2">
               <li>
                 <NuxtLink to="/about" class="text-sm text-muted-600 dark:text-muted-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
-                  About
+                  {{ t.footer.about }}
                 </NuxtLink>
               </li>
               <li>
                 <NuxtLink to="/blog" class="text-sm text-muted-600 dark:text-muted-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
-                  Blog
+                  {{ t.footer.blog }}
                 </NuxtLink>
               </li>
               <li>
                 <NuxtLink to="/careers" class="text-sm text-muted-600 dark:text-muted-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
-                  Careers
+                  {{ t.footer.careers }}
                 </NuxtLink>
               </li>
               <li>
                 <NuxtLink to="/contact" class="text-sm text-muted-600 dark:text-muted-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
-                  Contact
+                  {{ t.footer.contact }}
                 </NuxtLink>
               </li>
             </ul>
@@ -211,14 +227,14 @@ const menu = [
         <div class="mt-8 pt-8 border-t border-muted-200 dark:border-muted-700">
           <div class="flex flex-col md:flex-row justify-between items-center">
             <p class="text-sm text-muted-600 dark:text-muted-400">
-              © 2024 SnapLink. All rights reserved.
+              {{ t.footer.copyright }}
             </p>
             <div class="flex space-x-6 mt-4 md:mt-0">
               <NuxtLink to="/privacy" class="text-sm text-muted-600 dark:text-muted-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
-                Privacy Policy
+                {{ t.footer.privacy }}
               </NuxtLink>
               <NuxtLink to="/terms" class="text-sm text-muted-600 dark:text-muted-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
-                Terms of Service
+                {{ t.footer.terms }}
               </NuxtLink>
             </div>
           </div>

@@ -1,0 +1,55 @@
+panels:
+  language:
+    title: Select Language
+
+menu:
+  about: About
+  activity: Activity
+  blog: Blog
+  terms: Terms
+  login: Login
+  register: Register
+
+hero:
+  title: Professional URL Shortener & Analytics
+  subtitle: Create, track, and analyze your links with powerful insights. Join thousands of users who trust SnapLink for their link management needs.
+  get_started: Get Started
+  learn_more: Learn More
+
+features:
+  title: Powerful Features
+  subtitle: Everything you need to manage and analyze your links effectively
+  url_shortening:
+    title: URL Shortening
+    description: Create short, memorable links instantly with our powerful URL shortener.
+  analytics:
+    title: Analytics
+    description: Track clicks, locations, devices, and more with detailed analytics.
+  security:
+    title: Security
+    description: Advanced security features to protect your links and data.
+  customization:
+    title: Customization
+    description: Custom domains, branded links, and personalized short URLs.
+  api:
+    title: API Access
+    description: Integrate with our powerful API for seamless automation.
+  team:
+    title: Team Management
+    description: Collaborate with your team and manage multiple accounts.
+
+footer:
+  description: Professional URL shortener and analytics platform. Create, track, and analyze your links with powerful insights.
+  product: Product
+  company: Company
+  features: Features
+  pricing: Pricing
+  api: API
+  integrations: Integrations
+  about: About
+  blog: Blog
+  careers: Careers
+  contact: Contact
+  privacy: Privacy Policy
+  terms: Terms of Service
+  copyright: © 2024 SnapLink. All rights reserved.
