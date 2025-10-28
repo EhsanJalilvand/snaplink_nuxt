@@ -35,8 +35,8 @@ export const useAuth = () => {
     clientId: config.public.keycloakClientId,
   }
 
-  // Login with username/password
-  const login = async (username: string, password: string, rememberMe = false) => {
+  // Login with email/password
+  const login = async (email: string, password: string, trustDevice = false) => {
     state.isLoading = true
     state.error = null
 
@@ -44,9 +44,9 @@ export const useAuth = () => {
       const response = await $fetch('/api/auth/login', {
         method: 'POST',
         body: {
-          username,
+          email,
           password,
-          rememberMe,
+          trustDevice,
         },
       })
 

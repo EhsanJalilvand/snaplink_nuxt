@@ -54,11 +54,11 @@ const menu = computed(() => [
           <!-- Language Selector -->
           <button
             type="button"
-          class="border-muted-200 hover:ring-muted-200 dark:hover:ring-muted-700 dark:border-muted-700 dark:bg-muted-800 dark:ring-offset-muted-900 flex size-10 items-center justify-center rounded-full border bg-white ring-1 ring-transparent transition-all duration-300 hover:ring-offset-4"
+            class="border-muted-200 hover:ring-muted-200 dark:hover:ring-muted-700 dark:border-muted-700 dark:bg-muted-800 dark:ring-offset-muted-900 flex size-10 items-center justify-center rounded-full border bg-white ring-1 ring-transparent transition-all duration-300 hover:ring-offset-4"
             @click="open(SnapLinkPanelLanguage)"
           >
             <img
-              class="size-8 rounded-full"
+              class="size-6 rounded-full"
               :src="getLocaleFlag(currentLocale)"
               alt="flag icon"
             >

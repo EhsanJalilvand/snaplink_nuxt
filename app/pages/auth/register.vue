@@ -14,7 +14,7 @@ const passwordRef = ref<InstanceType<typeof AddonInputPassword>>()
 const VALIDATION_TEXT = {
   EMAIL_REQUIRED: 'A valid email is required',
   USERNAME_LENGTH: 'Username must be at least 3 characters',
-  PASSWORD_LENGTH: 'Password must be at least 8 characters',
+  PASSWORD_LENGTH: 'Password must be at least 6 characters with letters and numbers',
   PASSWORD_CONTAINS_EMAIL: 'Password cannot contain your email',
   PASSWORD_MATCH: 'Passwords do not match',
   TERMS_REQUIRED: 'You must agree to the terms and conditions',
@@ -25,19 +25,24 @@ const zodSchema = z
   .object({
     username: z.string().min(3, VALIDATION_TEXT.USERNAME_LENGTH),
     email: z.string().email(VALIDATION_TEXT.EMAIL_REQUIRED),
-    password: z.string().min(8, VALIDATION_TEXT.PASSWORD_LENGTH),
+    password: z.string()
+      .min(6, VALIDATION_TEXT.PASSWORD_LENGTH)
+      .regex(/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{6,}$/, 'Password must contain at least 6 characters with letters and numbers'),
     confirmPassword: z.string(),
     terms: z.boolean(),
   })
   .superRefine((data, ctx) => {
     // This is a custom validation function that will be called
     // before the form is submitted
-    if (passwordRef.value?.validation?.feedback?.warning || passwordRef.value?.validation?.feedback?.suggestions?.length) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: passwordRef.value?.validation?.feedback?.warning || passwordRef.value.validation.feedback?.suggestions?.[0],
-        path: ['password'],
-      })
+    // Only apply password strength validation if password meets basic requirements
+    if (data.password.length >= 6 && /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{6,}$/.test(data.password)) {
+      if (passwordRef.value?.validation?.feedback?.warning || passwordRef.value?.validation?.feedback?.suggestions?.length) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: passwordRef.value?.validation?.feedback?.warning || passwordRef.value.validation.feedback?.suggestions?.[0],
+          path: ['password'],
+        })
+      }
     }
     if (data.password !== data.confirmPassword) {
       ctx.addIssue({

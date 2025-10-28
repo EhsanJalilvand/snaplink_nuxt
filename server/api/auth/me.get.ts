@@ -1,56 +1,45 @@
 export default defineEventHandler(async (event) => {
-  const config = useRuntimeConfig()
-  
-  // Get the authorization header
-  const authHeader = getHeader(event, 'authorization')
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    throw createError({
-      statusCode: 401,
-      statusMessage: 'Unauthorized',
-    })
-  }
-
-  const token = authHeader.replace('Bearer ', '')
-
   try {
-    // Verify token with Keycloak
-    const userInfoUrl = `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/userinfo`
+    // Check if user has auth token
+    const authToken = getCookie(event, 'auth_token')
     
-    const userInfo = await $fetch(userInfoUrl, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    })
-
-    // Get user roles
-    const rolesUrl = `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/userinfo`
-    
-    const rolesResponse = await $fetch(rolesUrl, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    })
-
-    const user = {
-      id: userInfo.sub,
-      username: userInfo.preferred_username || userInfo.username,
-      email: userInfo.email,
-      firstName: userInfo.given_name,
-      lastName: userInfo.family_name,
-      emailVerified: userInfo.email_verified || false,
-      roles: rolesResponse.realm_access?.roles || [],
+    if (!authToken) {
+      throw createError({
+        statusCode: 401,
+        statusMessage: 'Not authenticated',
+      })
     }
 
-    return {
-      success: true,
-      user,
+    // Test data for development
+    if (authToken === 'fake-jwt-token') {
+      return {
+        success: true,
+        user: {
+          id: 1,
+          username: 'admin',
+          email: 'admin@admin.com',
+          firstName: 'Admin',
+          lastName: 'User',
+          emailVerified: true,
+          roles: ['admin', 'user']
+        }
+      }
+    } else {
+      throw createError({
+        statusCode: 401,
+        statusMessage: 'Invalid token',
+      })
     }
   } catch (error: any) {
-    console.error('Token verification error:', error)
+    console.error('Get user error:', error)
+    
+    if (error.statusCode) {
+      throw error
+    }
     
     throw createError({
-      statusCode: 401,
-      statusMessage: 'Invalid token',
+      statusCode: 500,
+      statusMessage: 'Failed to get user info',
     })
   }
 })
