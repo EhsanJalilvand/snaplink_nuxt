@@ -11,6 +11,10 @@ const locales = [
   { code: 'en', name: 'English' },
   { code: 'fa', name: 'فارسی' },
   { code: 'ar', name: 'العربية' },
+  { code: 'fr', name: 'Français' },
+  { code: 'es', name: 'Español' },
+  { code: 'de', name: 'Deutsch' },
+  { code: 'ja', name: '日本語' },
 ]
 
 onKeyStroke('Escape', () => emits('close'))
