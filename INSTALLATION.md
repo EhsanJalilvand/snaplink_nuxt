@@ -46,3 +46,5 @@ cp env.example .env
 - Email verification: `123456`
 - 2FA code: `123456`
 - Login password: `password`
+
+

@@ -4,3 +4,5 @@ export default defineNuxtPlugin(async () => {
   // Initialize authentication state on app start
   await initAuth()
 })
+
+

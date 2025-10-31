@@ -13,3 +13,4 @@ await navigateTo('/auth/login')
     <!-- This page will redirect to login -->
   </div>
 </template>
+

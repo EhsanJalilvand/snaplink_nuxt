@@ -39,3 +39,5 @@ const AddonInputPasswordComponent = defineAsyncComponent(() => import('./AddonIn
     @visibility="emits('visibility', $event)"
   />
 </template>
+
+
