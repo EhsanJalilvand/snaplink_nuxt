@@ -39,16 +39,34 @@ const {
 })
 
 const router = useRouter()
-const { login } = useAuth()
+const { login: loginCustom } = useAuth()
+const { login: loginKeycloak, loginWithCredentials } = useKeycloak()
+
+// Login with Keycloak (redirect)
+const loginWithKeycloak = async () => {
+  try {
+    await loginKeycloak()
+  } catch (error: any) {
+    console.error('Keycloak login error:', error)
+  }
+}
 
 // This is where you would send the form data to the server
 const onSubmit = handleSubmit(async (values) => {
-  const result = await login(values.email, values.password, values.trustDevice)
+  // Try Keycloak first, fallback to custom auth
+  const result = await loginWithCredentials(values.email, values.password)
   
   if (result.success) {
     router.push('/dashboard')
   } else {
-    setFieldError('password', result.error || 'Login failed')
+    // Fallback to custom auth if Keycloak fails
+    const customResult = await loginCustom(values.email, values.password, values.trustDevice)
+    
+    if (customResult.success) {
+      router.push('/dashboard')
+    } else {
+      setFieldError('password', result.error || customResult.error || 'Login failed')
+    }
   }
 })
 </script>
@@ -84,6 +102,20 @@ const onSubmit = handleSubmit(async (values) => {
           <BaseParagraph size="sm" class="text-muted-400 mb-6">
             Login with social media or your credentials
           </BaseParagraph>
+          <!-- Keycloak Login Button -->
+          <div class="mb-4">
+            <BaseButton
+              type="button"
+              variant="primary"
+              rounded="lg"
+              class="w-full"
+              @click="loginWithKeycloak"
+            >
+              <Icon name="ph:shield-check" class="size-5" />
+              <span>Login with Keycloak</span>
+            </BaseButton>
+          </div>
+          
           <!-- Social Sign Up Buttons -->
           <div class="flex flex-wrap justify-between gap-4">
             <!-- Google button -->

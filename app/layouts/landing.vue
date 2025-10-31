@@ -9,6 +9,29 @@ const currentLocale = useAppLocale()
 const { open } = usePanels()
 const { t } = useTranslations()
 
+// Keycloak authentication
+const { user, isAuthenticated, logout, checkAuth } = useKeycloak()
+
+// Check authentication status when layout mounts
+onMounted(async () => {
+  if (process.client) {
+    await checkAuth()
+  }
+})
+
+// Get user display name
+const userDisplayName = computed(() => {
+  if (!user.value) return ''
+  return user.value.firstName 
+    ? `${user.value.firstName} ${user.value.lastName || ''}`.trim()
+    : user.value.username || user.value.email || 'User'
+})
+
+// Handle logout
+const handleLogout = async () => {
+  await logout()
+}
+
 const menu = computed(() => [
   { label: t.value.menu.about, to: '/about' },
   { label: t.value.menu.activity, to: '/activity' },
@@ -67,8 +90,8 @@ const menu = computed(() => [
           <!-- Dark Mode Toggle -->
           <BaseThemeToggle aria-label="Toggle darkmode" />
 
-          <!-- Auth Buttons -->
-          <div class="hidden sm:flex items-center gap-2">
+          <!-- Auth Buttons (if not logged in) -->
+          <div v-if="!isAuthenticated" class="hidden sm:flex items-center gap-2">
             <BaseButton size="sm" variant="ghost" to="/auth/login">
               Login
             </BaseButton>
@@ -77,10 +100,17 @@ const menu = computed(() => [
             </BaseButton>
           </div>
 
-          <!-- User Avatar (if logged in) -->
-          <NuxtLink to="/profile" class="hidden lg:flex">
-            <BaseAvatar size="xs" src="/img/avatars/10.svg" />
-          </NuxtLink>
+          <!-- User Menu (if logged in) -->
+          <div v-else class="hidden sm:flex items-center gap-2">
+            <NuxtLink to="/dashboard" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-600 dark:text-muted-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+              <BaseAvatar size="xs" :src="`https://ui-avatars.com/api/?name=${encodeURIComponent(userDisplayName)}&background=6366f1&color=fff`" />
+              <span class="hidden md:inline">{{ userDisplayName }}</span>
+            </NuxtLink>
+            <BaseButton size="sm" variant="ghost" @click="handleLogout">
+              <Icon name="ph:sign-out" class="size-4" />
+              <span class="hidden lg:inline">Logout</span>
+            </BaseButton>
+          </div>
 
           <!-- Mobile menu button -->
           <button
@@ -117,13 +147,28 @@ const menu = computed(() => [
           >
             {{ item.label }}
           </NuxtLink>
-          <div class="pt-2 border-t border-muted-200 dark:border-muted-700">
+          <!-- Auth Buttons (Mobile) -->
+          <div v-if="!isAuthenticated" class="pt-2 border-t border-muted-200 dark:border-muted-700">
             <div class="flex flex-col space-y-2">
               <BaseButton size="sm" variant="ghost" to="/auth/login" class="justify-start">
                 Login
               </BaseButton>
               <BaseButton size="sm" variant="primary" to="/auth/register" class="justify-start">
                 Register
+              </BaseButton>
+            </div>
+          </div>
+          
+          <!-- User Menu (Mobile) -->
+          <div v-else class="pt-2 border-t border-muted-200 dark:border-muted-700">
+            <div class="flex flex-col space-y-2">
+              <NuxtLink to="/dashboard" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-600 dark:text-muted-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-muted-50 dark:hover:bg-muted-800 rounded-md transition-colors">
+                <BaseAvatar size="xs" :src="`https://ui-avatars.com/api/?name=${encodeURIComponent(userDisplayName)}&background=6366f1&color=fff`" />
+                <span>{{ userDisplayName }}</span>
+              </NuxtLink>
+              <BaseButton size="sm" variant="ghost" @click="handleLogout" class="justify-start">
+                <Icon name="ph:sign-out" class="size-4" />
+                <span>Logout</span>
               </BaseButton>
             </div>
           </div>

@@ -77,11 +77,22 @@ const { values, handleSubmit, isSubmitting, setFieldError } = useForm({
 })
 
 const router = useRouter()
-const { register } = useAuth()
+const { register: registerCustom } = useAuth()
+const { register: registerKeycloak } = useKeycloak()
+
+// Register with Keycloak (redirect)
+const registerWithKeycloak = async () => {
+  try {
+    await registerKeycloak()
+  } catch (error: any) {
+    console.error('Keycloak register error:', error)
+  }
+}
 
 // This is where you would send the form data to the server
 const onSubmit = handleSubmit(async (_values) => {
-  const result = await register({
+  // Try custom registration first
+  const result = await registerCustom({
     username: values.username,
     email: values.email,
     password: values.password,
@@ -184,6 +195,35 @@ const onSubmit = handleSubmit(async (_values) => {
         <BaseParagraph size="sm" class="text-muted-400 mb-6">
           Let's start by creating you account
         </BaseParagraph>
+
+        <!-- Keycloak Register Button -->
+        <div class="mb-4">
+          <BaseButton
+            type="button"
+            variant="primary"
+            rounded="lg"
+            class="w-full"
+            @click="registerWithKeycloak"
+          >
+            <Icon name="ph:shield-check" class="size-5" />
+            <span>Register with Keycloak</span>
+          </BaseButton>
+        </div>
+
+        <!-- 'or' divider -->
+        <div class="flex-100 my-4 flex items-center">
+          <hr
+            class="border-muted-200 dark:border-muted-700 flex-auto border-t-2"
+          >
+          <span
+            class="text-muted-600 dark:text-muted-300 px-4 font-sans font-light"
+          >
+            OR
+          </span>
+          <hr
+            class="border-muted-200 dark:border-muted-700 flex-auto border-t-2"
+          >
+        </div>
 
         <div class="mb-4 space-y-3">
           <Field

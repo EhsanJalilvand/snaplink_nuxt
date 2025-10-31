@@ -28,11 +28,11 @@ export const useAuth = () => {
     error: null,
   })
 
-  // Keycloak configuration
+  // Keycloak configuration (not used in this composable, kept for reference)
   const keycloakConfig = {
     url: config.public.keycloakUrl,
     realm: config.public.keycloakRealm,
-    clientId: config.public.keycloakClientId,
+    clientId: 'my-client', // Direct value - not reading from config
   }
 
   // Login with email/password

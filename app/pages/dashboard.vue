@@ -4,7 +4,15 @@ definePageMeta({
   title: 'Dashboard',
 })
 
-const { user, logout } = useAuth()
+const { user, logout } = useKeycloak()
+
+// Get user display name
+const userDisplayName = computed(() => {
+  if (!user.value) return 'User'
+  return user.value.firstName 
+    ? `${user.value.firstName} ${user.value.lastName || ''}`.trim()
+    : user.value.username || user.value.email || 'User'
+})
 
 const handleLogout = async () => {
   await logout()
@@ -21,7 +29,7 @@ const handleLogout = async () => {
           Welcome to Dashboard
         </h1>
         <p class="text-muted-600 dark:text-muted-400 mt-2">
-          Hello, {{ user?.username || 'User' }}! You are successfully logged in.
+          Hello, {{ userDisplayName }}! You are successfully logged in.
         </p>
       </div>
 
@@ -85,5 +93,6 @@ const handleLogout = async () => {
     </div>
   </div>
 </template>
+
 
 

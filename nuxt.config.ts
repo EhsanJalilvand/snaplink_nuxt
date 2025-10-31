@@ -65,7 +65,12 @@ export default defineNuxtConfig({
     // Private keys (only available on server-side)
     keycloakUrl: process.env.KEYCLOAK_URL || 'http://localhost:8080',
     keycloakRealm: process.env.KEYCLOAK_REALM || 'master',
-    keycloakClientId: process.env.KEYCLOAK_CLIENT_ID || 'snaplink-app',
+    keycloakClientId: (() => {
+      const clientId = process.env.KEYCLOAK_CLIENT_ID || 'my-client'
+      console.log('[nuxt.config.ts] KEYCLOAK_CLIENT_ID from env:', process.env.KEYCLOAK_CLIENT_ID)
+      console.log('[nuxt.config.ts] KEYCLOAK_CLIENT_ID final value:', clientId)
+      return clientId
+    })(),
     keycloakClientSecret: process.env.KEYCLOAK_CLIENT_SECRET || '',
     smtpHost: process.env.SMTP_HOST || '',
     smtpPort: process.env.SMTP_PORT || '587',
@@ -79,7 +84,8 @@ export default defineNuxtConfig({
       appName: process.env.NUXT_PUBLIC_APP_NAME || 'SnapLink',
       keycloakUrl: process.env.KEYCLOAK_URL || 'http://localhost:8080',
       keycloakRealm: process.env.KEYCLOAK_REALM || 'master',
-      keycloakClientId: process.env.KEYCLOAK_CLIENT_ID || 'snaplink-app',
+      keycloakClientId: 'my-client', // Direct value - not reading from env
+      keycloakRedirectUri: 'http://localhost:3000/auth/callback',
     },
   },
 
@@ -89,6 +95,9 @@ export default defineNuxtConfig({
     },
     '/auth/**': {
       ssr: false, // Client-side rendering for auth pages
+    },
+    '/auth/callback': {
+      ssr: false, // Client-side rendering for callback
     },
     '/dashboard/**': {
       swr: 3600,
