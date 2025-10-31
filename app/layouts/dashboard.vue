@@ -1,4 +1,27 @@
 <script setup lang="ts">
+import { SnapLinkPanelLanguage } from '#components'
+import { getLocaleFlag } from '~/utils/locale'
+import { useAppLocale } from '~/composables/useLocale'
+
+const currentLocale = useAppLocale()
+const { open } = usePanels()
+
+// Keycloak authentication
+const { user, isAuthenticated, logout } = useKeycloak()
+
+// Get user display name
+const userDisplayName = computed(() => {
+  if (!user.value) return ''
+  return user.value.firstName 
+    ? `${user.value.firstName} ${user.value.lastName || ''}`.trim()
+    : user.value.username || user.value.email || 'User'
+})
+
+// Handle logout
+const handleLogout = async () => {
+  await logout()
+}
+
 const menu = [
   {
     label: 'Dashboard',
@@ -60,6 +83,37 @@ const menu = [
         label: 'Devices',
         icon: 'solar:smartphone-linear',
         to: '/analytics/devices',
+      },
+    ],
+  },
+  {
+    label: 'Utility',
+    icon: 'solar:home-smile-linear',
+    links: [
+      {
+        label: 'Invoice v2',
+        icon: 'solar:document-linear',
+        to: '/layouts/utility-invoice-2',
+      },
+      {
+        label: 'Invoice v1',
+        icon: 'solar:invoice-linear',
+        to: '/layouts/utility-invoice',
+      },
+      {
+        label: 'Action v1',
+        icon: 'solar:shield-user-linear',
+        to: '/layouts/utility-action-1',
+      },
+      {
+        label: 'Action v2',
+        icon: 'solar:shield-check-linear',
+        to: '/layouts/utility-action-2',
+      },
+      {
+        label: 'System Status',
+        icon: 'solar:server-path-linear',
+        to: '/layouts/utility-status',
       },
     ],
   },
@@ -212,35 +266,100 @@ function getRouteSidebarId() {
     </TairoSidebarNav>
 
     <TairoSidebarContent class="min-h-screen">
-      <div class="px-4 md:px-6 xl:px-8">
-        <div class="flex items-center justify-between h-16">
-          <div class="flex items-center gap-4">
-            <BaseButton
-              size="sm"
-              variant="ghost"
-              class="md:hidden"
-              @click="toggleMobileNav"
-            >
-              <Icon name="lucide:menu" class="size-4" />
-            </BaseButton>
-            <div>
-              <h1 class="text-xl font-semibold text-muted-900 dark:text-muted-100">
-                SnapLink Dashboard
-              </h1>
-              <p class="text-sm text-muted-500 dark:text-muted-400">
-                Professional URL Shortener & Analytics
-              </p>
-            </div>
-          </div>
-          <div class="flex items-center gap-2">
-            <BaseButton size="sm" variant="primary">
-              <Icon name="solar:add-circle-linear" class="size-4" />
-              <span>Create Link</span>
-            </BaseButton>
+      <!-- Top Navbar -->
+      <div class="border-muted-200 dark:border-muted-800 sticky top-0 z-40 flex h-16 w-full items-center justify-between border-b bg-white/95 px-4 backdrop-blur-md dark:bg-muted-950/95 md:px-6 lg:px-8">
+        <!-- Left side - Logo and Title -->
+        <div class="flex items-center gap-4">
+          <BaseButton
+            size="sm"
+            variant="ghost"
+            class="md:hidden"
+            @click="toggleMobileNav"
+          >
+            <Icon name="lucide:menu" class="size-4" />
+          </BaseButton>
+          <div class="hidden md:block">
+            <h1 class="text-xl font-semibold text-muted-900 dark:text-muted-100">
+              SnapLink Dashboard
+            </h1>
+            <p class="text-sm text-muted-500 dark:text-muted-400">
+              Professional URL Shortener & Analytics
+            </p>
           </div>
         </div>
+
+        <!-- Right side - Language, Theme, User -->
+        <div class="flex items-center gap-2">
+          <!-- Language Selector -->
+          <button
+            type="button"
+            class="border-muted-200 hover:ring-muted-200 dark:hover:ring-muted-700 dark:border-muted-700 dark:bg-muted-800 dark:ring-offset-muted-900 flex size-10 items-center justify-center rounded-full border bg-white ring-1 ring-transparent transition-all duration-300 hover:ring-offset-4"
+            @click="open(SnapLinkPanelLanguage)"
+          >
+            <img
+              class="size-6 rounded-full"
+              :src="getLocaleFlag(currentLocale)"
+              alt="flag icon"
+            >
+          </button>
+
+          <!-- Dark Mode Toggle -->
+          <BaseThemeToggle aria-label="Toggle darkmode" />
+
+          <!-- User Menu -->
+          <BaseDropdown
+            v-if="isAuthenticated && user"
+            variant="default"
+            :bindings="{
+              content: {
+                align: 'end',
+                sideOffset: 10,
+              },
+            }"
+          >
+            <template #button>
+              <button
+                type="button"
+                class="flex items-center gap-2 rounded-full p-1 hover:bg-muted-100 dark:hover:bg-muted-800 transition-colors"
+              >
+                <BaseChip size="sm" color="custom" :offset="3" class="text-success-500">
+                  <BaseAvatar
+                    size="xs"
+                    :src="`https://ui-avatars.com/api/?name=${encodeURIComponent(userDisplayName)}&background=6366f1&color=fff`"
+                  />
+                </BaseChip>
+                <span class="hidden lg:inline text-sm font-medium text-muted-700 dark:text-muted-300">
+                  {{ userDisplayName }}
+                </span>
+              </button>
+            </template>
+            <BaseDropdownItem to="/dashboard">
+              <Icon name="solar:user-linear" class="size-4" />
+              <span>Dashboard</span>
+            </BaseDropdownItem>
+            <BaseDropdownItem to="/settings">
+              <Icon name="solar:settings-linear" class="size-4" />
+              <span>Settings</span>
+            </BaseDropdownItem>
+            <BaseDropdownDivider />
+            <BaseDropdownItem @click="handleLogout">
+              <Icon name="ph:sign-out" class="size-4" />
+              <span>Logout</span>
+            </BaseDropdownItem>
+          </BaseDropdown>
+
+          <!-- Create Link Button -->
+          <BaseButton size="sm" variant="primary">
+            <Icon name="solar:add-circle-linear" class="size-4" />
+            <span class="hidden md:inline">Create Link</span>
+          </BaseButton>
+        </div>
       </div>
-      <slot />
+
+      <!-- Main Content -->
+      <div class="px-4 md:px-6 xl:px-8">
+        <slot />
+      </div>
     </TairoSidebarContent>
   </TairoSidebarLayout>
 </template>

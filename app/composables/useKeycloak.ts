@@ -277,12 +277,13 @@ export const useKeycloak = () => {
     }
 
     try {
-      // Use direct value to avoid config issues
-      const redirectUri = 'http://localhost:3000/auth/login' // Direct value - not reading from config
-      await keycloakInstance.logout({ redirectUri })
-
+      // Clear local state first
       state.user = null
       state.isAuthenticated = false
+
+      // Redirect to login page after logout
+      const redirectUri = 'http://localhost:3000/auth/login'
+      await keycloakInstance.logout({ redirectUri })
 
       toaster.add({
         title: 'Success',
@@ -292,9 +293,14 @@ export const useKeycloak = () => {
       })
     } catch (error: any) {
       console.error('Keycloak logout error:', error)
-      // Even if logout fails, clear local state
+      // Even if logout fails, clear local state and navigate
       state.user = null
       state.isAuthenticated = false
+      
+      // Navigate to login page even if Keycloak logout fails
+      if (process.client) {
+        await navigateTo('/auth/login')
+      }
     }
   }
 
