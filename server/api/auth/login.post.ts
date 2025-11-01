@@ -22,37 +22,13 @@ export default defineEventHandler(async (event) => {
   const { email, password, trustDevice } = validation.data
 
   try {
-    // Test data for development
-    if (email === 'admin@admin.com' && password === 'admin') {
-      // Simulate successful login
-      setCookie(event, 'auth_token', 'fake-jwt-token', { 
-        httpOnly: true, 
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: trustDevice ? 60 * 60 * 24 * 30 : 60 * 60 * 24 // 30 days or 1 day
-      })
-      
-      return {
-        success: true,
-        user: { 
-          id: 1, 
-          username: 'admin', 
-          email: email,
-          firstName: 'Admin',
-          lastName: 'User',
-          emailVerified: true,
-          roles: ['admin', 'user']
-        },
-        accessToken: 'fake-access-token',
-        refreshToken: 'fake-refresh-token',
-        expiresIn: trustDevice ? 60 * 60 * 24 * 30 : 60 * 60 * 24,
-        message: 'Login successful',
-      }
-    } else {
-      throw createError({
-        statusCode: 401,
-        statusMessage: 'Invalid credentials',
-      })
-    }
+    // Custom auth login endpoint - delegates to Keycloak via frontend
+    // This endpoint should not be used directly in production with Keycloak
+    // Frontend uses Keycloak login instead
+    throw createError({
+      statusCode: 401,
+      statusMessage: 'Invalid credentials',
+    })
   } catch (error: any) {
     console.error('Login error:', error)
     

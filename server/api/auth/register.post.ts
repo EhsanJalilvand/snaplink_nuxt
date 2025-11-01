@@ -24,29 +24,19 @@ export default defineEventHandler(async (event) => {
   const { username, email, password, firstName, lastName } = validation.data
 
   try {
-    // Test data for development
-    if (username === 'admin' && email === 'admin@admin.com') {
-      // Simulate successful registration
-      return {
-        success: true,
-        userId: 'test-user-id',
-        message: 'User created successfully. Please check your email for verification.',
-      }
-    } else {
-      // Check if user already exists (simulate)
-      if (username === 'admin' || email === 'admin@admin.com') {
-        throw createError({
-          statusCode: 409,
-          statusMessage: 'User already exists',
-        })
-      }
-      
-      // For other users, simulate successful registration
-      return {
-        success: true,
-        userId: 'new-user-id',
-        message: 'User created successfully. Please check your email for verification.',
-      }
+    // Custom registration should integrate with Keycloak Admin API
+    // For now, this endpoint should redirect to Keycloak registration
+    const config = useRuntimeConfig()
+    
+    // Return Keycloak registration URL
+    const keycloakUrl = config.public.keycloakUrl || config.keycloakUrl || 'http://localhost:8080'
+    const keycloakRealm = config.public.keycloakRealm || config.keycloakRealm || 'master'
+    
+    return {
+      success: false,
+      redirectToKeycloak: true,
+      registrationUrl: `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/registrations`,
+      message: 'Please use Keycloak registration',
     }
   } catch (error: any) {
     console.error('Registration error:', error)

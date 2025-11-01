@@ -79,7 +79,7 @@ export const useKeycloak = () => {
       const keycloakConfig = {
         url: runtimeConfig.public.keycloakUrl,
         realm: runtimeConfig.public.keycloakRealm,
-        clientId: 'my-client', // Direct value - not reading from config
+        clientId: runtimeConfig.public.keycloakClientId || 'my-client',
         checkLoginIframe: false,
         enableLogging: process.env.NODE_ENV === 'development',
       }
@@ -89,8 +89,8 @@ export const useKeycloak = () => {
       state.keycloak = keycloakInstance
       console.log('[useKeycloak.ts] Keycloak instance created, clientId:', keycloakInstance.clientId)
 
-      // Get redirect URI - use direct value to avoid config issues
-      const redirectUri = 'http://localhost:3000/auth/callback' // Direct value - not reading from config
+      // Get redirect URI from config
+      const redirectUri = runtimeConfig.public.keycloakRedirectUri || `${runtimeConfig.public.siteUrl || 'http://localhost:3000'}/auth/callback`
       console.log('[useKeycloak.ts] init() - redirectUri:', redirectUri)
 
       // Initialize Keycloak with PKCE - use 'check-sso' to restore state silently

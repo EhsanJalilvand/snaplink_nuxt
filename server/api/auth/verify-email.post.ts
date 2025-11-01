@@ -20,18 +20,12 @@ export default defineEventHandler(async (event) => {
   const { code } = validation.data
 
   try {
-    // Test data for development
-    if (code === '123456') {
-      return {
-        success: true,
-        message: 'Email verified successfully',
-      }
-    } else {
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'Invalid verification code',
-      })
-    }
+    // Email verification should integrate with Keycloak
+    // For now, return error as this requires proper Keycloak email verification setup
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Invalid verification code',
+    })
   } catch (error: any) {
     console.error('Email verification error:', error)
     

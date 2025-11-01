@@ -39,7 +39,8 @@ export default defineEventHandler(async (event) => {
       }
 
       const realmAccess = tokenParsed?.realm_access?.roles || []
-      const resourceAccess = tokenParsed?.resource_access?.[config.keycloakClientId || 'my-client']?.roles || []
+      const clientId = config.keycloakClientId || config.public.keycloakClientId || 'my-client'
+      const resourceAccess = tokenParsed?.resource_access?.[clientId]?.roles || []
       const allRoles = [...realmAccess, ...resourceAccess]
 
       const user = {
@@ -52,7 +53,10 @@ export default defineEventHandler(async (event) => {
         roles: allRoles,
       }
 
-      console.log('[auth/me.get.ts] User info retrieved:', user.username)
+      // Don't log sensitive user information in production
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[auth/me.get.ts] User info retrieved')
+      }
 
       return {
         success: true,

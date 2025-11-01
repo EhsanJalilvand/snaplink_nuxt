@@ -21,18 +21,12 @@ export default defineEventHandler(async (event) => {
   const { code, method } = validation.data
 
   try {
-    // Test data for development
-    if (code === '1234') {
-      return {
-        success: true,
-        message: 'Two-factor authentication successful',
-      }
-    } else {
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'Invalid authentication code',
-      })
-    }
+    // 2FA verification should integrate with Keycloak
+    // For now, return error as this requires proper Keycloak TOTP setup
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Invalid authentication code',
+    })
   } catch (error: any) {
     console.error('2FA verification error:', error)
     

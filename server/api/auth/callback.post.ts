@@ -36,7 +36,10 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    console.log('[auth/callback.post.ts] Tokens saved to cookies')
+    // Don't log sensitive information
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[auth/callback.post.ts] Tokens saved to cookies')
+    }
 
     return { 
       success: true,

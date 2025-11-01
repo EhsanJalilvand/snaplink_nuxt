@@ -43,14 +43,21 @@ export default defineEventHandler(async (event) => {
     // 3. Update the user's password
     // 4. Invalidate the reset token
 
-    // For demo purposes, we'll simulate password reset
-    // In production, you should implement proper token verification logic
-    
-    // Simulate finding user by reset token
-    const mockUserId = 'user-123' // This would come from your reset token lookup
+    // Validate and decode reset token to get user ID
+    // TODO: Implement proper token validation and user lookup
+    if (!token || token.length < 20) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Invalid or expired reset token',
+      })
+    }
+
+    // Extract user ID from token (in production, use proper JWT decoding)
+    // This is a placeholder - implement proper token verification
+    const userId = token // Replace with actual token validation logic
 
     // Update user password
-    const updatePasswordUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${mockUserId}/reset-password`
+    const updatePasswordUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}/reset-password`
     
     await $fetch(updatePasswordUrl, {
       method: 'PUT',
