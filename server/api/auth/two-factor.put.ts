@@ -1,24 +1,8 @@
 import { z } from 'zod'
 import { checkRateLimit, getClientIP } from '../../utils/rateLimit.js'
 
-// Sanitize phone number
-function sanitizePhone(phone: string): string {
-  return phone.trim().replace(/[^0-9]/g, '')
-}
-
 const twoFactorSchema = z.object({
   enabled: z.boolean(),
-  phoneNumber: z.string()
-    .optional()
-    .transform((val) => val ? sanitizePhone(val) : undefined),
-}).superRefine((data, ctx) => {
-  if (data.enabled && !data.phoneNumber) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Phone number is required for 2FA',
-      path: ['phoneNumber'],
-    })
-  }
 })
 
 export default defineEventHandler(async (event) => {
@@ -55,7 +39,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { enabled, phoneNumber } = validation.data
+  const { enabled } = validation.data
 
   // Get access token from cookie
   const accessToken = getCookie(event, 'kc_access')
@@ -129,46 +113,40 @@ export default defineEventHandler(async (event) => {
       })
     }) as any
 
-    // Update user attributes for 2FA
-    // In Keycloak, 2FA is typically handled via OTP credentials
-    // For now, we'll store phone number in user attributes
-    const updateUserUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}`
-    
-    const attributes = currentUser.attributes || {}
-    if (enabled && phoneNumber) {
-      attributes.phoneNumber = [phoneNumber]
-      attributes.twoFactorEnabled = ['true']
-    } else {
-      attributes.twoFactorEnabled = ['false']
-    }
+    // Remove TOTP credentials if disabling 2FA
+    if (!enabled) {
+      // Get user credentials
+      const getCredentialsUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}/credentials`
 
-    const updateData: any = {
-      ...currentUser,
-      attributes,
-    }
+      const credentials = await $fetch(getCredentialsUrl, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${adminTokenResponse.access_token}`,
+        },
+      }).catch(() => []) as any[]
 
-    await $fetch(updateUserUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${adminTokenResponse.access_token}`,
-      },
-      body: updateData,
-    }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/two-factor.put.ts] Failed to update user:', error)
+      // Find and remove OTP/TOTP credentials
+      const totpCreds = credentials.filter((cred: any) => cred.type === 'otp' || cred.type === 'otp-hmac-sha1')
+      
+      for (const cred of totpCreds) {
+        const deleteCredUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}/credentials/${cred.id}`
+        
+        await $fetch(deleteCredUrl, {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${adminTokenResponse.access_token}`,
+          },
+        }).catch((error: any) => {
+          if (process.env.NODE_ENV === 'development') {
+            console.error('[auth/two-factor.put.ts] Failed to delete credential:', error.statusCode || error.status)
+          }
+        })
       }
-      throw createError({
-        statusCode: 500,
-        statusMessage: 'Failed to update 2FA settings',
-      })
-    })
 
-    // Note: Actual 2FA implementation would require:
-    // 1. OTP credential setup in Keycloak
-    // 2. QR code generation for authenticator apps
-    // 3. SMS OTP provider integration for phone-based 2FA
-    // This is a basic implementation storing phone number
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[auth/two-factor.put.ts] TOTP credentials removed successfully')
+      }
+    }
 
     if (process.env.NODE_ENV === 'development') {
       console.log('[auth/two-factor.put.ts] 2FA settings updated successfully')

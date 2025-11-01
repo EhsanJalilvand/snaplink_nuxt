@@ -1,7 +1,5 @@
 <script setup lang="ts">
-import type { InputMask } from 'imask'
 import { toTypedSchema } from '@vee-validate/zod'
-import IMask from 'imask'
 import { Field, useForm } from 'vee-validate'
 import { z } from 'zod'
 
@@ -14,7 +12,6 @@ const VALIDATION_TEXT = {
   CURRENT_PASSWORD_REQUIRED: 'Your current password is required',
   NEW_PASSWORD_LENGTH: 'Password must be at least 6 characters with letters and numbers',
   NEW_PASSWORD_MATCH: 'Passwords do not match',
-  PHONE_REQUIRED: 'Phone number is required for 2FA',
 }
 
 // This is the Zod schema for the form input
@@ -23,10 +20,6 @@ const zodSchema = z
     currentPassword: z.string().optional(),
     newPassword: z.string().optional(),
     confirmPassword: z.string().optional(),
-    twoFactor: z.object({
-      enabled: z.boolean(),
-      phoneNumber: z.string().optional(),
-    }),
   })
   .superRefine((data, ctx) => {
     // Only validate password fields if at least one is provided
@@ -79,15 +72,6 @@ const zodSchema = z
         })
       }
     }
-
-    // Validate 2FA phone number only if 2FA is enabled
-    if (data.twoFactor.enabled && !data.twoFactor.phoneNumber) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: VALIDATION_TEXT.PHONE_REQUIRED,
-        path: ['twoFactor.phoneNumber'],
-      })
-    }
   })
 
 type FormInput = z.infer<typeof zodSchema>
@@ -97,10 +81,6 @@ const initialValues = {
   currentPassword: '',
   newPassword: '',
   confirmPassword: '',
-  twoFactor: {
-    enabled: false,
-    phoneNumber: '',
-  },
 } satisfies FormInput
 
 const {
@@ -117,21 +97,104 @@ const {
 const success = ref(false)
 const toaster = useNuiToasts()
 
-// Phone number mask
-const phoneInput = useTemplateRef<any>('phoneInput')
-const mask = shallowRef<InputMask<{ mask: string }> | undefined>(undefined)
+// 2FA state
+const twoFactorEnabled = ref(false)
+const isTwoFactorLoading = ref(false)
+const isSetupLoading = ref(false)
 
-watchEffect(() => {
-  if (phoneInput.value?.$el) {
-    mask.value = IMask(phoneInput.value.$el, {
-      mask: '(000) 000-0000',
+// Fetch 2FA status
+const fetchTwoFactorStatus = async () => {
+  isTwoFactorLoading.value = true
+  try {
+    const response = await $fetch('/api/auth/two-factor/status')
+    if (response.success) {
+      twoFactorEnabled.value = response.enabled
+    }
+  } catch (error: any) {
+    if (process.env.NODE_ENV === 'development') {
+      console.error('[security.vue] Failed to fetch 2FA status:', error)
+    }
+  } finally {
+    isTwoFactorLoading.value = false
+  }
+}
+
+// Setup 2FA
+const setupTwoFactor = async () => {
+  isSetupLoading.value = true
+  try {
+    const response = await $fetch('/api/auth/two-factor/setup', {
+      method: 'POST',
     })
-  }
 
-  return () => {
-    mask.value?.destroy()
-    mask.value = undefined
+    if (response.success) {
+      toaster.add({
+        title: 'Success',
+        description: 'Check your email for 2FA setup instructions',
+        icon: 'ph:check',
+        progress: true,
+      })
+      
+      // Refresh 2FA status after a short delay
+      setTimeout(() => {
+        fetchTwoFactorStatus()
+      }, 2000)
+    }
+  } catch (error: any) {
+    toaster.add({
+      title: 'Error',
+      description: error.message || 'Failed to setup 2FA',
+      icon: 'lucide:alert-triangle',
+      color: 'danger',
+      progress: true,
+    })
+  } finally {
+    isSetupLoading.value = false
   }
+}
+
+// Toggle 2FA
+const toggleTwoFactor = async () => {
+  if (twoFactorEnabled.value) {
+    // Disable 2FA
+    isTwoFactorLoading.value = true
+    try {
+      const response = await $fetch('/api/auth/two-factor', {
+        method: 'PUT',
+        body: {
+          enabled: false,
+        },
+      })
+
+      if (response.success) {
+        twoFactorEnabled.value = false
+        toaster.add({
+          title: 'Success',
+          description: '2FA has been disabled',
+          icon: 'ph:check',
+          progress: true,
+        })
+      }
+    } catch (error: any) {
+      toaster.add({
+        title: 'Error',
+        description: error.message || 'Failed to disable 2FA',
+        icon: 'lucide:alert-triangle',
+        color: 'danger',
+        progress: true,
+      })
+    } finally {
+      isTwoFactorLoading.value = false
+    }
+  } else {
+    // Enable 2FA - show setup option
+    setupTwoFactor()
+  }
+}
+
+// Fetch 2FA status on mount
+onMounted(() => {
+  fetchTwoFactorStatus()
 })
 
 const onSubmit = handleSubmit(async (values) => {
@@ -153,28 +216,6 @@ const onSubmit = handleSubmit(async (values) => {
         toaster.add({
           title: 'Success',
           description: 'Password has been changed!',
-          icon: 'ph:check',
-          progress: true,
-        })
-      }
-    }
-
-    // If 2FA is enabled/disabled, update 2FA settings
-    if (values.twoFactor.enabled !== initialValues.twoFactor.enabled) {
-      const twoFactorResponse = await $fetch('/api/auth/two-factor', {
-        method: 'PUT',
-        body: {
-          enabled: values.twoFactor.enabled,
-          phoneNumber: values.twoFactor.phoneNumber || undefined,
-        },
-      })
-
-      if (twoFactorResponse.success) {
-        toaster.add({
-          title: 'Success',
-          description: values.twoFactor.enabled
-            ? '2FA has been enabled!'
-            : '2FA has been disabled!',
           icon: 'ph:check',
           progress: true,
         })
@@ -352,54 +393,57 @@ const onSubmit = handleSubmit(async (values) => {
         </TairoFormGroup>
 
         <TairoFormGroup
-          label="2 Factor Authentication"
-          sublabel="Two factor authentication for additional security"
+          label="Two-Factor Authentication"
+          sublabel="Secure your account with an authenticator app"
         >
-          <div class="grid grid-cols-12 gap-4">
-            <div class="col-span-12">
-              <Field
-                v-slot="{ field, handleChange, handleBlur }"
-                name="twoFactor.enabled"
-              >
-                <BaseSwitchThin
-                  :model-value="field.value"
-                  :disabled="isSubmitting"
-                  label="Enable 2FA"
-                  sublabel="Toggle 2 factor authentication"
-                  variant="primary"
-                  @update:model-value="handleChange"
-                  @blur="handleBlur"
-                />
-              </Field>
+          <div class="space-y-4">
+            <div class="rounded-lg border border-muted-200 dark:border-muted-800 bg-white dark:bg-muted-950 p-4">
+              <div class="flex items-start justify-between gap-4">
+                <div class="flex-1">
+                  <div class="flex items-center gap-3 mb-2">
+                    <div class="w-10 h-10 bg-primary-100 dark:bg-primary-900/20 rounded-lg flex items-center justify-center">
+                      <Icon name="ph:shield-check-duotone" class="size-5 text-primary-600 dark:text-primary-400" />
+                    </div>
+                    <div>
+                      <BaseHeading size="sm" weight="semibold">Authenticator App</BaseHeading>
+                      <BaseParagraph size="xs" class="text-muted-500">
+                        Use Google Authenticator, Authy, or similar apps
+                      </BaseParagraph>
+                    </div>
+                  </div>
+                  
+                  <div v-if="twoFactorEnabled" class="mt-4 space-y-2">
+                    <div class="flex items-center gap-2 text-success-600 dark:text-success-500">
+                      <Icon name="ph:check-circle-fill" class="size-5" />
+                      <span class="text-sm font-medium">2FA is enabled</span>
+                    </div>
+                    <BaseParagraph size="xs" class="text-muted-500">
+                      Your account is protected with two-factor authentication
+                    </BaseParagraph>
+                  </div>
+                  <div v-else class="mt-4 space-y-2">
+                    <div class="flex items-center gap-2 text-muted-500">
+                      <Icon name="ph:x-circle" class="size-5" />
+                      <span class="text-sm">2FA is disabled</span>
+                    </div>
+                    <BaseParagraph size="xs" class="text-muted-500">
+                      Enable 2FA to add an extra layer of security to your account
+                    </BaseParagraph>
+                  </div>
+                </div>
+                
+                <div class="flex items-start">
+                  <BaseButton
+                    :variant="twoFactorEnabled ? 'danger' : 'primary'"
+                    :loading="isTwoFactorLoading || isSetupLoading"
+                    @click="toggleTwoFactor"
+                  >
+                    <Icon :name="twoFactorEnabled ? 'ph:shield-slash' : 'ph:shield-check'" class="size-4" />
+                    <span>{{ twoFactorEnabled ? 'Disable' : 'Enable' }} 2FA</span>
+                  </BaseButton>
+                </div>
+              </div>
             </div>
-
-            <Field
-              v-slot="{ field, errorMessage, handleChange, handleBlur }"
-              name="twoFactor.phoneNumber"
-            >
-              <BaseField
-                v-show="values.twoFactor?.enabled"
-                v-slot="{ inputAttrs }"
-                label="Phone Number"
-                :error="errorMessage"
-                :disabled="isSubmitting"
-                class="col-span-12"
-              >
-                <TairoInput
-                  ref="phoneInput"
-                  v-bind="inputAttrs"
-                  :model-value="field.value"
-                  :aria-invalid="errorMessage ? 'true' : undefined"
-                  type="tel"
-                  icon="ph:phone-duotone"
-                  placeholder="(000) 000-0000"
-                  autocomplete="tel"
-                  rounded="lg"
-                  @update:model-value="handleChange"
-                  @blur="handleBlur"
-                />
-              </BaseField>
-            </Field>
           </div>
         </TairoFormGroup>
       </div>
