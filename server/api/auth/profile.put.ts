@@ -112,6 +112,24 @@ export default defineEventHandler(async (event) => {
       })
     }) as any
 
+    // Get current user data
+    const getUserUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}`
+    
+    const currentUser = await $fetch(getUserUrl, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${adminTokenResponse.access_token}`,
+      },
+    }).catch((error: any) => {
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[auth/profile.put.ts] Failed to get user:', error)
+      }
+      throw createError({
+        statusCode: 404,
+        statusMessage: 'User not found',
+      })
+    }) as any
+
     // Check if email is already taken by another user
     if (email) {
       const searchUsersUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users`
@@ -139,23 +157,8 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    // Get current user data
-    const getUserUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}`
-    
-    const currentUser = await $fetch(getUserUrl, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${adminTokenResponse.access_token}`,
-      },
-    }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/profile.put.ts] Failed to get user:', error)
-      }
-      throw createError({
-        statusCode: 404,
-        statusMessage: 'User not found',
-      })
-    }) as any
+    // Check if email is changing
+    const isEmailChanging = email && email !== currentUser.email
 
     // Update user in Keycloak
     const updateUserUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}`
@@ -168,7 +171,7 @@ export default defineEventHandler(async (event) => {
     }
 
     // If email changed, mark as unverified
-    if (email && email !== currentUser.email) {
+    if (isEmailChanging) {
       updateData.emailVerified = false
     }
 
