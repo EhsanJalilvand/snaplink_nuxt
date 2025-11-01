@@ -1,20 +1,29 @@
 export default defineNuxtPlugin(async () => {
-  const { initKeycloak, handleCallback, isAuthenticated } = useKeycloak()
-  
-  // Initialize Keycloak on app start (client-side only)
+  // Initialize Keycloak on ALL routes to preserve state after refresh
   if (process.client) {
+    const { initKeycloak, handleCallback, isAuthenticated, checkAuth } = useKeycloak()
+    const route = useRoute()
+    
     try {
+      // First, check authentication from server (reads HttpOnly cookies)
+      // This ensures state is restored even after page refresh
+      await checkAuth()
+      
+      // Initialize Keycloak if not already initialized
+      // This will restore SSO state if user was logged in
       await initKeycloak()
       
-      // Check if we're on the callback route
-      const route = useRoute()
+      // Check authentication again after Keycloak initialization
+      // This ensures state is synced between cookie and Keycloak
+      await checkAuth()
+      
+      // Handle callback route
       if (route.path === '/auth/callback') {
         console.log('[keycloak.client.ts] Handling callback...')
         const success = await handleCallback()
         
         if (success && isAuthenticated.value) {
           console.log('[keycloak.client.ts] Callback successful, redirecting to dashboard')
-          // Wait a bit to ensure state is updated
           await new Promise(resolve => setTimeout(resolve, 200))
           await navigateTo('/dashboard')
         } else {
@@ -23,7 +32,7 @@ export default defineNuxtPlugin(async () => {
         }
       }
     } catch (error) {
-      console.error('Failed to initialize Keycloak:', error)
+      console.error('[keycloak.client.ts] Failed to initialize Keycloak:', error)
     }
   }
 })

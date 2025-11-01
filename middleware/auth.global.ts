@@ -1,26 +1,47 @@
 export default defineNuxtRouteMiddleware(async (to) => {
-  if (process.server) {
+  // Allow public access to home page - skip auth check
+  if (to.path === '/') {
     return
   }
 
-  const { isAuthenticated: isAuthCustom } = useAuth()
-  const { isAuthenticated: isAuthKeycloak, checkAuth: checkKeycloak } = useKeycloak()
+  // Skip auth check for other public routes (not dashboard, not auth)
+  if (!to.path.startsWith('/dashboard') && !to.path.startsWith('/auth')) {
+    return
+  }
 
-  // Check Keycloak authentication status
-  await checkKeycloak()
+  // For protected routes (dashboard) - check authentication from cookie
+  if (to.path.startsWith('/dashboard')) {
+    try {
+      // Check authentication from server (reads HttpOnly cookies)
+      const userResponse = await $fetch('/api/auth/me')
 
-  // Check if user is authenticated (either Keycloak or custom)
-  const isAuthenticated = isAuthCustom.value || isAuthKeycloak.value
+      // If user is not authenticated, redirect to login
+      if (!userResponse.success || !userResponse.user || !userResponse.isAuthenticated) {
+        return navigateTo('/auth/login')
+      }
 
-  // If user is not authenticated and trying to access protected routes
-  if (!isAuthenticated && to.path.startsWith('/dashboard')) {
-    return navigateTo('/auth/login')
+      return
+    }
+    catch (error) {
+      console.error('[auth.global.ts] Error checking auth:', error)
+      // On error, redirect to login (fail-secure)
+      return navigateTo('/auth/login')
+    }
   }
 
   // If user is authenticated and trying to access auth pages (except callback)
-  if (isAuthenticated && to.path.startsWith('/auth/') && !to.path.includes('/callback')) {
-    return navigateTo('/dashboard')
+  if (to.path.startsWith('/auth/') && !to.path.includes('/callback')) {
+    try {
+      // Check authentication from server (reads HttpOnly cookies)
+      const userResponse = await $fetch('/api/auth/me')
+
+      if (userResponse.success && userResponse.user && userResponse.isAuthenticated) {
+        return navigateTo('/dashboard')
+      }
+    }
+    catch (error) {
+      // If error, allow access to auth pages
+      console.error('[auth.global.ts] Error checking auth:', error)
+    }
   }
 })
-
-

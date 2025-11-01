@@ -1,45 +1,86 @@
 export default defineEventHandler(async (event) => {
   try {
-    // Check if user has auth token
-    const authToken = getCookie(event, 'auth_token')
+    // Check if user has Keycloak access token
+    const accessToken = getCookie(event, 'kc_access')
     
-    if (!authToken) {
-      throw createError({
-        statusCode: 401,
-        statusMessage: 'Not authenticated',
-      })
+    if (!accessToken) {
+      return { 
+        success: false,
+        user: null,
+        isAuthenticated: false 
+      }
     }
 
-    // Test data for development
-    if (authToken === 'fake-jwt-token') {
+    const config = useRuntimeConfig()
+    const keycloakUrl = config.public.keycloakUrl || config.keycloakUrl || 'http://localhost:8080'
+    const keycloakRealm = config.public.keycloakRealm || config.keycloakRealm || 'master'
+
+    try {
+      // Get user info from Keycloak
+      const userInfo = await $fetch(
+        `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/userinfo`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`
+          }
+        }
+      )
+
+      // Parse token to get roles and other info
+      let tokenParsed: any = null
+      try {
+        const tokenParts = accessToken.split('.')
+        if (tokenParts.length === 3) {
+          const payload = Buffer.from(tokenParts[1], 'base64').toString('utf-8')
+          tokenParsed = JSON.parse(payload)
+        }
+      } catch (parseError) {
+        console.error('[auth/me.get.ts] Error parsing token:', parseError)
+      }
+
+      const realmAccess = tokenParsed?.realm_access?.roles || []
+      const resourceAccess = tokenParsed?.resource_access?.[config.keycloakClientId || 'my-client']?.roles || []
+      const allRoles = [...realmAccess, ...resourceAccess]
+
+      const user = {
+        id: userInfo.sub || tokenParsed?.sub || '',
+        username: userInfo.preferred_username || userInfo.username || '',
+        email: userInfo.email || '',
+        firstName: userInfo.given_name || userInfo.firstName,
+        lastName: userInfo.family_name || userInfo.lastName,
+        emailVerified: userInfo.email_verified || tokenParsed?.email_verified || false,
+        roles: allRoles,
+      }
+
+      console.log('[auth/me.get.ts] User info retrieved:', user.username)
+
       return {
         success: true,
-        user: {
-          id: 1,
-          username: 'admin',
-          email: 'admin@admin.com',
-          firstName: 'Admin',
-          lastName: 'User',
-          emailVerified: true,
-          roles: ['admin', 'user']
-        }
+        user,
+        isAuthenticated: true
       }
-    } else {
-      throw createError({
-        statusCode: 401,
-        statusMessage: 'Invalid token',
-      })
+    } catch (keycloakError: any) {
+      console.error('[auth/me.get.ts] Keycloak error:', keycloakError)
+      
+      // If token is invalid/expired, clear cookies
+      if (keycloakError.statusCode === 401 || keycloakError.status === 401) {
+        deleteCookie(event, 'kc_access')
+        deleteCookie(event, 'kc_refresh')
+      }
+
+      return {
+        success: false,
+        user: null,
+        isAuthenticated: false
+      }
     }
   } catch (error: any) {
-    console.error('Get user error:', error)
+    console.error('[auth/me.get.ts] Error:', error)
     
-    if (error.statusCode) {
-      throw error
+    return {
+      success: false,
+      user: null,
+      isAuthenticated: false
     }
-    
-    throw createError({
-      statusCode: 500,
-      statusMessage: 'Failed to get user info',
-    })
   }
 })

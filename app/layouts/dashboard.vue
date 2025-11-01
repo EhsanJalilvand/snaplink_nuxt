@@ -6,20 +6,42 @@ import { useAppLocale } from '~/composables/useLocale'
 const currentLocale = useAppLocale()
 const { open } = usePanels()
 
-// Keycloak authentication
-const { user, isAuthenticated, logout } = useKeycloak()
+// Keycloak authentication - check auth on mount to restore state after refresh
+const { user, isAuthenticated, logout, checkAuth } = useKeycloak()
 
-// Get user display name
+// Fetch user from server on mount and when route changes (for refresh)
+const { data: userData, refresh: refreshUser } = useFetch('/api/auth/me', {
+  immediate: true,
+  default: () => ({ success: false, user: null, isAuthenticated: false }),
+})
+
+// Sync server user data with composable state
+watch(userData, (newData) => {
+  if (newData?.success && newData?.user) {
+    // Update composable state from server data
+    checkAuth()
+  }
+}, { immediate: true })
+
+// Also check auth on mount to ensure state is synced
+onMounted(async () => {
+  await checkAuth()
+})
+
+// Get user display name - prioritize server data, fallback to composable state
 const userDisplayName = computed(() => {
-  if (!user.value) return ''
-  return user.value.firstName 
-    ? `${user.value.firstName} ${user.value.lastName || ''}`.trim()
-    : user.value.username || user.value.email || 'User'
+  const currentUser = userData.value?.user || user.value
+  if (!currentUser) return ''
+  return currentUser.firstName
+    ? `${currentUser.firstName} ${currentUser.lastName || ''}`.trim()
+    : currentUser.username || currentUser.email || 'User'
 })
 
 // Handle logout
 const handleLogout = async () => {
   await logout()
+  // Refresh user data after logout
+  await refreshUser()
 }
 
 const menu = [
@@ -308,7 +330,7 @@ function getRouteSidebarId() {
 
           <!-- User Menu -->
           <BaseDropdown
-            v-if="isAuthenticated && user"
+            v-if="(isAuthenticated || userData?.isAuthenticated) && (user || userData?.user)"
             variant="default"
             :bindings="{
               content: {
