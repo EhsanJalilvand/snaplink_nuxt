@@ -9,39 +9,17 @@ const { open } = usePanels()
 // Keycloak authentication - check auth on mount to restore state after refresh
 const { user, isAuthenticated, logout, checkAuth } = useKeycloak()
 
-// Fetch user from server on mount and when route changes (for refresh)
-const { data: userData, refresh: refreshUser } = useFetch('/api/auth/me', {
-  immediate: true,
-  default: () => ({ success: false, user: null, isAuthenticated: false }),
-})
-
-// Sync server user data with composable state
-watch(userData, (newData) => {
-  if (newData?.success && newData?.user) {
-    // Update composable state from server data
-    checkAuth()
-  }
-}, { immediate: true })
+// Use shared user data composable for consistent state across all components
+const { user: sharedUser, userDisplayName } = useUserData()
 
 // Also check auth on mount to ensure state is synced
 onMounted(async () => {
   await checkAuth()
 })
 
-// Get user display name - prioritize server data, fallback to composable state
-const userDisplayName = computed(() => {
-  const currentUser = userData.value?.user || user.value
-  if (!currentUser) return ''
-  return currentUser.firstName
-    ? `${currentUser.firstName} ${currentUser.lastName || ''}`.trim()
-    : currentUser.username || currentUser.email || 'User'
-})
-
 // Handle logout
 const handleLogout = async () => {
   await logout()
-  // Refresh user data after logout
-  await refreshUser()
 }
 
 // Open Keycloak Account Console
@@ -175,7 +153,7 @@ function getRouteSidebarId() {
           <TairoSidebarLink to="/dashboard/settings">
             <BaseChip size="sm" color="custom" :offset="3" class="text-green-600 flex items-center justify-center">
               <BaseAvatar
-                v-if="userData?.user"
+                v-if="sharedUser"
                 size="xs"
                 :src="`https://ui-avatars.com/api/?name=${encodeURIComponent(userDisplayName)}&background=6366f1&color=fff`"
               />
@@ -256,7 +234,7 @@ function getRouteSidebarId() {
 
           <!-- User Menu -->
           <BaseDropdown
-            v-if="(isAuthenticated || userData?.isAuthenticated) && (user || userData?.user)"
+            v-if="(isAuthenticated || sharedUser) && (user || sharedUser)"
             variant="default"
             :bindings="{
               content: {

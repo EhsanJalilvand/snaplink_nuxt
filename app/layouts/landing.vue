@@ -12,19 +12,14 @@ const { t } = useTranslations()
 // Keycloak authentication
 const { user, isAuthenticated, logout, checkAuth } = useKeycloak()
 
+// Use shared user data composable for consistent state across all components
+const { userDisplayName } = useUserData()
+
 // Check authentication status when layout mounts
 onMounted(async () => {
   if (process.client) {
     await checkAuth()
   }
-})
-
-// Get user display name
-const userDisplayName = computed(() => {
-  if (!user.value) return ''
-  return user.value.firstName 
-    ? `${user.value.firstName} ${user.value.lastName || ''}`.trim()
-    : user.value.username || user.value.email || 'User'
 })
 
 // Handle logout

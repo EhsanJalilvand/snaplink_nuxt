@@ -4,9 +4,8 @@ definePageMeta({
   layout: 'dashboard',
 })
 
-// Fetch user data
+// Fetch user data - share cache with dashboard layout
 const { data: userData } = useFetch('/api/auth/me', {
-  key: 'user-settings-data',
   default: () => ({ success: false, user: null, isAuthenticated: false }),
 })
 

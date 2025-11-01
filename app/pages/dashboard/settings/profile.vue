@@ -34,11 +34,8 @@ type FormInput = z.infer<typeof zodSchema>
 
 const validationSchema = toTypedSchema(zodSchema)
 
-// Fetch user data
-const { data: userData, refresh: refreshUser } = useFetch('/api/auth/me', {
-  key: 'user-profile-data',
-  default: () => ({ success: false, user: null, isAuthenticated: false }),
-})
+// Use shared user data composable for consistent state across all components
+const { user: sharedUser, refreshUser } = useUserData()
 
 const {
   handleSubmit,
@@ -62,7 +59,7 @@ const toaster = useNuiToasts()
 const router = useRouter()
 
 // Watch for user data changes to update form - only on client side
-watch(() => userData.value?.user, (newUser) => {
+watch(sharedUser, (newUser) => {
   if (newUser) {
     nextTick(() => {
       setFieldValue('firstName', newUser.firstName || '')
@@ -75,10 +72,10 @@ watch(() => userData.value?.user, (newUser) => {
 // Also update on mount to ensure values are set
 onMounted(() => {
   nextTick(() => {
-    if (userData.value?.user) {
-      setFieldValue('firstName', userData.value.user.firstName || '')
-      setFieldValue('lastName', userData.value.user.lastName || '')
-      setFieldValue('email', userData.value.user.email || '')
+    if (sharedUser.value) {
+      setFieldValue('firstName', sharedUser.value.firstName || '')
+      setFieldValue('lastName', sharedUser.value.lastName || '')
+      setFieldValue('email', sharedUser.value.email || '')
     }
   })
 })
@@ -98,8 +95,12 @@ const onSubmit = handleSubmit(async (values) => {
     })
 
     if (response.success) {
-      // Refresh user data
+      // Refresh all user data from server (shared cache)
       await refreshUser()
+      
+      // Also refresh Keycloak state to update layout
+      const { checkAuth: refreshAuth } = useKeycloak()
+      await refreshAuth()
 
       toaster.add({
         title: 'Success',
