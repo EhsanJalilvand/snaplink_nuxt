@@ -108,9 +108,6 @@ export default defineNuxtConfig({
     '/analytics/**': {
       swr: 3600,
     },
-    '/settings/**': {
-      swr: 3600,
-    },
   },
 
   sourcemap: {

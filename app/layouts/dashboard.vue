@@ -64,89 +64,6 @@ const menu = [
         icon: 'solar:chart-linear',
         to: '/dashboard',
       },
-      {
-        label: 'Quick Stats',
-        icon: 'solar:graph-up-linear',
-        to: '/dashboard/stats',
-      },
-    ],
-  },
-  {
-    label: 'Links',
-    icon: 'solar:link-linear',
-    links: [
-      {
-        label: 'All Links',
-        icon: 'solar:list-linear',
-        to: '/links',
-      },
-      {
-        label: 'Create Link',
-        icon: 'solar:add-circle-linear',
-        to: '/links/create',
-      },
-      {
-        label: 'Bulk Import',
-        icon: 'solar:upload-linear',
-        to: '/links/import',
-      },
-    ],
-  },
-  {
-    label: 'Analytics',
-    icon: 'solar:chart-2-linear',
-    links: [
-      {
-        label: 'Overview',
-        icon: 'solar:pie-chart-2-linear',
-        to: '/analytics',
-      },
-      {
-        label: 'Traffic',
-        icon: 'solar:chart-square-linear',
-        to: '/analytics/traffic',
-      },
-      {
-        label: 'Geographic',
-        icon: 'solar:map-linear',
-        to: '/analytics/geographic',
-      },
-      {
-        label: 'Devices',
-        icon: 'solar:smartphone-linear',
-        to: '/analytics/devices',
-      },
-    ],
-  },
-  {
-    label: 'Utility',
-    icon: 'solar:home-smile-linear',
-    links: [
-      {
-        label: 'Invoice v2',
-        icon: 'solar:document-linear',
-        to: '/layouts/utility-invoice-2',
-      },
-      {
-        label: 'Invoice v1',
-        icon: 'solar:invoice-linear',
-        to: '/layouts/utility-invoice',
-      },
-      {
-        label: 'Action v1',
-        icon: 'solar:shield-user-linear',
-        to: '/layouts/utility-action-1',
-      },
-      {
-        label: 'Action v2',
-        icon: 'solar:shield-check-linear',
-        to: '/layouts/utility-action-2',
-      },
-      {
-        label: 'System Status',
-        icon: 'solar:server-path-linear',
-        to: '/layouts/utility-status',
-      },
     ],
   },
   {
@@ -154,24 +71,19 @@ const menu = [
     icon: 'solar:settings-linear',
     links: [
       {
-        label: 'General',
+        label: 'Account Settings',
         icon: 'solar:settings-linear',
-        to: '/settings',
+        to: '/dashboard/settings',
       },
       {
-        label: 'API Keys',
-        icon: 'solar:key-linear',
-        to: '/settings/api',
+        label: 'Profile',
+        icon: 'solar:user-linear',
+        to: '/dashboard/settings/profile',
       },
       {
-        label: 'Team',
-        icon: 'solar:users-group-linear',
-        to: '/settings/team',
-      },
-      {
-        label: 'Billing',
-        icon: 'solar:card-linear',
-        to: '/settings/billing',
+        label: 'Security',
+        icon: 'solar:lock-keyhole-linear',
+        to: '/dashboard/settings/security',
       },
     ],
   },
@@ -253,18 +165,19 @@ function getRouteSidebarId() {
               portal: { disabled: true },
             }"
           >
-            <TairoSidebarLink to="/settings">
+            <TairoSidebarLink to="/dashboard/settings">
               <Icon name="solar:settings-linear" class="size-5" />
             </TairoSidebarLink>
           </BaseTooltip>
           <TairoSidebarLink>
             <BaseThemeToggle class="scale-90" />
           </TairoSidebarLink>
-          <TairoSidebarLink to="/settings/profile">
-            <BaseChip size="sm" pulse color="custom" :offset="3" class="text-green-600 flex items-center justify-center">
+          <TairoSidebarLink to="/dashboard/settings">
+            <BaseChip size="sm" color="custom" :offset="3" class="text-green-600 flex items-center justify-center">
               <BaseAvatar
+                v-if="userData?.user"
                 size="xs"
-                src="/img/avatars/10.svg"
+                :src="`https://ui-avatars.com/api/?name=${encodeURIComponent(userDisplayName)}&background=6366f1&color=fff`"
               />
             </BaseChip>
           </TairoSidebarLink>
@@ -372,13 +285,11 @@ function getRouteSidebarId() {
               <Icon name="solar:user-linear" class="size-4" />
               <span>Dashboard</span>
             </BaseDropdownItem>
-            <BaseDropdownItem 
-              @click="openKeycloakAccount"
-            >
+            <BaseDropdownItem to="/dashboard/settings">
               <Icon name="solar:settings-linear" class="size-4" />
               <span>Account Settings</span>
             </BaseDropdownItem>
-            <BaseDropdownDivider />
+            <BaseDropdownSeparator />
             <BaseDropdownItem @click="handleLogout">
               <Icon name="ph:sign-out" class="size-4" />
               <span>Logout</span>

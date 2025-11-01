@@ -28,36 +28,41 @@ export default defineEventHandler(async (event) => {
     }
 
     // Try to get user info from Keycloak userinfo endpoint
+    // Skip if we already know it fails to reduce warning spam
     let userInfo: any = null
-    try {
-      userInfo = await $fetch(
-        `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/userinfo`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`
+    const skipUserInfo = getCookie(event, 'skip_userinfo')
+    
+    if (!skipUserInfo) {
+      try {
+        userInfo = await $fetch(
+          `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/userinfo`,
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`
+            }
+          }
+        )
+      } catch (keycloakError: any) {
+        // If userinfo endpoint fails (403, 401, etc.), use token data instead
+        // Set cookie to skip userinfo on future requests to reduce warnings
+        if (keycloakError.statusCode === 403 || keycloakError.status === 403) {
+          setCookie(event, 'skip_userinfo', '1', { maxAge: 60 * 60 }) // Skip for 1 hour
+        }
+        
+        // If token is invalid/expired (401), clear cookies
+        if (keycloakError.statusCode === 401 || keycloakError.status === 401) {
+          deleteCookie(event, 'kc_access')
+          deleteCookie(event, 'kc_refresh')
+          return {
+            success: false,
+            user: null,
+            isAuthenticated: false
           }
         }
-      )
-    } catch (keycloakError: any) {
-      // If userinfo endpoint fails (403, 401, etc.), use token data instead
-      // This can happen if userinfo endpoint is not accessible or client settings are incorrect
-      if (process.env.NODE_ENV === 'development') {
-        console.warn('[auth/me.get.ts] Userinfo endpoint failed, using token data:', keycloakError.statusCode || keycloakError.status)
+        
+        // For other errors (403, etc.), continue with token data
+        // Don't return error, use token parsed data instead
       }
-      
-      // If token is invalid/expired (401), clear cookies
-      if (keycloakError.statusCode === 401 || keycloakError.status === 401) {
-        deleteCookie(event, 'kc_access')
-        deleteCookie(event, 'kc_refresh')
-        return {
-          success: false,
-          user: null,
-          isAuthenticated: false
-        }
-      }
-      
-      // For other errors (403, etc.), continue with token data
-      // Don't return error, use token parsed data instead
     }
 
     // Extract roles from token
@@ -67,11 +72,12 @@ export default defineEventHandler(async (event) => {
     const allRoles = [...realmAccess, ...resourceAccess]
 
     // Build user object - prioritize userInfo from endpoint, fallback to token data
+    // Note: Keycloak uses given_name/family_name, not firstName/lastName
     const user = {
       id: userInfo?.sub || tokenParsed?.sub || '',
       username: userInfo?.preferred_username || userInfo?.username || tokenParsed?.preferred_username || tokenParsed?.username || '',
       email: userInfo?.email || tokenParsed?.email || '',
-      firstName: userInfo?.given_name || userInfo?.firstName || tokenParsed?.given_name || tokenParsed?.firstName || '',
+      firstName: userInfo?.given_name || userInfo?.firstName || tokenParsed?.given_name || tokenParsed?.firstName || tokenParsed?.preferred_username || '',
       lastName: userInfo?.family_name || userInfo?.lastName || tokenParsed?.family_name || tokenParsed?.lastName || '',
       emailVerified: userInfo?.email_verified || tokenParsed?.email_verified || false,
       roles: allRoles,

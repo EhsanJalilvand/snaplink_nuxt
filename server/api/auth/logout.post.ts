@@ -30,6 +30,7 @@ export default defineEventHandler(async (event) => {
     // Clear Keycloak cookies
     deleteCookie(event, 'kc_access')
     deleteCookie(event, 'kc_refresh')
+    deleteCookie(event, 'skip_userinfo')
     
     // Also clear old cookies if they exist
     deleteCookie(event, 'access_token')
@@ -47,6 +48,7 @@ export default defineEventHandler(async (event) => {
     // Even if Keycloak logout fails, we should still clear cookies
     deleteCookie(event, 'kc_access')
     deleteCookie(event, 'kc_refresh')
+    deleteCookie(event, 'skip_userinfo')
     deleteCookie(event, 'access_token')
     deleteCookie(event, 'refresh_token')
 
