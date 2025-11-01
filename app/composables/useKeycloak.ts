@@ -79,7 +79,7 @@ export const useKeycloak = () => {
       const keycloakConfig = {
         url: runtimeConfig.public.keycloakUrl,
         realm: runtimeConfig.public.keycloakRealm,
-        clientId: runtimeConfig.public.keycloakClientId || 'my-client',
+        clientId: 'my-client', // Direct value - use my-client
         checkLoginIframe: false,
         enableLogging: process.env.NODE_ENV === 'development',
       }
@@ -89,8 +89,8 @@ export const useKeycloak = () => {
       state.keycloak = keycloakInstance
       console.log('[useKeycloak.ts] Keycloak instance created, clientId:', keycloakInstance.clientId)
 
-      // Get redirect URI from config
-      const redirectUri = runtimeConfig.public.keycloakRedirectUri || `${runtimeConfig.public.siteUrl || 'http://localhost:3000'}/auth/callback`
+      // Get redirect URI - use direct value
+      const redirectUri = 'http://localhost:3000/auth/callback' // Direct value
       console.log('[useKeycloak.ts] init() - redirectUri:', redirectUri)
 
       // Initialize Keycloak with PKCE - use 'check-sso' to restore state silently
@@ -292,26 +292,64 @@ export const useKeycloak = () => {
 
   // Register (redirect to Keycloak registration)
   const register = async (redirectUri?: string) => {
-    if (!keycloakInstance && process.client) {
-      await initKeycloak()
-    }
-
-    if (!keycloakInstance) {
-      throw new Error('Keycloak not initialized')
+    if (process.server) {
+      return
     }
 
     try {
-      // Use direct value to avoid config issues
-      const currentUri = redirectUri || 'http://localhost:3000/auth/callback' // Direct value - not reading from config
-      keycloakInstance.register({
-        redirectUri: currentUri,
-        pkceMethod: 'S256',
-      })
+      const runtimeConfig = getConfig()
+      const keycloakUrl = runtimeConfig.public.keycloakUrl || runtimeConfig.keycloakUrl || 'http://localhost:8080'
+      const keycloakRealm = runtimeConfig.public.keycloakRealm || runtimeConfig.keycloakRealm || 'master'
+      const clientId = 'my-client' // Direct value - use my-client
+      const siteUrl = runtimeConfig.public.siteUrl || 'http://localhost:3000'
+      const currentUri = redirectUri || 'http://localhost:3000/auth/callback' // Direct value
+      
+      // Generate PKCE code verifier and challenge
+      const codeVerifier = generateRandomString(128)
+      const codeChallenge = await sha256(codeVerifier)
+      
+      // Store code verifier for later use
+      if (process.client) {
+        sessionStorage.setItem('pkce_code_verifier', codeVerifier)
+      }
+      
+      // Use direct Keycloak registration URL
+      // This endpoint must be enabled in Keycloak Realm Settings > Login > Registration
+      const registrationUrl = `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/registrations?client_id=${encodeURIComponent(clientId)}&response_type=code&scope=openid%20profile%20email&redirect_uri=${encodeURIComponent(currentUri)}&code_challenge=${codeChallenge}&code_challenge_method=S256`
+      
+      console.log('[useKeycloak.ts] Redirecting to registration:', registrationUrl)
+      
+      // Redirect to Keycloak registration page
+      if (process.client) {
+        window.location.href = registrationUrl
+      }
     } catch (error: any) {
       console.error('Keycloak register error:', error)
       state.error = error.message || 'Registration failed'
       throw error
     }
+  }
+
+  // Helper function to generate random string
+  const generateRandomString = (length: number): string => {
+    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~'
+    let text = ''
+    for (let i = 0; i < length; i++) {
+      text += possible.charAt(Math.floor(Math.random() * possible.length))
+    }
+    return text
+  }
+
+  // Helper function to generate SHA256 hash
+  const sha256 = async (plain: string): Promise<string> => {
+    const encoder = new TextEncoder()
+    const data = encoder.encode(plain)
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+    const hashArray = Array.from(new Uint8Array(hashBuffer))
+    return btoa(String.fromCharCode(...hashArray))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '')
   }
 
   // Logout

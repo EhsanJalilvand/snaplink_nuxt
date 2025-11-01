@@ -147,6 +147,22 @@ const menu = computed(() => [
           >
             {{ item.label }}
           </NuxtLink>
+          <!-- Language Selector (Mobile) -->
+          <div class="pt-2 border-t border-muted-200 dark:border-muted-700">
+            <button
+              type="button"
+              class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-600 dark:text-muted-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-muted-50 dark:hover:bg-muted-800 rounded-md transition-colors w-full justify-start"
+              @click="open(SnapLinkPanelLanguage)"
+            >
+              <img
+                class="size-5 rounded-full"
+                :src="getLocaleFlag(currentLocale)"
+                alt="flag icon"
+              >
+              <span>{{ currentLocale }}</span>
+            </button>
+          </div>
+
           <!-- Auth Buttons (Mobile) -->
           <div v-if="!isAuthenticated" class="pt-2 border-t border-muted-200 dark:border-muted-700">
             <div class="flex flex-col space-y-2">

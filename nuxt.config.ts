@@ -84,8 +84,8 @@ export default defineNuxtConfig({
       appName: process.env.NUXT_PUBLIC_APP_NAME || 'SnapLink',
       keycloakUrl: process.env.KEYCLOAK_URL || 'http://localhost:8080',
       keycloakRealm: process.env.KEYCLOAK_REALM || 'master',
-      keycloakClientId: 'my-client', // Direct value - not reading from env
-      keycloakRedirectUri: 'http://localhost:3000/auth/callback',
+      keycloakClientId: process.env.KEYCLOAK_CLIENT_ID || 'my-client', // Read from env
+      keycloakRedirectUri: process.env.KEYCLOAK_REDIRECT_URI || 'http://localhost:3000/auth/callback',
     },
   },
 
