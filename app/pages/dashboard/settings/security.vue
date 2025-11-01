@@ -145,6 +145,7 @@ const onSubmit = handleSubmit(async (values) => {
         body: {
           currentPassword: values.currentPassword,
           newPassword: values.newPassword,
+          confirmPassword: values.confirmPassword,
         },
       })
 

@@ -27,12 +27,43 @@ export default defineEventHandler(async (event) => {
       console.error('[auth/me.get.ts] Error parsing token:', parseError)
     }
 
-    // Try to get user info from Keycloak userinfo endpoint
-    // Skip if we already know it fails to reduce warning spam
+    // Try to get user info from Admin API for accurate data
     let userInfo: any = null
     const skipUserInfo = getCookie(event, 'skip_userinfo')
     
-    if (!skipUserInfo) {
+    // If userinfo endpoint is not working, use Admin API
+    if (skipUserInfo && tokenParsed?.sub) {
+      try {
+        // Get admin token for user operations
+        const adminTokenUrl = `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/token`
+        
+        const adminTokenResponse = await $fetch(adminTokenUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({
+            grant_type: 'client_credentials',
+            client_id: config.keycloakClientId || 'my-client',
+            client_secret: config.keycloakClientSecret || '0fA6K2dgvnr2ZZlt6mW0GcPad7ThGqvp',
+          }),
+        }) as any
+
+        // Get user from Admin API
+        const getUserUrl = `${keycloakUrl}/admin/realms/${keycloakRealm}/users/${tokenParsed.sub}`
+        userInfo = await $fetch(getUserUrl, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${adminTokenResponse.access_token}`,
+          },
+        })
+      } catch (adminError: any) {
+        if (process.env.NODE_ENV === 'development') {
+          console.error('[auth/me.get.ts] Admin API failed, using token data:', adminError.statusCode || adminError.status)
+        }
+      }
+    } else if (!skipUserInfo) {
+      // Try userinfo endpoint first
       try {
         userInfo = await $fetch(
           `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/userinfo`,
@@ -43,8 +74,7 @@ export default defineEventHandler(async (event) => {
           }
         )
       } catch (keycloakError: any) {
-        // If userinfo endpoint fails (403, 401, etc.), use token data instead
-        // Set cookie to skip userinfo on future requests to reduce warnings
+        // If userinfo endpoint fails (403, 401, etc.), set cookie to skip
         if (keycloakError.statusCode === 403 || keycloakError.status === 403) {
           setCookie(event, 'skip_userinfo', '1', { maxAge: 60 * 60 }) // Skip for 1 hour
         }
@@ -74,18 +104,18 @@ export default defineEventHandler(async (event) => {
     // Build user object - prioritize userInfo from endpoint, fallback to token data
     // Note: Keycloak uses given_name/family_name, not firstName/lastName
     const user = {
-      id: userInfo?.sub || tokenParsed?.sub || '',
+      id: userInfo?.sub || userInfo?.id || tokenParsed?.sub || '',
       username: userInfo?.preferred_username || userInfo?.username || tokenParsed?.preferred_username || tokenParsed?.username || '',
       email: userInfo?.email || tokenParsed?.email || '',
-      firstName: userInfo?.given_name || userInfo?.firstName || tokenParsed?.given_name || tokenParsed?.firstName || tokenParsed?.preferred_username || '',
-      lastName: userInfo?.family_name || userInfo?.lastName || tokenParsed?.family_name || tokenParsed?.lastName || '',
-      emailVerified: userInfo?.email_verified || tokenParsed?.email_verified || false,
+      firstName: userInfo?.firstName || userInfo?.given_name || tokenParsed?.given_name || tokenParsed?.firstName || tokenParsed?.preferred_username || '',
+      lastName: userInfo?.lastName || userInfo?.family_name || tokenParsed?.family_name || tokenParsed?.lastName || '',
+      emailVerified: userInfo?.emailVerified || userInfo?.email_verified || tokenParsed?.email_verified || false,
       roles: allRoles,
     }
 
     // Debug: Log token structure in development (without sensitive data)
     if (process.env.NODE_ENV === 'development') {
-      console.log('[auth/me.get.ts] User info retrieved', userInfo ? 'from userinfo endpoint' : 'from token')
+      console.log('[auth/me.get.ts] User info retrieved', userInfo ? (userInfo.id ? 'from Admin API' : 'from userinfo endpoint') : 'from token')
       console.log('[auth/me.get.ts] Token fields:', {
         has_given_name: !!(tokenParsed?.given_name),
         has_family_name: !!(tokenParsed?.family_name),
