@@ -44,6 +44,16 @@ const handleLogout = async () => {
   await refreshUser()
 }
 
+// Open Keycloak Account Console
+const openKeycloakAccount = () => {
+  const keycloakUrl = config.public.keycloakUrl || 'http://localhost:8080'
+  const keycloakRealm = config.public.keycloakRealm || 'master'
+  const accountUrl = `${keycloakUrl}/realms/${keycloakRealm}/account`
+  
+  // Open in new tab - Keycloak will handle SSO authentication
+  window.open(accountUrl, '_blank')
+}
+
 const menu = [
   {
     label: 'Dashboard',
@@ -173,6 +183,9 @@ const sidebarId = ref(getRouteSidebarId())
 watch(() => route.path, () => {
   sidebarId.value = getRouteSidebarId()
 })
+
+// Get runtime config
+const config = useRuntimeConfig()
 
 function getRouteSidebarId() {
   // search for the active menu item
@@ -359,9 +372,11 @@ function getRouteSidebarId() {
               <Icon name="solar:user-linear" class="size-4" />
               <span>Dashboard</span>
             </BaseDropdownItem>
-            <BaseDropdownItem to="/settings">
+            <BaseDropdownItem 
+              @click="openKeycloakAccount"
+            >
               <Icon name="solar:settings-linear" class="size-4" />
-              <span>Settings</span>
+              <span>Account Settings</span>
             </BaseDropdownItem>
             <BaseDropdownDivider />
             <BaseDropdownItem @click="handleLogout">

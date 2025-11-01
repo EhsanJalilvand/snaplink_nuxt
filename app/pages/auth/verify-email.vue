@@ -8,21 +8,36 @@ definePageMeta({
   title: 'Verify Email',
 })
 
+const route = useRoute()
+const router = useRouter()
+const toaster = useNuiToasts()
+
 const VALIDATION_TEXT = {
-  CODE_REQUIRED: 'Verification code is required',
-  CODE_LENGTH: 'Code must be 6 digits',
+  TOKEN_REQUIRED: 'Verification token is required',
+  EMAIL_REQUIRED: 'Email is required',
 }
+
+// Get token and email from URL query params
+const token = computed(() => {
+  return (route.query.token as string) || ''
+})
+
+const email = computed(() => {
+  return (route.query.email as string) || ''
+})
 
 // This is the Zod schema for the form input
 const zodSchema = z.object({
-  code: z.string().min(6, VALIDATION_TEXT.CODE_LENGTH).max(6, VALIDATION_TEXT.CODE_LENGTH),
+  token: z.string().min(1, VALIDATION_TEXT.TOKEN_REQUIRED),
+  email: z.string().email(VALIDATION_TEXT.EMAIL_REQUIRED).optional(),
 })
 
 type FormInput = z.infer<typeof zodSchema>
 
 const validationSchema = toTypedSchema(zodSchema)
 const initialValues = {
-  code: '',
+  token: token.value || '',
+  email: email.value || '',
 } satisfies FormInput
 
 const {
@@ -34,34 +49,70 @@ const {
   initialValues,
 })
 
-const router = useRouter()
-const { verifyEmail } = useAuth()
-const email = ref('user@example.com') // This would come from the registration process
-
 // This is where you would send the form data to the server
 const onSubmit = handleSubmit(async (values) => {
-  const result = await verifyEmail(values.code)
-  
-  if (result.success) {
-    router.push('/auth/login')
-  } else {
-    setFieldError('code', result.error || 'Invalid verification code')
+  try {
+    // Call verify email API
+    const response = await $fetch('/api/auth/verify-email', {
+      method: 'POST',
+      body: {
+        token: values.token || token.value,
+        email: values.email || email.value,
+      },
+    })
+
+    if (response.success) {
+      toaster.add({
+        title: 'Success',
+        description: 'Email verified successfully. You can now login.',
+        icon: 'ph:check-circle',
+        progress: true,
+      })
+      
+      // Redirect to login after successful verification
+      await router.push('/auth/login')
+    }
+  } catch (error: any) {
+    // Handle errors
+    if (error.statusCode === 429) {
+      toaster.add({
+        title: 'Too Many Requests',
+        description: error.message || 'Too many verification attempts. Please try again later.',
+        icon: 'ph:warning',
+        color: 'warning',
+        progress: true,
+      })
+    } else if (error.statusCode === 400) {
+      // Handle validation errors
+      if (error.data) {
+        const errors = error.data as Array<{ path: string[]; message: string }>
+        errors.forEach((err) => {
+          if (err.path && err.path.length > 0) {
+            setFieldError(err.path[0] as keyof FormInput, err.message)
+          }
+        })
+      } else {
+        setFieldError('token', error.message || 'Invalid verification token')
+      }
+    } else {
+      setFieldError('token', error.message || 'Email verification failed. Please try again.')
+    }
   }
 })
 
-const resendCode = async () => {
+const resendVerification = async () => {
   try {
-    // Simulate API call to resend code
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    // TODO: Implement resend verification email endpoint
+    // For now, redirect to registration
+    router.push('/auth/register')
     
     toaster.add({
-      title: 'Code Sent',
-      description: 'A new verification code has been sent to your email',
-      icon: 'ph:envelope',
+      title: 'Info',
+      description: 'Please register again to receive a new verification email',
+      icon: 'ph:info',
       progress: true,
     })
-  }
-  catch {
+  } catch {
     // handle error
   }
 }
@@ -103,7 +154,8 @@ const resendCode = async () => {
                 Verify Your Email
               </BaseHeading>
               <BaseParagraph size="sm" class="text-muted-400 mb-6">
-                We've sent a verification code to <strong>{{ email }}</strong>
+                <span v-if="email">We've sent a verification email to <strong>{{ email }}</strong></span>
+                <span v-else>Please click the verification link in your email, or enter your email below to verify.</span>
               </BaseParagraph>
             </div>
             <form
@@ -115,12 +167,13 @@ const resendCode = async () => {
             >
               <div class="mb-4 space-y-4">
                 <Field
+                  v-if="!token"
                   v-slot="{ field, errorMessage, handleChange, handleBlur }"
-                  name="code"
+                  name="email"
                 >
                   <BaseField
                     v-slot="{ inputAttrs, inputRef }"
-                    label="Verification Code"
+                    label="Email Address"
                     :state="errorMessage ? 'error' : 'idle'"
                     :error="errorMessage"
                     :disabled="isSubmitting"
@@ -130,9 +183,31 @@ const resendCode = async () => {
                       :ref="inputRef"
                       v-bind="inputAttrs"
                       :model-value="field.value"
-                      placeholder="123456"
-                      maxlength="6"
-                      class="text-center text-2xl tracking-widest"
+                      type="email"
+                      autocomplete="email"
+                      @update:model-value="handleChange"
+                      @blur="handleBlur"
+                    />
+                  </BaseField>
+                </Field>
+                
+                <Field
+                  v-if="!token"
+                  v-slot="{ field, errorMessage, handleChange, handleBlur }"
+                  name="token"
+                >
+                  <BaseField
+                    v-slot="{ inputAttrs, inputRef }"
+                    label="Verification Token (Optional)"
+                    :state="errorMessage ? 'error' : 'idle'"
+                    :error="errorMessage"
+                    :disabled="isSubmitting"
+                  >
+                    <BaseInput
+                      :ref="inputRef"
+                      v-bind="inputAttrs"
+                      :model-value="field.value"
+                      placeholder="Enter verification token from email"
                       @update:model-value="handleChange"
                       @blur="handleBlur"
                     />
@@ -142,7 +217,7 @@ const resendCode = async () => {
 
               <div class="mb-6">
                 <BaseButton
-                  :disabled="isSubmitting"
+                  :disabled="isSubmitting || (!token && !email)"
                   :loading="isSubmitting"
                   type="submit"
                   variant="primary"
@@ -154,14 +229,14 @@ const resendCode = async () => {
 
               <div class="text-center">
                 <BaseParagraph size="sm" class="text-muted-400 mb-4">
-                  Didn't receive the code?
+                  Didn't receive the email?
                 </BaseParagraph>
                 <BaseButton
                   variant="outline"
                   class="h-10! w-full"
-                  @click="resendCode"
+                  @click="resendVerification"
                 >
-                  Resend Code
+                  Resend Verification Email
                 </BaseButton>
               </div>
 

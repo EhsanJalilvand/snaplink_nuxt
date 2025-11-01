@@ -25,24 +25,21 @@ const zodSchema = z
   .object({
     username: z.string().min(3, VALIDATION_TEXT.USERNAME_LENGTH),
     email: z.string().email(VALIDATION_TEXT.EMAIL_REQUIRED),
-    password: z.string()
-      .min(6, VALIDATION_TEXT.PASSWORD_LENGTH)
-      .regex(/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{6,}$/, 'Password must contain at least 6 characters with letters and numbers'),
+    password: z.string().min(6, VALIDATION_TEXT.PASSWORD_LENGTH),
     confirmPassword: z.string(),
+    firstName: z.string().optional(),
+    lastName: z.string().optional(),
     terms: z.boolean(),
   })
   .superRefine((data, ctx) => {
     // This is a custom validation function that will be called
     // before the form is submitted
-    // Only apply password strength validation if password meets basic requirements
-    if (data.password.length >= 6 && /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{6,}$/.test(data.password)) {
-      if (passwordRef.value?.validation?.feedback?.warning || passwordRef.value?.validation?.feedback?.suggestions?.length) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: passwordRef.value?.validation?.feedback?.warning || passwordRef.value.validation.feedback?.suggestions?.[0],
-          path: ['password'],
-        })
-      }
+    if (passwordRef.value?.validation?.feedback?.warning || passwordRef.value?.validation?.feedback?.suggestions?.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: passwordRef.value?.validation?.feedback?.warning || passwordRef.value.validation.feedback?.suggestions?.[0],
+        path: ['password'],
+      })
     }
     if (data.password !== data.confirmPassword) {
       ctx.addIssue({
@@ -60,6 +57,8 @@ const zodSchema = z
     }
   })
 
+// Zod has a great infer method that will
+// infer the shape of the schema into a TypeScript type
 type FormInput = z.infer<typeof zodSchema>
 
 const validationSchema = toTypedSchema(zodSchema)
@@ -68,6 +67,8 @@ const initialValues = {
   email: '',
   password: '',
   confirmPassword: '',
+  firstName: '',
+  lastName: '',
   terms: false,
 } satisfies FormInput
 
@@ -77,37 +78,89 @@ const { values, handleSubmit, isSubmitting, setFieldError } = useForm({
 })
 
 const router = useRouter()
-const { register: registerCustom } = useAuth()
+const toaster = useNuiToasts()
 const { register: registerKeycloak } = useKeycloak()
-
-// Register with Keycloak (redirect)
-const registerWithKeycloak = async () => {
-  try {
-    await registerKeycloak()
-  } catch (error: any) {
-    console.error('Keycloak register error:', error)
-  }
-}
 
 // This is where you would send the form data to the server
 const onSubmit = handleSubmit(async (_values) => {
-  // Try custom registration first
-  const result = await registerCustom({
-    username: values.username,
-    email: values.email,
-    password: values.password,
-    firstName: values.username, // Using username as firstName for demo
-  })
-  
-  if (result.success) {
-    router.push('/auth/verify-email')
-  } else {
-    if (result.error?.includes('username')) {
-      setFieldError('username', 'This username is already taken')
-    } else if (result.error?.includes('email')) {
-      setFieldError('email', 'This email is already registered')
+  try {
+    // Call register API
+    const response = await $fetch('/api/auth/register', {
+      method: 'POST',
+      body: {
+        username: values.username,
+        email: values.email,
+        password: values.password,
+        confirmPassword: values.confirmPassword,
+        firstName: values.firstName || undefined,
+        lastName: values.lastName || undefined,
+        terms: values.terms,
+      },
+    })
+
+    if (response.success) {
+      toaster.add({
+        title: 'Success',
+        description: response.message || 'Account created successfully. Please check your email to verify your account.',
+        icon: 'ph:user-circle-fill',
+        progress: true,
+      })
+      
+      // Redirect to verify email page
+      await router.push('/auth/verify-email')
+    }
+  } catch (error: any) {
+    // Handle errors
+    if (error.statusCode === 429) {
+      toaster.add({
+        title: 'Too Many Requests',
+        description: error.message || 'Too many registration attempts. Please try again later.',
+        icon: 'ph:warning',
+        color: 'warning',
+        progress: true,
+      })
+    } else if (error.statusCode === 400 && error.data?.redirectToKeycloak) {
+      // Service Account not enabled - redirect to Keycloak registration
+      if (error.data?.registrationUrl) {
+        // Redirect to Keycloak registration page
+        window.location.href = error.data.registrationUrl
+      } else {
+        // Fallback: use Keycloak registration via useKeycloak
+        const { register: registerKeycloak } = useKeycloak()
+        try {
+          await registerKeycloak()
+        } catch (redirectError) {
+          toaster.add({
+            title: 'Configuration Required',
+            description: error.data?.help || 'Please enable Service Accounts in Keycloak settings',
+            icon: 'ph:warning',
+            color: 'warning',
+            progress: true,
+          })
+          setFieldError('email', error.message || 'Service Account not enabled. Using redirect...')
+        }
+      }
+    } else if (error.statusCode === 400) {
+      // Handle validation errors
+      if (error.data) {
+        const errors = error.data as Array<{ path: string[]; message: string }>
+        errors.forEach((err) => {
+          if (err.path && err.path.length > 0) {
+            setFieldError(err.path[0] as keyof FormInput, err.message)
+          }
+        })
+      } else if (error.message) {
+        // Handle specific errors like "Username is already taken"
+        if (error.message.includes('username')) {
+          setFieldError('username', 'Username is already taken')
+        } else if (error.message.includes('email')) {
+          setFieldError('email', 'Email is already registered')
+        } else {
+          setFieldError('email', error.message)
+        }
+      }
     } else {
-      setFieldError('email', result.error || 'Registration failed')
+      setFieldError('email', error.message || 'Registration failed. Please try again.')
     }
   }
 })
@@ -196,35 +249,6 @@ const onSubmit = handleSubmit(async (_values) => {
           Let's start by creating you account
         </BaseParagraph>
 
-        <!-- Keycloak Register Button -->
-        <div class="mb-4">
-          <BaseButton
-            type="button"
-            variant="primary"
-            rounded="lg"
-            class="w-full"
-            @click="registerWithKeycloak"
-          >
-            <Icon name="ph:shield-check" class="size-5" />
-            <span>Register with Keycloak</span>
-          </BaseButton>
-        </div>
-
-        <!-- 'or' divider -->
-        <div class="flex-100 my-4 flex items-center">
-          <hr
-            class="border-muted-200 dark:border-muted-700 flex-auto border-t-2"
-          >
-          <span
-            class="text-muted-600 dark:text-muted-300 px-4 font-sans font-light"
-          >
-            OR
-          </span>
-          <hr
-            class="border-muted-200 dark:border-muted-700 flex-auto border-t-2"
-          >
-        </div>
-
         <div class="mb-4 space-y-3">
           <Field
             v-slot="{ field, errorMessage, handleChange, handleBlur }"
@@ -267,7 +291,7 @@ const onSubmit = handleSubmit(async (_values) => {
                 v-bind="inputAttrs"
                 :model-value="field.value"
                 type="email"
-                autocomplete="current-email"
+                autocomplete="email"
                 rounded="lg"
                 icon="solar:mention-circle-linear"
                 @update:model-value="handleChange"

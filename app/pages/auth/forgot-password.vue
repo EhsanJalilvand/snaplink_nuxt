@@ -30,14 +30,42 @@ const { handleSubmit, isSubmitting } = useForm({
 })
 
 const success = ref(false)
-const { forgotPassword } = useAuth()
+const toaster = useNuiToasts()
 
 // This is where you would send the form data to the server
-const onSubmit = handleSubmit(async (_values) => {
-  const result = await forgotPassword(_values.email)
-  
-  if (result.success) {
-    success.value = true
+const onSubmit = handleSubmit(async (values) => {
+  try {
+    // Call forgot password API
+    const response = await $fetch('/api/auth/forgot-password', {
+      method: 'POST',
+      body: {
+        email: values.email,
+      },
+    })
+
+    if (response.success) {
+      success.value = true
+      toaster.add({
+        title: 'Email Sent',
+        description: response.message || 'If the email exists, a password reset link has been sent.',
+        icon: 'ph:envelope',
+        progress: true,
+      })
+    }
+  } catch (error: any) {
+    // Handle errors
+    if (error.statusCode === 429) {
+      toaster.add({
+        title: 'Too Many Requests',
+        description: error.message || 'Too many password reset requests. Please try again later.',
+        icon: 'ph:warning',
+        color: 'warning',
+        progress: true,
+      })
+    } else {
+      // Even on error, show success to prevent email enumeration
+      success.value = true
+    }
   }
 })
 </script>

@@ -9,6 +9,10 @@ definePageMeta({
   title: 'Reset Password',
 })
 
+const route = useRoute()
+const router = useRouter()
+const toaster = useNuiToasts()
+
 const passwordRef = ref<InstanceType<typeof AddonInputPassword>>()
 
 const VALIDATION_TEXT = {
@@ -16,10 +20,15 @@ const VALIDATION_TEXT = {
   PASSWORD_MATCH: 'Passwords do not match',
 }
 
+// Get token from URL query params
+const token = computed(() => {
+  return (route.query.token as string) || ''
+})
+
 // This is the Zod schema for the form input
 const zodSchema = z
   .object({
-    password: z.string().min(8, VALIDATION_TEXT.PASSWORD_LENGTH),
+    newPassword: z.string().min(8, VALIDATION_TEXT.PASSWORD_LENGTH),
     confirmPassword: z.string(),
   })
   .superRefine((data, ctx) => {
@@ -29,10 +38,10 @@ const zodSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: passwordRef.value?.validation?.feedback?.warning || passwordRef.value.validation.feedback?.suggestions?.[0],
-        path: ['password'],
+        path: ['newPassword'],
       })
     }
-    if (data.password !== data.confirmPassword) {
+    if (data.newPassword !== data.confirmPassword) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: VALIDATION_TEXT.PASSWORD_MATCH,
@@ -45,29 +54,83 @@ type FormInput = z.infer<typeof zodSchema>
 
 const validationSchema = toTypedSchema(zodSchema)
 const initialValues = {
-  password: '',
+  newPassword: '',
   confirmPassword: '',
 } satisfies FormInput
 
-const { values, handleSubmit, isSubmitting } = useForm({
+const { values, handleSubmit, isSubmitting, setFieldError } = useForm({
   validationSchema,
   initialValues,
 })
 
-const router = useRouter()
-const { resetPassword } = useAuth()
+// Check if token exists on mount
+onMounted(() => {
+  if (!token.value) {
+    toaster.add({
+      title: 'Invalid Link',
+      description: 'Reset token is missing. Please request a new password reset.',
+      icon: 'ph:warning',
+      color: 'warning',
+      progress: true,
+    })
+    router.push('/auth/forgot-password')
+  }
+})
 
 // This is where you would send the form data to the server
 const onSubmit = handleSubmit(async (_values) => {
-  // In a real app, you'd get the token from the URL params
-  const token = 'reset-token-123' // This would come from the URL
-  
-  const result = await resetPassword(token, values.password)
-  
-  if (result.success) {
-    router.push('/auth/login')
-  } else {
-    setFieldError('password', result.error || 'Password reset failed')
+  if (!token.value) {
+    setFieldError('newPassword', 'Reset token is missing')
+    return
+  }
+
+  try {
+    // Call reset password API
+    const response = await $fetch('/api/auth/reset-password', {
+      method: 'POST',
+      body: {
+        token: token.value,
+        newPassword: values.newPassword,
+        confirmPassword: values.confirmPassword,
+      },
+    })
+
+    if (response.success) {
+      toaster.add({
+        title: 'Success',
+        description: 'Password reset successfully. Please login with your new password.',
+        icon: 'ph:check-circle',
+        progress: true,
+      })
+      
+      // Redirect to login after successful reset
+      await router.push('/auth/login')
+    }
+  } catch (error: any) {
+    // Handle errors
+    if (error.statusCode === 429) {
+      toaster.add({
+        title: 'Too Many Requests',
+        description: error.message || 'Too many password reset attempts. Please try again later.',
+        icon: 'ph:warning',
+        color: 'warning',
+        progress: true,
+      })
+    } else if (error.statusCode === 400) {
+      // Handle validation errors
+      if (error.data) {
+        const errors = error.data as Array<{ path: string[]; message: string }>
+        errors.forEach((err) => {
+          if (err.path && err.path.length > 0) {
+            setFieldError(err.path[0] as keyof FormInput, err.message)
+          }
+        })
+      } else {
+        setFieldError('newPassword', error.message || 'Invalid or expired reset token')
+      }
+    } else {
+      setFieldError('newPassword', error.message || 'Password reset failed. Please try again.')
+    }
   }
 })
 </script>
@@ -128,7 +191,7 @@ const onSubmit = handleSubmit(async (_values) => {
               <div class="mb-4 space-y-4">
                 <Field
                   v-slot="{ field, errorMessage, handleChange, handleBlur }"
-                  name="password"
+                  name="newPassword"
                 >
                   <BaseField
                     v-slot="{ inputAttrs }"

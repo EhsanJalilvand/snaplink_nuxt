@@ -15,9 +15,22 @@ export default defineEventHandler(async (event) => {
     const keycloakUrl = config.public.keycloakUrl || config.keycloakUrl || 'http://localhost:8080'
     const keycloakRealm = config.public.keycloakRealm || config.keycloakRealm || 'master'
 
+    // Parse token first to get user info (in case userinfo endpoint fails)
+    let tokenParsed: any = null
     try {
-      // Get user info from Keycloak
-      const userInfo = await $fetch(
+      const tokenParts = accessToken.split('.')
+      if (tokenParts.length === 3) {
+        const payload = Buffer.from(tokenParts[1], 'base64').toString('utf-8')
+        tokenParsed = JSON.parse(payload)
+      }
+    } catch (parseError) {
+      console.error('[auth/me.get.ts] Error parsing token:', parseError)
+    }
+
+    // Try to get user info from Keycloak userinfo endpoint
+    let userInfo: any = null
+    try {
+      userInfo = await $fetch(
         `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/userinfo`,
         {
           headers: {
@@ -25,58 +38,69 @@ export default defineEventHandler(async (event) => {
           }
         }
       )
-
-      // Parse token to get roles and other info
-      let tokenParsed: any = null
-      try {
-        const tokenParts = accessToken.split('.')
-        if (tokenParts.length === 3) {
-          const payload = Buffer.from(tokenParts[1], 'base64').toString('utf-8')
-          tokenParsed = JSON.parse(payload)
-        }
-      } catch (parseError) {
-        console.error('[auth/me.get.ts] Error parsing token:', parseError)
-      }
-
-      const realmAccess = tokenParsed?.realm_access?.roles || []
-      const clientId = config.keycloakClientId || config.public.keycloakClientId || 'my-client'
-      const resourceAccess = tokenParsed?.resource_access?.[clientId]?.roles || []
-      const allRoles = [...realmAccess, ...resourceAccess]
-
-      const user = {
-        id: userInfo.sub || tokenParsed?.sub || '',
-        username: userInfo.preferred_username || userInfo.username || '',
-        email: userInfo.email || '',
-        firstName: userInfo.given_name || userInfo.firstName,
-        lastName: userInfo.family_name || userInfo.lastName,
-        emailVerified: userInfo.email_verified || tokenParsed?.email_verified || false,
-        roles: allRoles,
-      }
-
-      // Don't log sensitive user information in production
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[auth/me.get.ts] User info retrieved')
-      }
-
-      return {
-        success: true,
-        user,
-        isAuthenticated: true
-      }
     } catch (keycloakError: any) {
-      console.error('[auth/me.get.ts] Keycloak error:', keycloakError)
+      // If userinfo endpoint fails (403, 401, etc.), use token data instead
+      // This can happen if userinfo endpoint is not accessible or client settings are incorrect
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[auth/me.get.ts] Userinfo endpoint failed, using token data:', keycloakError.statusCode || keycloakError.status)
+      }
       
-      // If token is invalid/expired, clear cookies
+      // If token is invalid/expired (401), clear cookies
       if (keycloakError.statusCode === 401 || keycloakError.status === 401) {
         deleteCookie(event, 'kc_access')
         deleteCookie(event, 'kc_refresh')
+        return {
+          success: false,
+          user: null,
+          isAuthenticated: false
+        }
       }
+      
+      // For other errors (403, etc.), continue with token data
+      // Don't return error, use token parsed data instead
+    }
 
-      return {
-        success: false,
-        user: null,
-        isAuthenticated: false
-      }
+    // Extract roles from token
+    const realmAccess = tokenParsed?.realm_access?.roles || []
+    const clientId = config.keycloakClientId || config.public.keycloakClientId || 'my-client'
+    const resourceAccess = tokenParsed?.resource_access?.[clientId]?.roles || []
+    const allRoles = [...realmAccess, ...resourceAccess]
+
+    // Build user object - prioritize userInfo from endpoint, fallback to token data
+    const user = {
+      id: userInfo?.sub || tokenParsed?.sub || '',
+      username: userInfo?.preferred_username || userInfo?.username || tokenParsed?.preferred_username || tokenParsed?.username || '',
+      email: userInfo?.email || tokenParsed?.email || '',
+      firstName: userInfo?.given_name || userInfo?.firstName || tokenParsed?.given_name || tokenParsed?.firstName || '',
+      lastName: userInfo?.family_name || userInfo?.lastName || tokenParsed?.family_name || tokenParsed?.lastName || '',
+      emailVerified: userInfo?.email_verified || tokenParsed?.email_verified || false,
+      roles: allRoles,
+    }
+
+    // Debug: Log token structure in development (without sensitive data)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[auth/me.get.ts] User info retrieved', userInfo ? 'from userinfo endpoint' : 'from token')
+      console.log('[auth/me.get.ts] Token fields:', {
+        has_given_name: !!(tokenParsed?.given_name),
+        has_family_name: !!(tokenParsed?.family_name),
+        has_firstName: !!(tokenParsed?.firstName),
+        has_lastName: !!(tokenParsed?.lastName),
+        has_email: !!(tokenParsed?.email),
+        has_preferred_username: !!(tokenParsed?.preferred_username),
+      })
+      console.log('[auth/me.get.ts] Final user object:', {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        firstName: user.firstName || '(empty)',
+        lastName: user.lastName || '(empty)',
+      })
+    }
+
+    return {
+      success: true,
+      user,
+      isAuthenticated: true
     }
   } catch (error: any) {
     console.error('[auth/me.get.ts] Error:', error)

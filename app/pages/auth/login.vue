@@ -9,22 +9,25 @@ definePageMeta({
 })
 
 const VALIDATION_TEXT = {
-  EMAIL_REQUIRED: 'A valid email is required',
+  EMAIL_OR_USERNAME_REQUIRED: 'Email or username is required',
   PASSWORD_REQUIRED: 'A password is required',
 }
 
 // This is the Zod schema for the form input
+// It's used to define the shape that the form data will have
 const zodSchema = z.object({
-  email: z.string().email(VALIDATION_TEXT.EMAIL_REQUIRED),
+  emailOrUsername: z.string().min(1, VALIDATION_TEXT.EMAIL_OR_USERNAME_REQUIRED),
   password: z.string().min(1, VALIDATION_TEXT.PASSWORD_REQUIRED),
   trustDevice: z.boolean(),
 })
 
+// Zod has a great infer method that will
+// infer the shape of the schema into a TypeScript type
 type FormInput = z.infer<typeof zodSchema>
 
 const validationSchema = toTypedSchema(zodSchema)
 const initialValues = {
-  email: '',
+  emailOrUsername: '',
   password: '',
   trustDevice: false,
 } satisfies FormInput
@@ -39,33 +42,63 @@ const {
 })
 
 const router = useRouter()
-const { login: loginCustom } = useAuth()
-const { login: loginKeycloak, loginWithCredentials } = useKeycloak()
-
-// Login with Keycloak (redirect)
-const loginWithKeycloak = async () => {
-  try {
-    await loginKeycloak()
-  } catch (error: any) {
-    console.error('Keycloak login error:', error)
-  }
-}
+const toaster = useNuiToasts()
+const { login: loginKeycloak } = useKeycloak()
 
 // This is where you would send the form data to the server
 const onSubmit = handleSubmit(async (values) => {
-  // Try Keycloak first, fallback to custom auth
-  const result = await loginWithCredentials(values.email, values.password)
-  
-  if (result.success) {
-    router.push('/dashboard')
-  } else {
-    // Fallback to custom auth if Keycloak fails
-    const customResult = await loginCustom(values.email, values.password, values.trustDevice)
-    
-    if (customResult.success) {
-      router.push('/dashboard')
+  try {
+    // Call login API
+    const response = await $fetch('/api/auth/login', {
+      method: 'POST',
+      body: {
+        emailOrUsername: values.emailOrUsername,
+        password: values.password,
+        trustDevice: values.trustDevice,
+      },
+    })
+
+    if (response.success) {
+      toaster.add({
+        title: 'Success',
+        description: 'Welcome back!',
+        icon: 'ph:user-circle-fill',
+        progress: true,
+      })
+      
+      // Redirect to dashboard after successful login
+      await router.push('/dashboard')
+    }
+  } catch (error: any) {
+    // Handle errors
+    if (error.statusCode === 429) {
+      setFieldError('password', 'Too many login attempts. Please try again later.')
+    } else if (error.statusCode === 401) {
+      setFieldError('password', 'Invalid email or password')
+    } else if (error.statusCode === 400 && error.data?.redirectToKeycloak) {
+      // Direct Access Grant not enabled - fallback to redirect login
+      try {
+        await loginKeycloak()
+      } catch (redirectError) {
+        toaster.add({
+          title: 'Configuration Required',
+          description: error.data?.help || 'Please enable Direct Access Grant in Keycloak settings',
+          icon: 'ph:warning',
+          color: 'warning',
+          progress: true,
+        })
+        setFieldError('emailOrUsername', error.message || 'Direct Access Grant not enabled. Using redirect...')
+      }
+    } else if (error.data) {
+      // Handle validation errors
+      const errors = error.data as Array<{ path: string[]; message: string }>
+      errors.forEach((err) => {
+        if (err.path && err.path.length > 0) {
+          setFieldError(err.path[0] as keyof FormInput, err.message)
+        }
+      })
     } else {
-      setFieldError('password', result.error || customResult.error || 'Login failed')
+      setFieldError('password', error.message || 'Login failed. Please try again.')
     }
   }
 })
@@ -73,6 +106,22 @@ const onSubmit = handleSubmit(async (values) => {
 
 <template>
   <div class="dark:bg-muted-800 flex min-h-screen bg-white">
+    <div
+      class="bg-muted-100 dark:bg-muted-900 relative hidden w-0 flex-1 items-center justify-center lg:flex lg:w-3/5"
+    >
+      <div
+        class="mx-auto flex size-full max-w-4xl items-center justify-center"
+      >
+        <!-- Media image -->
+        <img
+          class="mx-auto max-w-xl"
+          src="/img/illustrations/magician.svg"
+          alt=""
+          width="619"
+          height="594"
+        >
+      </div>
+    </div>
     <div
       class="relative flex flex-1 flex-col justify-center px-6 py-12 lg:w-2/5 lg:flex-none"
     >
@@ -100,78 +149,29 @@ const onSubmit = handleSubmit(async (values) => {
             Welcome back.
           </BaseHeading>
           <BaseParagraph size="sm" class="text-muted-400 mb-6">
-            Login with social media or your credentials
+            Login with your credentials
           </BaseParagraph>
-          <!-- Keycloak Login Button -->
-          <div class="mb-4">
-            <BaseButton
-              type="button"
-              variant="primary"
-              rounded="lg"
-              class="w-full"
-              @click="loginWithKeycloak"
-            >
-              <Icon name="ph:shield-check" class="size-5" />
-              <span>Login with Keycloak</span>
-            </BaseButton>
-          </div>
-          
-          <!-- Social Sign Up Buttons -->
-          <div class="flex flex-wrap justify-between gap-4">
-            <!-- Google button -->
-            <button
-              class="dark:bg-muted-700 text-muted-800 border-muted-300 dark:border-muted-600 focus-visible:nui-focus relative inline-flex grow items-center justify-center gap-2 rounded-md border bg-white px-6 py-4 dark:text-white"
-            >
-              <Icon name="logos:google-icon" class="size-5" />
-              <div>Login with Google</div>
-            </button>
-            <!-- Twitter button -->
-            <button
-              class="bg-muted-200 dark:bg-muted-700 hover:bg-muted-100 dark:hover:bg-muted-600 text-muted-600 dark:text-muted-400 focus-visible:nui-focus w-[calc(50%_-_0.5rem)] cursor-pointer rounded-md px-5 py-4 text-center transition-colors duration-300 md:w-auto"
-            >
-              <Icon name="fa6-brands:x-twitter" class="mx-auto size-4" />
-            </button>
-            <!-- Linkedin button -->
-            <button
-              class="bg-muted-200 dark:bg-muted-700 hover:bg-muted-100 dark:hover:bg-muted-600 text-muted-600 dark:text-muted-400 focus-visible:nui-focus w-[calc(50%_-_0.5rem)] cursor-pointer rounded-md px-5 py-4 text-center transition-colors duration-300 md:w-auto"
-            >
-              <Icon name="fa6-brands:linkedin-in" class="mx-auto size-4" />
-            </button>
-          </div>
-          <!-- 'or' divider -->
-          <div class="flex-100 mt-8 flex items-center">
-            <hr
-              class="border-muted-200 dark:border-muted-700 flex-auto border-t-2"
-            >
-            <span
-              class="text-muted-600 dark:text-muted-300 px-4 font-sans font-light"
-            >
-              OR
-            </span>
-            <hr
-              class="border-muted-200 dark:border-muted-700 flex-auto border-t-2"
-            >
-          </div>
         </div>
 
         <!-- Form section -->
-        <form
-          method="POST"
-          action=""
-          class="mt-6"
-          novalidate
-          @submit.prevent="onSubmit"
-        >
+        <div class="mt-6">
           <div class="mt-5">
-            <div>
+            <!-- Form -->
+            <form
+              method="POST"
+              action=""
+              class="mt-6"
+              novalidate
+              @submit.prevent="onSubmit"
+            >
               <div class="space-y-4">
                 <Field
                   v-slot="{ field, errorMessage, handleChange, handleBlur }"
-                  name="email"
+                  name="emailOrUsername"
                 >
                   <BaseField
                     v-slot="{ inputAttrs, inputRef }"
-                    label="Email address"
+                    label="Email or Username"
                     :state="errorMessage ? 'error' : 'idle'"
                     :error="errorMessage"
                     :disabled="isSubmitting"
@@ -181,7 +181,9 @@ const onSubmit = handleSubmit(async (values) => {
                       :ref="inputRef"
                       v-bind="inputAttrs"
                       :model-value="field.value"
-                      autocomplete="email"
+                      autocomplete="username"
+                      rounded="lg"
+                      placeholder="Enter your email or username"
                       @update:model-value="handleChange"
                       @blur="handleBlur"
                     />
@@ -206,6 +208,7 @@ const onSubmit = handleSubmit(async (values) => {
                       :model-value="field.value"
                       type="password"
                       autocomplete="current-password"
+                      rounded="lg"
                       @update:model-value="handleChange"
                       @blur="handleBlur"
                     />
@@ -213,6 +216,7 @@ const onSubmit = handleSubmit(async (values) => {
                 </Field>
               </div>
 
+              <!-- Remember -->
               <div class="mt-6 flex items-center justify-between">
                 <Field
                   v-slot="{ field, handleChange, handleBlur }"
@@ -246,13 +250,14 @@ const onSubmit = handleSubmit(async (values) => {
                     :loading="isSubmitting"
                     type="submit"
                     variant="primary"
+                    rounded="lg"
                     class="h-11! w-full"
                   >
                     Sign in
                   </BaseButton>
                 </div>
               </div>
-            </div>
+            </form>
 
             <!-- No account link -->
             <p
@@ -267,21 +272,7 @@ const onSubmit = handleSubmit(async (values) => {
               </NuxtLink>
             </p>
           </div>
-        </form>
-      </div>
-    </div>
-    <div
-      class="bg-muted-100 dark:bg-muted-900 relative hidden w-0 flex-1 items-center justify-center lg:flex lg:w-3/5"
-    >
-      <div class="mx-auto w-full max-w-4xl">
-        <!-- Media image -->
-        <img
-          class="mx-auto max-w-md"
-          src="/img/illustrations/magician.svg"
-          alt=""
-          width="500"
-          height="500"
-        >
+        </div>
       </div>
     </div>
   </div>
