@@ -13,7 +13,7 @@ const { t } = useTranslations()
 const { user, isAuthenticated, logout, checkAuth } = useKeycloak()
 
 // Use shared user data composable for consistent state across all components
-const { userDisplayName, user: sharedUser } = useUserData()
+const { userDisplayName, user: sharedUser, refreshUser } = useUserData()
 
 // Get user avatar - prioritize user avatar, fallback to ui-avatars
 const userAvatar = computed(() => {
@@ -27,12 +27,14 @@ const userAvatar = computed(() => {
 onMounted(async () => {
   if (process.client) {
     await checkAuth()
+    await refreshUser()
   }
 })
 
 // Handle logout
 const handleLogout = async () => {
   await logout()
+  await refreshUser()
 }
 
 const menu = computed(() => [

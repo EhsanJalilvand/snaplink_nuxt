@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
 
   // Extract filename from path (e.g., "7b225299-514e-4d26-b9a8-bd8cef8196cc.jpg")
   const fileName = pathParam.split('/').pop() || pathParam
-  const storagePath = config.avatarStoragePath || '.app/public/uploads/avatars'
+  const storagePath = config.avatarStoragePath || 'avatars'
   const absoluteStoragePath = pathIsAbsolute(storagePath) ? storagePath : resolve(process.cwd(), storagePath)
   const filePath = join(absoluteStoragePath, fileName)
 

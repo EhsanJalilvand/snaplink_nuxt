@@ -76,7 +76,7 @@ export default defineEventHandler(async (event) => {
     }
 
     // Create storage directory if it doesn't exist
-    const storagePath = config.avatarStoragePath || '.app/public/uploads/avatars'
+    const storagePath = config.avatarStoragePath || 'avatars'
     // Get absolute path - if storagePath is already absolute, use it directly, otherwise resolve from workspace root
     const absoluteStoragePath = pathIsAbsolute(storagePath) ? storagePath : resolve(process.cwd(), storagePath)
 

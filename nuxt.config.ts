@@ -72,7 +72,7 @@ export default defineNuxtConfig({
       return clientId
     })(),
     keycloakClientSecret: process.env.KEYCLOAK_CLIENT_SECRET || '',
-    avatarStoragePath: process.env.AVATAR_STORAGE_PATH || '.app/public/uploads/avatars',
+    avatarStoragePath: process.env.AVATAR_STORAGE_PATH || 'avatars',
     avatarBaseUrl: process.env.AVATAR_BASE_URL || '/uploads/avatars',
     smtpHost: process.env.SMTP_HOST || '',
     smtpPort: process.env.SMTP_PORT || '587',

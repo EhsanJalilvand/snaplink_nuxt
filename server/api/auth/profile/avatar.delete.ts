@@ -102,7 +102,7 @@ export default defineEventHandler(async (event) => {
         // Extract filename from URL (e.g., "/uploads/avatars/userid-123.jpg")
         const urlParts = avatarUrl.split('/')
         const fileName = urlParts[urlParts.length - 1]
-        const storagePath = config.avatarStoragePath || '.app/public/uploads/avatars'
+        const storagePath = config.avatarStoragePath || 'avatars'
         const absoluteStoragePath = pathIsAbsolute(storagePath) ? storagePath : resolve(process.cwd(), storagePath)
         const filePath = join(absoluteStoragePath, fileName)
 
