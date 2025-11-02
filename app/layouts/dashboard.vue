@@ -10,16 +10,26 @@ const { open } = usePanels()
 const { user, isAuthenticated, logout, checkAuth } = useKeycloak()
 
 // Use shared user data composable for consistent state across all components
-const { user: sharedUser, userDisplayName } = useUserData()
+const { user: sharedUser, userDisplayName, refreshUser } = useUserData()
 
 // Also check auth on mount to ensure state is synced
 onMounted(async () => {
   await checkAuth()
 })
 
+// Get user avatar - prioritize user avatar, fallback to ui-avatars
+const userAvatar = computed(() => {
+  if (sharedUser.value?.avatar) {
+    return sharedUser.value.avatar
+  }
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(userDisplayName.value)}&background=6366f1&color=fff`
+})
+
 // Handle logout
 const handleLogout = async () => {
   await logout()
+  // Refresh user data after logout
+  await refreshUser()
 }
 
 // Open Keycloak Account Console
@@ -155,7 +165,7 @@ function getRouteSidebarId() {
               <BaseAvatar
                 v-if="sharedUser"
                 size="xs"
-                :src="`https://ui-avatars.com/api/?name=${encodeURIComponent(userDisplayName)}&background=6366f1&color=fff`"
+                :src="userAvatar"
               />
             </BaseChip>
           </TairoSidebarLink>
@@ -234,7 +244,7 @@ function getRouteSidebarId() {
 
           <!-- User Menu -->
           <BaseDropdown
-            v-if="(isAuthenticated || sharedUser) && (user || sharedUser)"
+            v-if="isAuthenticated && sharedUser"
             variant="default"
             :bindings="{
               content: {
@@ -250,8 +260,9 @@ function getRouteSidebarId() {
               >
                 <BaseChip size="sm" color="custom" :offset="3" class="text-success-500">
                   <BaseAvatar
+                    v-if="sharedUser"
                     size="xs"
-                    :src="`https://ui-avatars.com/api/?name=${encodeURIComponent(userDisplayName)}&background=6366f1&color=fff`"
+                    :src="userAvatar"
                   />
                 </BaseChip>
                 <span class="hidden lg:inline text-sm font-medium text-muted-700 dark:text-muted-300">

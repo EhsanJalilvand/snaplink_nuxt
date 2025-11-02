@@ -58,6 +58,125 @@ const success = ref(false)
 const toaster = useNuiToasts()
 const router = useRouter()
 
+// Avatar states
+const inputFile = ref<FileList | null>(null)
+const isAvatarUploading = ref(false)
+const currentAvatar = computed(() => sharedUser.value?.avatar || null)
+
+// Avatar upload
+const uploadAvatar = async () => {
+  if (!inputFile.value || !inputFile.value.item(0)) {
+    toaster.add({
+      title: 'Error',
+      description: 'Please select an image file',
+      icon: 'lucide:alert-triangle',
+      color: 'danger',
+      progress: true,
+    })
+    return
+  }
+
+  const file = inputFile.value.item(0)!
+  
+  // Validate file type
+  const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
+  if (!validTypes.includes(file.type)) {
+    toaster.add({
+      title: 'Error',
+      description: 'Invalid file type. Only images (JPEG, PNG, GIF, WebP) are allowed.',
+      icon: 'lucide:alert-triangle',
+      color: 'danger',
+      progress: true,
+    })
+    return
+  }
+
+  // Validate file size (max 5MB)
+  const maxSize = 5 * 1024 * 1024 // 5MB
+  if (file.size > maxSize) {
+    toaster.add({
+      title: 'Error',
+      description: 'File size exceeds 5MB limit',
+      icon: 'lucide:alert-triangle',
+      color: 'danger',
+      progress: true,
+    })
+    return
+  }
+
+  isAvatarUploading.value = true
+
+  try {
+    const formData = new FormData()
+    formData.append('avatar', file)
+
+    const response = await $fetch('/api/auth/profile/avatar', {
+      method: 'POST',
+      body: formData,
+    })
+
+    if (response.success) {
+      // Refresh user data
+      console.log('[profile.vue] Avatar uploaded successfully, refreshing user data...')
+      await refreshUser()
+      console.log('[profile.vue] User data refreshed, current avatar:', sharedUser.value?.avatar ? sharedUser.value.avatar.substring(0, 50) + '...' : 'undefined')
+      
+      // Clear file input
+      inputFile.value = null
+
+      toaster.add({
+        title: 'Success',
+        description: 'Avatar updated successfully!',
+        icon: 'ph:check',
+        progress: true,
+      })
+    }
+  } catch (error: any) {
+    toaster.add({
+      title: 'Error',
+      description: error.message || 'Failed to upload avatar',
+      icon: 'lucide:alert-triangle',
+      color: 'danger',
+      progress: true,
+    })
+  } finally {
+    isAvatarUploading.value = false
+  }
+}
+
+// Delete avatar
+const deleteAvatar = async () => {
+  isAvatarUploading.value = true
+
+  try {
+    const response = await $fetch('/api/auth/profile/avatar', {
+      method: 'DELETE',
+    })
+
+    if (response.success) {
+      // Refresh user data
+      await refreshUser()
+
+      toaster.add({
+        title: 'Success',
+        description: 'Avatar removed successfully!',
+        icon: 'ph:check',
+        progress: true,
+      })
+    }
+  } catch (error: any) {
+    toaster.add({
+      title: 'Error',
+      description: error.message || 'Failed to remove avatar',
+      icon: 'lucide:alert-triangle',
+      color: 'danger',
+      progress: true,
+    })
+  } finally {
+    isAvatarUploading.value = false
+  }
+}
+
 // Email verification states
 const showEmailVerificationModal = ref(false)
 const isEmailVerificationSending = ref(false)
@@ -399,6 +518,99 @@ const cancelEmailChange = () => {
         </BaseMessage>
 
         <TairoFormGroup
+          label="Profile Picture"
+          sublabel="This is how others will recognize you"
+        >
+          <div class="relative flex flex-col gap-4">
+            <TairoFullscreenDropfile
+              icon="ph:image-duotone"
+              :filter-file-dropped="(file) => file.type.startsWith('image')"
+              @drop="(value) => { inputFile = value }"
+            />
+            <TairoInputFileHeadless
+              v-slot="{ open, remove, preview, files }"
+              v-model="inputFile"
+              accept="image/*"
+            >
+              <div class="relative size-32 mx-auto">
+                <img
+                  v-if="files?.length && files.item(0)"
+                  :src="preview(files.item(0)!).value"
+                  alt="Upload preview"
+                  class="bg-muted-200 dark:bg-muted-700/60 size-32 rounded-full object-cover object-center border-4 border-muted-200 dark:border-muted-800"
+                >
+                <img
+                  v-else-if="currentAvatar"
+                  :src="currentAvatar"
+                  alt="Current avatar"
+                  class="bg-muted-200 dark:bg-muted-700/60 size-32 rounded-full object-cover object-center border-4 border-muted-200 dark:border-muted-800"
+                >
+                <div
+                  v-else
+                  class="bg-muted-200 dark:bg-muted-700/60 size-32 rounded-full object-cover object-center border-4 border-muted-200 dark:border-muted-800 flex items-center justify-center"
+                >
+                  <Icon name="ph:user-duotone" class="size-16 text-muted-400" />
+                </div>
+                
+                <div
+                  v-if="files?.length && files.item(0)"
+                  class="absolute bottom-0 end-0 z-20"
+                >
+                  <BaseTooltip content="Remove image">
+                    <BaseButton
+                      size="icon-sm"
+                      rounded="full"
+                      variant="danger"
+                      @click="remove(files.item(0)!)"
+                    >
+                      <Icon name="lucide:x" class="size-4" />
+                    </BaseButton>
+                  </BaseTooltip>
+                </div>
+                <div v-else-if="currentAvatar" class="absolute bottom-0 end-0 z-20">
+                  <BaseTooltip content="Remove avatar">
+                    <BaseButton
+                      size="icon-sm"
+                      rounded="full"
+                      variant="danger"
+                      :loading="isAvatarUploading"
+                      @click="deleteAvatar"
+                    >
+                      <Icon name="lucide:trash-2" class="size-4" />
+                    </BaseButton>
+                  </BaseTooltip>
+                </div>
+                <div v-else class="absolute bottom-0 end-0 z-20">
+                  <BaseTooltip content="Upload image">
+                    <BaseButton
+                      size="icon-sm"
+                      rounded="full"
+                      variant="primary"
+                      @click="open"
+                    >
+                      <Icon name="lucide:plus" class="size-4" />
+                    </BaseButton>
+                  </BaseTooltip>
+                </div>
+              </div>
+            </TairoInputFileHeadless>
+            
+            <div class="flex items-center justify-center gap-2 mt-4">
+              <BaseButton
+                v-if="inputFile && inputFile.item(0)"
+                variant="primary"
+                :loading="isAvatarUploading"
+                :disabled="isAvatarUploading"
+                @click="uploadAvatar"
+              >
+                <Icon name="ph:upload-duotone" class="size-4" />
+                <span>Upload Avatar</span>
+              </BaseButton>
+            </div>
+          </div>
+        </TairoFormGroup>
+
+        <TairoFormGroup
           label="Personal Information"
           sublabel="Update your name and email address"
         >
@@ -459,27 +671,27 @@ const cancelEmailChange = () => {
               name="email"
             >
               <div class="col-span-12 space-y-4">
-                <BaseField
-                  v-slot="{ inputAttrs, inputRef }"
-                  label="Email Address"
-                  :error="errorMessage"
-                  :disabled="isSubmitting"
-                  required
-                >
-                  <TairoInput
-                    :ref="inputRef"
-                    v-bind="inputAttrs"
-                    :model-value="field.value"
-                    type="email"
-                    :aria-invalid="errorMessage ? 'true' : undefined"
-                    icon="solar:mention-circle-linear"
-                    placeholder="Email address"
-                    autocomplete="email"
-                    rounded="lg"
-                    @update:model-value="handleChange"
-                    @blur="handleBlur"
-                  />
-                </BaseField>
+              <BaseField
+                v-slot="{ inputAttrs, inputRef }"
+                label="Email Address"
+                :error="errorMessage"
+                :disabled="isSubmitting"
+                required
+              >
+                <TairoInput
+                  :ref="inputRef"
+                  v-bind="inputAttrs"
+                  :model-value="field.value"
+                  type="email"
+                  :aria-invalid="errorMessage ? 'true' : undefined"
+                  icon="solar:mention-circle-linear"
+                  placeholder="Email address"
+                  autocomplete="email"
+                  rounded="lg"
+                  @update:model-value="handleChange"
+                  @blur="handleBlur"
+                />
+              </BaseField>
                 
                 <!-- Email Verification Status -->
                 <div class="flex items-center gap-3">
@@ -512,12 +724,21 @@ const cancelEmailChange = () => {
   </form>
 
   <!-- Email Verification Modal -->
-  <BaseModal
-    v-model="showEmailVerificationModal"
-    :mask="true"
-    :closable="true"
-    title="Verify Your Email"
-  >
+  <DialogRoot v-model:open="showEmailVerificationModal">
+    <DialogPortal>
+      <DialogOverlay class="bg-muted-800/70 dark:bg-muted-900/80 fixed inset-0 z-50" />
+      <DialogContent
+        class="fixed starting:opacity-0 starting:top-[8%] top-[10%] start-[50%] max-h-[85vh] w-[90vw] max-w-[32rem] translate-x-[-50%] text-sm rounded-lg overflow-hidden border border-white dark:border-muted-700 bg-white dark:bg-muted-800 focus:outline-none z-[100] transition-discrete transition-all duration-200 ease-out flex flex-col"
+      >
+        <div class="flex w-full items-center justify-between p-4 md:p-6 border-b border-muted-200 dark:border-muted-700">
+          <DialogTitle class="font-heading text-muted-900 text-lg font-medium leading-6 dark:text-white">
+            Verify Your Email
+          </DialogTitle>
+          <BaseButton class="icon-md" @click="showEmailVerificationModal = false">
+            <Icon name="lucide:x" class="size-4" />
+          </BaseButton>
+        </div>
+        <div class="overflow-y-auto">
     <div class="space-y-6 p-6">
       <div class="text-center space-y-3">
         <div class="mx-auto w-16 h-16 bg-primary-100 dark:bg-primary-900/20 rounded-full flex items-center justify-center">
@@ -581,6 +802,9 @@ const cancelEmailChange = () => {
         </div>
       </div>
     </div>
-  </BaseModal>
+        </div>
+      </DialogContent>
+    </DialogPortal>
+  </DialogRoot>
 </template>
 

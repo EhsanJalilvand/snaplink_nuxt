@@ -13,7 +13,15 @@ const { t } = useTranslations()
 const { user, isAuthenticated, logout, checkAuth } = useKeycloak()
 
 // Use shared user data composable for consistent state across all components
-const { userDisplayName } = useUserData()
+const { userDisplayName, user: sharedUser } = useUserData()
+
+// Get user avatar - prioritize user avatar, fallback to ui-avatars
+const userAvatar = computed(() => {
+  if (sharedUser.value?.avatar) {
+    return sharedUser.value.avatar
+  }
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(userDisplayName.value)}&background=6366f1&color=fff`
+})
 
 // Check authentication status when layout mounts
 onMounted(async () => {
@@ -98,7 +106,7 @@ const menu = computed(() => [
           <!-- User Menu (if logged in) -->
           <div v-else class="hidden sm:flex items-center gap-2">
             <NuxtLink to="/dashboard" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-600 dark:text-muted-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
-              <BaseAvatar size="xs" :src="`https://ui-avatars.com/api/?name=${encodeURIComponent(userDisplayName)}&background=6366f1&color=fff`" />
+              <BaseAvatar size="xs" :src="userAvatar" />
               <span class="hidden md:inline">{{ userDisplayName }}</span>
             </NuxtLink>
             <BaseButton size="sm" variant="ghost" @click="handleLogout">
@@ -174,7 +182,7 @@ const menu = computed(() => [
           <div v-else class="pt-2 border-t border-muted-200 dark:border-muted-700">
             <div class="flex flex-col space-y-2">
               <NuxtLink to="/dashboard" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-600 dark:text-muted-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-muted-50 dark:hover:bg-muted-800 rounded-md transition-colors">
-                <BaseAvatar size="xs" :src="`https://ui-avatars.com/api/?name=${encodeURIComponent(userDisplayName)}&background=6366f1&color=fff`" />
+                <BaseAvatar size="xs" :src="userAvatar" />
                 <span>{{ userDisplayName }}</span>
               </NuxtLink>
               <BaseButton size="sm" variant="ghost" @click="handleLogout" class="justify-start">

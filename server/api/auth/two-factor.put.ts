@@ -117,7 +117,7 @@ export default defineEventHandler(async (event) => {
     if (!enabled) {
       // Get user credentials
       const getCredentialsUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}/credentials`
-
+    
       const credentials = await $fetch(getCredentialsUrl, {
         method: 'GET',
         headers: {
@@ -133,10 +133,10 @@ export default defineEventHandler(async (event) => {
         
         await $fetch(deleteCredUrl, {
           method: 'DELETE',
-          headers: {
-            Authorization: `Bearer ${adminTokenResponse.access_token}`,
-          },
-        }).catch((error: any) => {
+      headers: {
+        Authorization: `Bearer ${adminTokenResponse.access_token}`,
+      },
+    }).catch((error: any) => {
           if (process.env.NODE_ENV === 'development') {
             console.error('[auth/two-factor.put.ts] Failed to delete credential:', error.statusCode || error.status)
           }

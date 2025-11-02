@@ -4,12 +4,8 @@ definePageMeta({
   layout: 'dashboard',
 })
 
-// Fetch user data - share cache with dashboard layout
-const { data: userData } = useFetch('/api/auth/me', {
-  default: () => ({ success: false, user: null, isAuthenticated: false }),
-})
-
-const user = computed(() => userData.value?.user)
+// Use shared user data composable for consistent state across all components
+const { user } = useUserData()
 </script>
 
 <template>
@@ -49,6 +45,42 @@ const user = computed(() => userData.value?.user)
       </div>
       <!-- Column -->
       <div class="md:col-span-8">
+        <!-- Profile Picture -->
+        <div class="mb-6 px-4">
+          <BaseHeading
+            as="h3"
+            size="xs"
+            weight="medium"
+            class="text-muted-800 dark:text-muted-100 mb-4"
+          >
+            Profile Picture
+          </BaseHeading>
+          <div class="flex items-center gap-4">
+            <div class="relative size-20">
+              <img
+                v-if="user?.avatar"
+                :src="user.avatar"
+                alt="Profile picture"
+                class="size-20 rounded-full object-cover object-center border-4 border-muted-200 dark:border-muted-800"
+              >
+              <div
+                v-else
+                class="size-20 rounded-full bg-muted-200 dark:bg-muted-700/60 border-4 border-muted-200 dark:border-muted-800 flex items-center justify-center"
+              >
+                <Icon name="ph:user-duotone" class="size-10 text-muted-400" />
+              </div>
+            </div>
+            <div>
+              <BaseParagraph size="sm" class="text-muted-600 dark:text-muted-400">
+                Your profile picture
+              </BaseParagraph>
+              <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-500">
+                Edit in profile settings
+              </BaseParagraph>
+            </div>
+          </div>
+        </div>
+
         <BaseHeading
           as="h3"
           size="xs"
@@ -235,4 +267,3 @@ const user = computed(() => userData.value?.user)
     </div>
   </div>
 </template>
-
