@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { checkRateLimit, getClientIP } from '../../utils/rateLimit.js'
 import { Configuration, FrontendApi, IdentityApi } from '@ory/client'
+import { getHeader } from 'h3'
 
 // Sanitize input (XSS prevention)
 function sanitizeString(str: string): string {
@@ -169,78 +170,18 @@ export default defineEventHandler(async (event) => {
       console.log('[auth/register.post.ts] Identity created successfully:', createdIdentity.id)
     }
 
-    // After creating identity, start verification flow
-    // Don't create session until email is verified
-    const kratosPublicUrl = config.kratosPublicUrl || 'http://localhost:4433'
-    const kratosPublicConfig = new Configuration({
-      basePath: kratosPublicUrl,
-      baseOptions: {
-        timeout: 10000,
-      },
-    })
-    const frontendApi = new FrontendApi(kratosPublicConfig)
+    // After creating identity, return success
+    // Client will create verification flow from browser to ensure CSRF cookies are set properly
+    // This is the same approach as login.vue - client-side flow creation ensures cookies work
+    if (import.meta.dev) {
+      console.log('[auth/register.post.ts] Identity created successfully, client will handle verification flow')
+    }
 
-    // Start verification flow to send verification code
-    try {
-      const { data: verificationFlow } = await frontendApi.createBrowserVerificationFlow({
-        returnTo: 'http://localhost:3000/auth/verify-email',
-      })
-
-      if (!verificationFlow?.id) {
-        throw createError({
-          statusCode: 500,
-          statusMessage: 'Failed to create verification flow',
-        })
-      }
-
-      // Get CSRF token from verification flow
-      const csrfToken = verificationFlow.ui?.nodes?.find(
-        (node: any) => node.attributes?.name === 'csrf_token'
-      )?.attributes?.value as string
-
-      if (!csrfToken) {
-        throw createError({
-          statusCode: 500,
-          statusMessage: 'CSRF token not found in verification flow',
-        })
-      }
-
-      // Submit verification request with email
-      // This will send verification code to email
-      const { data: verificationResponse } = await frontendApi.updateVerificationFlow({
-        flow: verificationFlow.id,
-        updateVerificationFlowBody: {
-          email: email,
-          method: 'code',
-          csrf_token: csrfToken,
-        },
-      })
-
-      if (import.meta.dev) {
-        console.log('[auth/register.post.ts] Verification code sent to:', email)
-      }
-
-      // Return verification flow ID so client can verify the code
-      return {
-        success: true,
-        message: 'Account created! Please verify your email address.',
-        verification: true,
-        verificationFlowId: verificationFlow.id,
-        email: email,
-      }
-    } catch (verificationError: any) {
-      // If verification flow fails, identity is still created
-      // User will need to verify email manually
-      if (import.meta.dev) {
-        console.warn('[auth/register.post.ts] Could not start verification flow:', verificationError.message)
-      }
-
-      return {
-        success: true,
-        message: 'Account created! Please verify your email address.',
-        verification: false,
-        email: email,
-      }
+    return {
+      success: true,
+      message: 'Account created! Please verify your email address.',
+      verification: true,
+      email: email,
     }
   } catch (error: any) {
     if (import.meta.dev) {

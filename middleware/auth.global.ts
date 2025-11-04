@@ -54,23 +54,15 @@ export default defineNuxtRouteMiddleware(async (to) => {
         return
       }
 
-      // If not authenticated, redirect to OAuth2 authorization flow
-      // This will eventually redirect to Kratos login if needed
-      const returnTo = encodeURIComponent(to.fullPath)
-      return navigateTo(`/api/auth/oauth/authorize?return_to=${returnTo}`)
+      // If not authenticated, redirect to login page
+      return navigateTo('/auth/login')
     } catch (error: any) {
-      // If /me returns 401, redirect to OAuth2 flow
-      if (error.statusCode === 401 || error.status === 401) {
-        const returnTo = encodeURIComponent(to.fullPath)
-        return navigateTo(`/api/auth/oauth/authorize?return_to=${returnTo}`)
-      }
-
-      // On other errors, redirect to OAuth2 flow (fail-secure)
+      // If /me returns 401 or any error, user is not authenticated
+      // Redirect to login page
       if (import.meta.dev) {
         console.error('[auth.global.ts] Error checking auth:', error)
       }
-      const returnTo = encodeURIComponent(to.fullPath)
-      return navigateTo(`/api/auth/oauth/authorize?return_to=${returnTo}`)
+      return navigateTo('/auth/login')
     }
   }
 })

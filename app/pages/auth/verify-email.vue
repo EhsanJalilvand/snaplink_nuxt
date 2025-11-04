@@ -84,11 +84,38 @@ const onSubmit = handleSubmit(async (formValues) => {
       })
       
       // Wait a moment for Kratos to update the identity
-      await new Promise(resolve => setTimeout(resolve, 500))
+      await new Promise(resolve => setTimeout(resolve, 1000))
       
-      // Refresh user data to get updated email verification status
+      // Create a session for the user after email verification
+      // This is needed because registration doesn't create a session
+      if (response.identityId) {
+        try {
+          // Create session using Admin API
+          await $fetch('/api/auth/create-session', {
+            method: 'POST',
+            body: {
+              identityId: response.identityId,
+            },
+            credentials: 'include',
+          })
+          
+          if (import.meta.dev) {
+            console.log('[auth/verify-email.vue] Session created for identity:', response.identityId)
+          }
+        } catch (sessionError: any) {
+          // Log but continue - user can login manually
+          if (import.meta.dev) {
+            console.warn('[auth/verify-email.vue] Failed to create session:', sessionError)
+          }
+        }
+      }
+      
+      // Refresh user data to get updated email verification status and session
       const { refreshUser } = useUserData()
       await refreshUser()
+      
+      // Wait a bit more for session to be set
+      await new Promise(resolve => setTimeout(resolve, 500))
       
       // Redirect to dashboard (middleware will check email verification)
       await router.push('/dashboard')

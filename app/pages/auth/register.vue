@@ -83,25 +83,105 @@ const onSubmit = handleSubmit(async (_values) => {
     })
 
           if (response.success) {
-            if (response.verification) {
-              // Verification code sent - redirect to verify page
-              toaster.add({
-                title: 'Success',
-                description: 'Account created! Please verify your email.',
-                icon: 'ph:envelope',
-                progress: true,
-              })
-              
-              // Redirect to verify email page with flow ID and email
-              await router.push({
-                path: '/auth/verify-email',
-                query: {
-                  flow: response.verificationFlowId,
-                  email: response.email,
+            // Wait a moment for Kratos to fully process the identity
+            // This ensures the identity is ready before sending verification email
+            // Increased delay to ensure database transaction is committed
+            await new Promise(resolve => setTimeout(resolve, 2000))
+            
+            // Create a new browser verification flow from client-side
+            // This ensures CSRF cookies are set properly in the browser
+            const config = useRuntimeConfig()
+            const userEmail = response.email || values.email
+            
+            try {
+              // Create a new browser verification flow (like login.vue does)
+              // This sets CSRF cookie in browser properly
+              const verificationFlow = await $fetch(`${config.public.kratosPublicUrl}/self-service/verification/browser`, {
+                method: 'GET',
+                credentials: 'include',
+                headers: {
+                  'Accept': 'application/json',
                 },
               })
-            } else {
-              // Registration successful but verification failed
+              
+              if (verificationFlow?.id && userEmail) {
+                // Get CSRF token from flow
+                const csrfToken = verificationFlow.ui?.nodes?.find(
+                  (node: any) => node.attributes?.name === 'csrf_token'
+                )?.attributes?.value
+                
+                if (csrfToken) {
+                  // Wait another moment before sending verification request
+                  // This ensures Kratos has fully indexed the new identity
+                  await new Promise(resolve => setTimeout(resolve, 500))
+                  
+                  // Submit verification request to send code to email
+                  // This is the same approach as login.vue
+                  const verifyResponse = await $fetch(`${config.public.kratosPublicUrl}/self-service/verification?flow=${verificationFlow.id}`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Accept': 'application/json',
+                    },
+                    body: {
+                      email: userEmail,
+                      method: 'code',
+                      csrf_token: csrfToken,
+                    },
+                  }).catch((error: any) => {
+                    // Log error but continue - user can still request code manually
+                    if (import.meta.dev) {
+                      console.error('[auth/register.vue] Failed to send verification email automatically:', error)
+                      console.error('[auth/register.vue] Error details:', error.response?.data || error.data)
+                    }
+                    throw error
+                  })
+                  
+                  if (import.meta.dev) {
+                    console.log('[auth/register.vue] Verification email sent successfully:', verifyResponse)
+                  }
+                }
+                
+                // Verification code sent - redirect to verify page
+                toaster.add({
+                  title: 'Success',
+                  description: 'Account created! Please verify your email.',
+                  icon: 'ph:envelope',
+                  progress: true,
+                })
+                
+                // Redirect to verify email page with flow ID and email
+                await router.push({
+                  path: '/auth/verify-email',
+                  query: {
+                    flow: verificationFlow.id,
+                    email: userEmail,
+                  },
+                })
+              } else {
+                // Flow creation failed - still redirect to verify page
+                toaster.add({
+                  title: 'Success',
+                  description: 'Account created! Please verify your email.',
+                  icon: 'ph:check-circle',
+                  progress: true,
+                })
+                
+                await router.push({
+                  path: '/auth/verify-email',
+                  query: {
+                    email: userEmail,
+                  },
+                })
+              }
+            } catch (emailError: any) {
+              // Log error but continue - user can still request code manually
+              if (import.meta.dev) {
+                console.warn('[auth/register.vue] Failed to create verification flow:', emailError)
+              }
+              
+              // Still redirect to verify email page (user can request new code)
               toaster.add({
                 title: 'Success',
                 description: 'Account created! Please verify your email.',
@@ -109,8 +189,12 @@ const onSubmit = handleSubmit(async (_values) => {
                 progress: true,
               })
               
-              // Redirect to login page
-              await router.push('/auth/login')
+              await router.push({
+                path: '/auth/verify-email',
+                query: {
+                  email: userEmail,
+                },
+              })
             }
           }
   } catch (error: any) {
@@ -324,6 +408,80 @@ const registerWithGoogle = async () => {
               </BaseField>
             </Field>
           </div>
+          <Field
+            v-slot="{ field, errorMessage, handleChange, handleBlur }"
+            name="email"
+          >
+            <BaseField
+              v-slot="{ inputAttrs, inputRef }"
+              label="Email Address"
+              :state="errorMessage ? 'error' : 'idle'"
+              :error="errorMessage"
+              :disabled="isSubmitting"
+              required
+            >
+              <TairoInput
+                :ref="inputRef"
+                v-bind="inputAttrs"
+                :model-value="field.value"
+                type="email"
+                autocomplete="email"
+                rounded="lg"
+                icon="solar:mention-circle-linear"
+                @update:model-value="handleChange"
+                @blur="handleBlur"
+              />
+            </BaseField>
+          </Field>
+          <Field
+            v-slot="{ field, errorMessage, handleChange, handleBlur }"
+            name="password"
+          >
+            <BaseField
+              v-slot="{ inputAttrs, inputRef }"
+              label="Password"
+              :state="errorMessage ? 'error' : 'idle'"
+              :error="errorMessage"
+              :disabled="isSubmitting"
+              required
+            >
+              <TairoInput
+                :ref="inputRef"
+                v-bind="inputAttrs"
+                :model-value="field.value"
+                type="password"
+                autocomplete="new-password"
+                rounded="lg"
+                icon="solar:lock-keyhole-linear"
+                @update:model-value="handleChange"
+                @blur="handleBlur"
+              />
+            </BaseField>
+          </Field>
+          <Field
+            v-slot="{ field, errorMessage, handleChange, handleBlur }"
+            name="confirmPassword"
+          >
+            <BaseField
+              v-slot="{ inputAttrs, inputRef }"
+              label="Confirm password"
+              :state="errorMessage ? 'error' : 'idle'"
+              :error="errorMessage"
+              :disabled="isSubmitting"
+              required
+            >
+              <TairoInput
+                :ref="inputRef"
+                v-bind="inputAttrs"
+                :model-value="field.value"
+                type="password"
+                rounded="lg"
+                icon="ph:check"
+                @update:model-value="handleChange"
+                @blur="handleBlur"
+              />
+            </BaseField>
+          </Field>
         </div>
 
         <div class="mb-4">
