@@ -6,254 +6,284 @@ import { z } from 'zod'
 definePageMeta({
   layout: 'empty',
   title: 'Verify Email',
+  ssr: false,
 })
-
-const route = useRoute()
-const router = useRouter()
-const toaster = useNuiToasts()
 
 const VALIDATION_TEXT = {
-  TOKEN_REQUIRED: 'Verification token is required',
-  EMAIL_REQUIRED: 'Email is required',
+  CODE_REQUIRED: 'Verification code is required',
+  CODE_LENGTH: 'Verification code must be 6 digits',
 }
 
-// Get token and email from URL query params
-const token = computed(() => {
-  return (route.query.token as string) || ''
-})
-
-const email = computed(() => {
-  return (route.query.email as string) || ''
-})
-
-// This is the Zod schema for the form input
 const zodSchema = z.object({
-  token: z.string().min(1, VALIDATION_TEXT.TOKEN_REQUIRED),
-  email: z.string().email(VALIDATION_TEXT.EMAIL_REQUIRED).optional(),
+  code: z.string()
+    .min(1, VALIDATION_TEXT.CODE_REQUIRED)
+    .regex(/^\d{6}$/, VALIDATION_TEXT.CODE_LENGTH),
 })
 
 type FormInput = z.infer<typeof zodSchema>
 
 const validationSchema = toTypedSchema(zodSchema)
 const initialValues = {
-  token: token.value || '',
-  email: email.value || '',
+  code: '',
 } satisfies FormInput
 
-const {
-  handleSubmit,
-  isSubmitting,
-  setFieldError,
-} = useForm({
+const { values, handleSubmit, isSubmitting, setFieldError } = useForm({
   validationSchema,
   initialValues,
 })
 
-// This is where you would send the form data to the server
-const onSubmit = handleSubmit(async (values) => {
+const router = useRouter()
+const toaster = useNuiToasts()
+const route = useRoute()
+
+const email = ref<string>('')
+const verificationFlowId = ref<string>('')
+const resendCooldown = ref<number>(0)
+
+// Get email and flow ID from query params or route state
+onMounted(() => {
+  const queryEmail = route.query.email as string
+  const queryFlowId = route.query.flow as string
+  
+  if (queryEmail) {
+    email.value = queryEmail
+  }
+  
+  if (queryFlowId) {
+    verificationFlowId.value = queryFlowId
+  }
+  
+  // Start resend cooldown
+  resendCooldown.value = 60
+  const interval = setInterval(() => {
+    if (resendCooldown.value > 0) {
+      resendCooldown.value--
+    } else {
+      clearInterval(interval)
+    }
+  }, 1000)
+})
+
+const onSubmit = handleSubmit(async (formValues) => {
   try {
-    // Call verify email API
     const response = await $fetch('/api/auth/verify-email', {
       method: 'POST',
       body: {
-        token: values.token || token.value,
-        email: values.email || email.value,
+        code: formValues.code,
+        flow: verificationFlowId.value,
       },
+      credentials: 'include',
     })
 
     if (response.success) {
       toaster.add({
         title: 'Success',
-        description: 'Email verified successfully. You can now login.',
-        icon: 'ph:check-circle',
+        description: 'Email verified successfully!',
+        icon: 'ph:check-circle-fill',
         progress: true,
       })
       
-      // Redirect to login after successful verification
-      await router.push('/auth/login')
+      // Wait a moment for Kratos to update the identity
+      await new Promise(resolve => setTimeout(resolve, 500))
+      
+      // Refresh user data to get updated email verification status
+      const { refreshUser } = useUserData()
+      await refreshUser()
+      
+      // Redirect to dashboard (middleware will check email verification)
+      await router.push('/dashboard')
+    } else {
+      setFieldError('code', response.error || 'Verification failed. Please try again.')
     }
   } catch (error: any) {
-    // Handle errors
-    if (error.statusCode === 429) {
+    if (error.statusCode === 400 || error.status === 400) {
+      const errorMessage = error.data?.message || error.statusMessage || 'Invalid verification code. Please try again.'
+      setFieldError('code', errorMessage)
+      
+      // Show error toast
       toaster.add({
-        title: 'Too Many Requests',
-        description: error.message || 'Too many verification attempts. Please try again later.',
+        title: 'Verification Failed',
+        description: errorMessage,
         icon: 'ph:warning',
-        color: 'warning',
+        color: 'danger',
         progress: true,
       })
-    } else if (error.statusCode === 400) {
-      // Handle validation errors
-      if (error.data) {
-        const errors = error.data as Array<{ path: string[]; message: string }>
-        errors.forEach((err) => {
-          if (err.path && err.path.length > 0) {
-            setFieldError(err.path[0] as keyof FormInput, err.message)
-          }
-        })
-      } else {
-        setFieldError('token', error.message || 'Invalid verification token')
-      }
     } else {
-      setFieldError('token', error.message || 'Email verification failed. Please try again.')
+      setFieldError('code', 'Verification failed. Please try again.')
+      toaster.add({
+        title: 'Error',
+        description: 'An unexpected error occurred. Please try again.',
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
     }
   }
 })
 
-const resendVerification = async () => {
+const resendCode = async () => {
+  if (resendCooldown.value > 0) {
+    return
+  }
+
   try {
-    // TODO: Implement resend verification email endpoint
-    // For now, redirect to registration
-    router.push('/auth/register')
-    
-    toaster.add({
-      title: 'Info',
-      description: 'Please register again to receive a new verification email',
-      icon: 'ph:info',
-      progress: true,
+    const response = await $fetch('/api/auth/resend-verification', {
+      method: 'POST',
+      body: {
+        email: email.value,
+      },
+      credentials: 'include',
     })
-  } catch {
-    // handle error
+
+    if (response.success) {
+      toaster.add({
+        title: 'Code Sent',
+        description: 'A new verification code has been sent to your email.',
+        icon: 'ph:envelope',
+        progress: true,
+      })
+      
+      // Reset cooldown
+      resendCooldown.value = 60
+    } else {
+      toaster.add({
+        title: 'Error',
+        description: response.error || 'Failed to resend verification code.',
+        icon: 'ph:warning',
+        color: 'danger',
+      })
+    }
+  } catch (error: any) {
+    toaster.add({
+      title: 'Error',
+      description: 'Failed to resend verification code. Please try again.',
+      icon: 'ph:warning',
+      color: 'danger',
+    })
   }
 }
 </script>
 
 <template>
-  <div
-    class="bg-muted-100 dark:bg-muted-900 relative min-h-screen w-full overflow-hidden px-4 dark:[--color-input-default-bg:var(--color-muted-950)]"
-  >
+  <div class="dark:bg-muted-800 flex min-h-screen bg-white">
     <div
-      class="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4"
+      class="bg-muted-50 relative flex flex-1 flex-col justify-center px-6 py-12 dark:bg-muted-900 lg:w-1/2 lg:flex-none"
     >
-      <NuxtLink
-        to="/"
-        class="text-muted-400 hover:text-primary-500 dark:text-muted-700 dark:hover:text-primary-500 transition-colors duration-300"
-      >
-        <div class="flex items-center space-x-2">
-          <div class="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-            <Icon name="solar:link-linear" class="w-5 h-5 text-white" />
+      <div class="mx-auto w-full max-w-sm">
+        <NuxtLink
+          to="/"
+          class="text-muted-400 hover:text-primary-500 dark:text-muted-700 dark:hover:text-primary-500 transition-colors duration-300"
+        >
+          <div class="flex items-center space-x-2 mb-8">
+            <div class="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
+              <Icon name="solar:link-linear" class="w-5 h-5 text-white" />
+            </div>
+            <span class="text-xl font-bold text-primary-600 dark:text-primary-400">SnapLink</span>
           </div>
-          <span class="text-xl font-bold text-primary-600 dark:text-primary-400">SnapLink</span>
+        </NuxtLink>
+
+        <BaseHeading
+          as="h2"
+          size="3xl"
+          weight="medium"
+        >
+          Verify Your Email
+        </BaseHeading>
+        <BaseParagraph size="sm" class="text-muted-400 mb-6">
+          We've sent a 6-digit verification code to
+          <span class="font-semibold text-muted-900 dark:text-muted-100">{{ email || 'your email' }}</span>.
+          Please enter it below.
+        </BaseParagraph>
+
+        <form
+          method="POST"
+          action=""
+          class="space-y-4"
+          novalidate
+          @submit.prevent="onSubmit"
+        >
+          <Field
+            v-slot="{ field, errorMessage, handleChange, handleBlur }"
+            name="code"
+          >
+            <BaseField
+              v-slot="{ inputAttrs, inputRef }"
+              label="Verification Code"
+              :state="errorMessage ? 'error' : 'idle'"
+              :error="errorMessage"
+              :disabled="isSubmitting"
+              required
+            >
+              <TairoInput
+                :ref="inputRef"
+                v-bind="inputAttrs"
+                :model-value="field.value"
+                type="text"
+                inputmode="numeric"
+                pattern="[0-9]*"
+                maxlength="6"
+                autocomplete="one-time-code"
+                rounded="lg"
+                icon="solar:shield-check-linear"
+                placeholder="000000"
+                class="text-center text-2xl font-mono tracking-widest"
+                @update:model-value="handleChange"
+                @blur="handleBlur"
+              />
+            </BaseField>
+          </Field>
+
+          <BaseButton
+            :disabled="isSubmitting"
+            :loading="isSubmitting"
+            type="submit"
+            rounded="lg"
+            variant="primary"
+            class="h-11! w-full"
+          >
+            Verify Email
+          </BaseButton>
+
+          <div class="text-center">
+            <BaseParagraph size="sm" class="text-muted-400">
+              Didn't receive the code?
+              <BaseButton
+                :disabled="resendCooldown > 0"
+                type="button"
+                variant="link"
+                class="text-primary-600 hover:text-primary-500"
+                @click="resendCode"
+              >
+                {{ resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend Code' }}
+              </BaseButton>
+            </BaseParagraph>
+          </div>
+        </form>
+
+        <div class="mt-6 text-center">
+          <NuxtLink
+            to="/auth/login"
+            class="text-muted-400 hover:text-primary-500 text-sm font-medium underline-offset-4 transition duration-150 ease-in-out hover:underline"
+          >
+            Back to Login
+          </NuxtLink>
         </div>
-      </NuxtLink>
-      <div>
-        <BaseThemeToggle />
       </div>
     </div>
-    <div class="flex w-full items-center justify-center">
-      <div class="relative mx-auto w-full max-w-2xl">
-        <!-- Form -->
-        <div class="me-auto ms-auto mt-4 w-full">
-          <div class="me-auto ms-auto mt-4 w-full max-w-md">
-            <div class="text-center">
-              <BaseHeading
-                as="h2"
-                size="3xl"
-                weight="medium"
-              >
-                Verify Your Email
-              </BaseHeading>
-              <BaseParagraph size="sm" class="text-muted-400 mb-6">
-                <span v-if="email">We've sent a verification email to <strong>{{ email }}</strong></span>
-                <span v-else>Please click the verification link in your email, or enter your email below to verify.</span>
-              </BaseParagraph>
-            </div>
-            <form
-              method="POST"
-              action=""
-              class="px-8 py-4"
-              novalidate
-              @submit.prevent="onSubmit"
-            >
-              <div class="mb-4 space-y-4">
-                <Field
-                  v-if="!token"
-                  v-slot="{ field, errorMessage, handleChange, handleBlur }"
-                  name="email"
-                >
-                  <BaseField
-                    v-slot="{ inputAttrs, inputRef }"
-                    label="Email Address"
-                    :state="errorMessage ? 'error' : 'idle'"
-                    :error="errorMessage"
-                    :disabled="isSubmitting"
-                    required
-                  >
-                    <BaseInput
-                      :ref="inputRef"
-                      v-bind="inputAttrs"
-                      :model-value="field.value"
-                      type="email"
-                      autocomplete="email"
-                      @update:model-value="handleChange"
-                      @blur="handleBlur"
-                    />
-                  </BaseField>
-                </Field>
-                
-                <Field
-                  v-if="!token"
-                  v-slot="{ field, errorMessage, handleChange, handleBlur }"
-                  name="token"
-                >
-                  <BaseField
-                    v-slot="{ inputAttrs, inputRef }"
-                    label="Verification Token (Optional)"
-                    :state="errorMessage ? 'error' : 'idle'"
-                    :error="errorMessage"
-                    :disabled="isSubmitting"
-                  >
-                    <BaseInput
-                      :ref="inputRef"
-                      v-bind="inputAttrs"
-                      :model-value="field.value"
-                      placeholder="Enter verification token from email"
-                      @update:model-value="handleChange"
-                      @blur="handleBlur"
-                    />
-                  </BaseField>
-                </Field>
-              </div>
-
-              <div class="mb-6">
-                <BaseButton
-                  :disabled="isSubmitting || (!token && !email)"
-                  :loading="isSubmitting"
-                  type="submit"
-                  variant="primary"
-                  class="h-12! w-full"
-                >
-                  Verify Email
-                </BaseButton>
-              </div>
-
-              <div class="text-center">
-                <BaseParagraph size="sm" class="text-muted-400 mb-4">
-                  Didn't receive the email?
-                </BaseParagraph>
-                <BaseButton
-                  variant="outline"
-                  class="h-10! w-full"
-                  @click="resendVerification"
-                >
-                  Resend Verification Email
-                </BaseButton>
-              </div>
-
-              <!-- Back to login link -->
-              <p
-                class="text-muted-400 mt-4 flex justify-between font-sans text-sm leading-5"
-              >
-                <span>Wrong email?</span>
-                <NuxtLink
-                  to="/auth/register"
-                  class="text-primary-600 hover:text-primary-500 font-medium underline-offset-4 transition duration-150 ease-in-out hover:underline"
-                >
-                  Register Again
-                </NuxtLink>
-              </p>
-            </form>
-          </div>
+    <div
+      class="bg-muted-100 relative hidden flex-1 flex-col justify-center px-6 py-12 dark:bg-muted-800 lg:flex lg:w-1/2"
+    >
+      <div class="mx-auto w-full max-w-sm">
+        <div class="relative">
+          <div
+            class="bg-muted-200/20 absolute -top-12 start-20 h-14 w-0 origin-top-left rotate-45 rounded-full transition-all delay-75 duration-300 group-hover:w-48"
+          />
+          <div
+            class="bg-muted-200/20 absolute -bottom-12 end-20 h-14 w-0 origin-bottom-right rotate-45 rounded-full transition-all delay-75 duration-300 group-hover:w-48"
+          />
+          <div
+            class="bg-muted-200/20 absolute -end-7 bottom-24 h-14 w-0 origin-bottom-right rotate-45 rounded-full transition-all delay-[25ms] duration-300 group-hover:w-40"
+          />
         </div>
       </div>
     </div>

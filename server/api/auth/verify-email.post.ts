@@ -1,19 +1,20 @@
 import { z } from 'zod'
 import { checkRateLimit, getClientIP } from '../../utils/rateLimit.js'
 import { Configuration, FrontendApi } from '@ory/client'
+import { getHeader } from 'h3'
 
 // Sanitize code input (XSS prevention)
 function sanitizeCode(code: string): string {
-  return code.trim().replace(/[^0-9A-Za-z]/g, '').toUpperCase()
+  return code.trim().replace(/[^0-9]/g, '') // Only digits
 }
 
 const verifyEmailSchema = z.object({
-  token: z.string()
-    .min(1, 'Verification code is required')
-    .max(500, 'Invalid code'),
-  email: z.string()
-    .email('Invalid email address')
-    .optional(), // Email is optional if token contains it
+  code: z.string()
+    .min(6, 'Verification code must be 6 digits')
+    .max(6, 'Verification code must be 6 digits')
+    .regex(/^\d{6}$/, 'Verification code must be 6 digits'),
+  flow: z.string()
+    .min(1, 'Verification flow ID is required'),
 })
 
 export default defineEventHandler(async (event) => {
@@ -50,7 +51,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { token, email } = validation.data
+  const { code, flow } = validation.data
 
   try {
     // Use Kratos Verification Flow to verify email
@@ -59,16 +60,28 @@ export default defineEventHandler(async (event) => {
     })
     const frontendApi = new FrontendApi(kratosConfig)
 
-    // Create verification flow
-    // The token should be in the query parameter or flow context
-    const { data: verificationFlow } = await frontendApi.createBrowserVerificationFlow({
-      token, // Pass token to verification flow
+    // Get all cookies from request to forward to Kratos
+    const requestCookies = getHeader(event, 'cookie') || ''
+
+    // Get existing verification flow with cookies
+    const { data: verificationFlow } = await frontendApi.getVerificationFlow({
+      id: flow,
+    }, {
+      headers: requestCookies ? { Cookie: requestCookies } : undefined,
     })
 
     if (!verificationFlow?.id) {
       throw createError({
         statusCode: 400,
-        statusMessage: 'Invalid verification code',
+        statusMessage: 'Invalid verification flow',
+      })
+    }
+
+    // Check if flow is expired
+    if (verificationFlow.expires_at && new Date(verificationFlow.expires_at) < new Date()) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Verification code has expired. Please request a new code.',
       })
     }
 
@@ -84,21 +97,83 @@ export default defineEventHandler(async (event) => {
       })
     }
 
+    // Update verification flow with code - forward cookies for CSRF
+    const sanitizedCode = sanitizeCode(code)
+    
+    if (import.meta.dev) {
+      console.log('[auth/verify-email.post.ts] Verifying code:', sanitizedCode.substring(0, 2) + '****', 'for flow:', flow)
+    }
+
     // Update verification flow with code
-    await frontendApi.updateVerificationFlow({
+    const verificationResponse = await frontendApi.updateVerificationFlow({
       flow: verificationFlow.id,
       updateVerificationFlowBody: {
         method: 'code',
-        code: sanitizeCode(token), // Verification code
+        code: sanitizedCode, // Verification code (6 digits)
         csrf_token: csrfToken,
       },
-    }).catch((error: any) => {
+    }, {
+      headers: requestCookies ? { Cookie: requestCookies } : undefined,
+    })
+    
+    // Check if verification was successful
+    if (!verificationResponse.data) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Verification failed. Please try again.',
+      })
+    }
+    
+    // Check if verification flow state is success
+    if (verificationResponse.data.state === 'passed_challenge') {
+      // Verification successful - email is now verified
       if (import.meta.dev) {
-        console.error('[auth/verify-email.post.ts] Failed to verify email:', error)
+        console.log('[auth/verify-email.post.ts] Email verified successfully')
       }
       
+      return {
+        success: true,
+        message: 'Email verified successfully',
+      }
+    }
+    
+    // If state is not passed, check for errors
+    if (verificationResponse.data.ui?.messages) {
+      const messages = verificationResponse.data.ui.messages
+      const errorMessage = messages.find((m: any) => m.type === 'error')?.text
+      if (errorMessage) {
+        throw createError({
+          statusCode: 400,
+          statusMessage: errorMessage,
+        })
+      }
+    }
+    
+    // If we get here, verification didn't complete
+    if (import.meta.dev) {
+      console.error('[auth/verify-email.post.ts] Verification state:', verificationResponse.data.state)
+      console.error('[auth/verify-email.post.ts] Verification response:', JSON.stringify(verificationResponse.data, null, 2))
+    }
+    
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Invalid verification code. Please check the code and try again.',
+    })
+  } catch (error: any) {
+    if (import.meta.dev) {
+      console.error('[auth/verify-email.post.ts] Error:', error.statusCode || error.status)
+      console.error('[auth/verify-email.post.ts] Error details:', error.response?.data || error.data || error.message)
+    }
+    
+    // Re-throw if it's already a createError
+    if (error.statusCode) {
+      throw error
+    }
+    
+    // Handle Kratos API errors
+    if (error.response?.data) {
       // Check if it's a code validation error
-      if (error.response?.data?.ui?.messages) {
+      if (error.response.data.ui?.messages) {
         const messages = error.response.data.ui.messages
         const errorMessage = messages.find((m: any) => m.type === 'error')?.text
         if (errorMessage) {
@@ -109,32 +184,18 @@ export default defineEventHandler(async (event) => {
         }
       }
       
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'Invalid verification code',
-      })
-    })
-
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[auth/verify-email.post.ts] Email verified successfully')
-    }
-
-    return {
-      success: true,
-      message: 'Email verified successfully',
-    }
-  } catch (error: any) {
-    if (process.env.NODE_ENV === 'development') {
-      console.error('[auth/verify-email.post.ts] Error:', error.statusCode || error.status)
-    }
-    
-    if (error.statusCode) {
-      throw error
+      // Check for specific Kratos error types
+      if (error.response.data.error?.message) {
+        throw createError({
+          statusCode: 400,
+          statusMessage: error.response.data.error.message,
+        })
+      }
     }
     
     throw createError({
       statusCode: 400,
-      statusMessage: 'Invalid verification code',
+      statusMessage: 'Invalid verification code. Please check the code and try again.',
     })
   }
 })

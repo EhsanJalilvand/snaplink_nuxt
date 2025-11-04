@@ -44,8 +44,13 @@ export default defineNuxtRouteMiddleware(async (to) => {
         credentials: 'include',
       })
 
-      // If user is authenticated, allow access
+      // If user is authenticated, check email verification
       if (userResponse.success && userResponse.user && userResponse.isAuthenticated) {
+        // Check if email is verified
+        if (!userResponse.user.emailVerified) {
+          // Email not verified - redirect to verification page
+          return navigateTo('/auth/verify-email')
+        }
         return
       }
 

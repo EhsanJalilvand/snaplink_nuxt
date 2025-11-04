@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import { toTypedSchema } from '@vee-validate/zod'
 import { Field, useForm } from 'vee-validate'
 import { z } from 'zod'
@@ -41,7 +42,25 @@ const {
 
 const router = useRouter()
 const toaster = useNuiToasts()
-const { login: authLogin, startOAuth2Flow } = useAuth()
+const { login: authLogin, startOAuth2Flow, checkAuth } = useAuth()
+
+// Check if user is already authenticated on mount
+// If session exists, logout first to allow fresh login
+onMounted(async () => {
+  try {
+    const { isAuthenticated } = await checkAuth()
+    
+    // If already authenticated, logout first to allow fresh login
+    // This allows users to login again without manually clearing cookies
+    if (isAuthenticated) {
+      const { logout } = useAuth()
+      await logout()
+      // After logout, allow user to login
+    }
+  } catch (error) {
+    // User is not authenticated, allow login
+  }
+})
 
 // This is where you would send the form data to the server
 const onSubmit = handleSubmit(async (values) => {
@@ -50,16 +69,17 @@ const onSubmit = handleSubmit(async (values) => {
     // This ensures cookie is set in browser properly
     const config = useRuntimeConfig()
     
-    // Get login flow from Kratos directly (client-side)
-    // This ensures CSRF cookie is set in browser properly
-    const returnTo = encodeURIComponent('http://localhost:3000/dashboard')
-    const flowResponse = await $fetch(`${config.public.kratosPublicUrl}/self-service/login/browser?return_to=${returnTo}`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: {
-        'Accept': 'application/json',
-      },
-    })
+      // Get login flow from Kratos directly (client-side)
+      // Use refresh=true to allow login even if session exists
+      // This ensures CSRF cookie is set in browser properly
+      const returnTo = encodeURIComponent('http://localhost:3000/dashboard')
+      const flowResponse = await $fetch(`${config.public.kratosPublicUrl}/self-service/login/browser?refresh=true&return_to=${returnTo}`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json',
+        },
+      })
     
     if (import.meta.dev) {
       console.log('[auth/login.vue] Flow response:', flowResponse)
@@ -155,7 +175,78 @@ const onSubmit = handleSubmit(async (values) => {
     
     // Check if login was successful
     if (loginResponse?.session) {
-      // Cookie is now set - redirect to dashboard
+      // Check if email is verified
+      const session = loginResponse.session
+      const identity = session.identity
+      const traits = identity?.traits || {}
+      const emailVerified = traits.email_verified || traits.email_address_verified || false
+      
+      if (!emailVerified) {
+        // Email not verified - redirect to verify page
+        toaster.add({
+          title: 'Email Verification Required',
+          description: 'Please verify your email address to continue.',
+          icon: 'ph:envelope',
+          color: 'warning',
+          progress: true,
+        })
+        
+        // Start verification flow and send code to email
+        const config = useRuntimeConfig()
+        const userEmail = traits.email || traits.email_address || ''
+        
+        // Create verification flow
+        const verificationFlow = await $fetch(`${config.public.kratosPublicUrl}/self-service/verification/browser`, {
+          method: 'GET',
+          credentials: 'include',
+          headers: {
+            'Accept': 'application/json',
+          },
+        })
+        
+        if (verificationFlow?.id && userEmail) {
+          // Get CSRF token from flow
+          const csrfToken = verificationFlow.ui?.nodes?.find(
+            (node: any) => node.attributes?.name === 'csrf_token'
+          )?.attributes?.value
+          
+          if (csrfToken) {
+            // Submit verification request to send code to email
+            await $fetch(`${config.public.kratosPublicUrl}/self-service/verification?flow=${verificationFlow.id}`, {
+              method: 'POST',
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              body: {
+                email: userEmail,
+                method: 'code',
+                csrf_token: csrfToken,
+              },
+            }).catch((error: any) => {
+              // Log error but continue
+              if (import.meta.dev) {
+                console.warn('[auth/login.vue] Failed to send verification code:', error)
+              }
+            })
+          }
+          
+          // Redirect to verify page
+          await router.push({
+            path: '/auth/verify-email',
+            query: {
+              flow: verificationFlow.id,
+              email: userEmail,
+            },
+          })
+        } else {
+          await router.push('/auth/verify-email')
+        }
+        return
+      }
+      
+      // Email verified - redirect to dashboard
       toaster.add({
         title: 'Success',
         description: 'Welcome back!',

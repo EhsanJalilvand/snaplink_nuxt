@@ -169,8 +169,8 @@ export default defineEventHandler(async (event) => {
       console.log('[auth/register.post.ts] Identity created successfully:', createdIdentity.id)
     }
 
-    // After creating identity, we need to create a session for the user
-    // Use Frontend API to create a session via login flow
+    // After creating identity, start verification flow
+    // Don't create session until email is verified
     const kratosPublicUrl = config.kratosPublicUrl || 'http://localhost:4433'
     const kratosPublicConfig = new Configuration({
       basePath: kratosPublicUrl,
@@ -180,62 +180,67 @@ export default defineEventHandler(async (event) => {
     })
     const frontendApi = new FrontendApi(kratosPublicConfig)
 
-    // Create login flow and submit credentials to create session
+    // Start verification flow to send verification code
     try {
-      const { data: loginFlow } = await frontendApi.createBrowserLoginFlow()
+      const { data: verificationFlow } = await frontendApi.createBrowserVerificationFlow({
+        returnTo: 'http://localhost:3000/auth/verify-email',
+      })
 
-      if (!loginFlow?.id) {
+      if (!verificationFlow?.id) {
         throw createError({
           statusCode: 500,
-          statusMessage: 'Failed to create login flow for new user',
+          statusMessage: 'Failed to create verification flow',
         })
       }
 
-      // Get CSRF token
-      const csrfToken = loginFlow.ui?.nodes?.find(
+      // Get CSRF token from verification flow
+      const csrfToken = verificationFlow.ui?.nodes?.find(
         (node: any) => node.attributes?.name === 'csrf_token'
       )?.attributes?.value as string
 
       if (!csrfToken) {
         throw createError({
           statusCode: 500,
-          statusMessage: 'CSRF token not found in login flow',
+          statusMessage: 'CSRF token not found in verification flow',
         })
       }
 
-      // Submit login to create session
-      const { data: loginResponse } = await frontendApi.updateLoginFlow({
-        flow: loginFlow.id,
-        updateLoginFlowBody: {
-          method: 'password',
-          password: password,
-          identifier: email,
+      // Submit verification request with email
+      // This will send verification code to email
+      const { data: verificationResponse } = await frontendApi.updateVerificationFlow({
+        flow: verificationFlow.id,
+        updateVerificationFlowBody: {
+          email: email,
+          method: 'code',
           csrf_token: csrfToken,
         },
       })
 
-      if (loginResponse.session) {
-        // Session created successfully - registration is complete
-        return {
-          success: true,
-          message: 'Account created successfully',
-          session: true,
-        }
-      }
-    } catch (loginError: any) {
-      // If login fails, identity is still created
-      // User will need to login manually
       if (import.meta.dev) {
-        console.warn('[auth/register.post.ts] Could not create session automatically:', loginError.message)
+        console.log('[auth/register.post.ts] Verification code sent to:', email)
       }
-    }
 
-    // Identity created but session not created automatically
-    // User will need to login
-    return {
-      success: true,
-      message: 'Account created successfully. Please login to continue.',
-      session: false,
+      // Return verification flow ID so client can verify the code
+      return {
+        success: true,
+        message: 'Account created! Please verify your email address.',
+        verification: true,
+        verificationFlowId: verificationFlow.id,
+        email: email,
+      }
+    } catch (verificationError: any) {
+      // If verification flow fails, identity is still created
+      // User will need to verify email manually
+      if (import.meta.dev) {
+        console.warn('[auth/register.post.ts] Could not start verification flow:', verificationError.message)
+      }
+
+      return {
+        success: true,
+        message: 'Account created! Please verify your email address.',
+        verification: false,
+        email: email,
+      }
     }
   } catch (error: any) {
     if (import.meta.dev) {

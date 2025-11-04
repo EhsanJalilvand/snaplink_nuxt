@@ -83,22 +83,28 @@ const onSubmit = handleSubmit(async (_values) => {
     })
 
           if (response.success) {
-            if (response.session) {
-              // Session created - start OAuth2 flow to get tokens
+            if (response.verification) {
+              // Verification code sent - redirect to verify page
               toaster.add({
                 title: 'Success',
-                description: 'Account created successfully! Redirecting...',
-                icon: 'ph:user-circle-fill',
+                description: 'Account created! Please verify your email.',
+                icon: 'ph:envelope',
                 progress: true,
               })
               
-              // Start OAuth2 flow to get tokens from Hydra
-              await startOAuth2Flow('/dashboard')
+              // Redirect to verify email page with flow ID and email
+              await router.push({
+                path: '/auth/verify-email',
+                query: {
+                  flow: response.verificationFlowId,
+                  email: response.email,
+                },
+              })
             } else {
-              // No session - redirect to login
+              // Registration successful but verification failed
               toaster.add({
                 title: 'Success',
-                description: 'Account created! Please login to continue.',
+                description: 'Account created! Please verify your email.',
                 icon: 'ph:check-circle',
                 progress: true,
               })
@@ -269,80 +275,7 @@ const registerWithGoogle = async () => {
         </div>
 
         <div class="mb-4 space-y-3">
-          <Field
-            v-slot="{ field, errorMessage, handleChange, handleBlur }"
-            name="email"
-          >
-            <BaseField
-              v-slot="{ inputAttrs, inputRef }"
-              label="Email Address"
-              :state="errorMessage ? 'error' : 'idle'"
-              :error="errorMessage"
-              :disabled="isSubmitting"
-              required
-            >
-              <TairoInput
-                :ref="inputRef"
-                v-bind="inputAttrs"
-                :model-value="field.value"
-                type="email"
-                autocomplete="email"
-                rounded="lg"
-                icon="solar:mention-circle-linear"
-                @update:model-value="handleChange"
-                @blur="handleBlur"
-              />
-            </BaseField>
-          </Field>
-          <Field
-            v-slot="{ field, errorMessage, handleChange, handleBlur }"
-            name="password"
-          >
-            <BaseField
-              v-slot="{ inputAttrs, inputRef }"
-              label="Password"
-              :state="errorMessage ? 'error' : 'idle'"
-              :error="errorMessage"
-              :disabled="isSubmitting"
-              required
-            >
-              <TairoInput
-                :ref="inputRef"
-                v-bind="inputAttrs"
-                :model-value="field.value"
-                type="password"
-                autocomplete="new-password"
-                rounded="lg"
-                icon="solar:lock-keyhole-linear"
-                @update:model-value="handleChange"
-                @blur="handleBlur"
-              />
-            </BaseField>
-          </Field>
-          <Field
-            v-slot="{ field, errorMessage, handleChange, handleBlur }"
-            name="confirmPassword"
-          >
-            <BaseField
-              v-slot="{ inputAttrs, inputRef }"
-              label="Confirm password"
-              :state="errorMessage ? 'error' : 'idle'"
-              :error="errorMessage"
-              :disabled="isSubmitting"
-              required
-            >
-              <TairoInput
-                :ref="inputRef"
-                v-bind="inputAttrs"
-                :model-value="field.value"
-                type="password"
-                rounded="lg"
-                icon="ph:check"
-                @update:model-value="handleChange"
-                @blur="handleBlur"
-              />
-            </BaseField>
-          </Field>
+          <!-- First Name and Last Name at the top -->
           <div class="grid grid-cols-2 gap-3">
             <Field
               v-slot="{ field, errorMessage, handleChange, handleBlur }"
