@@ -18,8 +18,19 @@ onMounted(async () => {
 
     // Check for OAuth2 error
     if (errorParam) {
-      const errorDescription = route.query.error_description as string || 'Authentication failed'
+      const errorDescription = decodeURIComponent(route.query.error_description as string || 'Authentication failed')
       console.error('[callback.vue] OAuth2 error:', errorParam, errorDescription)
+      
+      // Show error toast
+      const toaster = useNuiToasts()
+      toaster.add({
+        title: 'Authentication Error',
+        description: errorDescription,
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      
       await router.push('/auth/login')
       return
     }
@@ -31,18 +42,51 @@ onMounted(async () => {
       return
     }
 
-    // Handle OAuth2 callback
-    const success = await handleOAuth2Callback(code, state)
+    // Handle OAuth2 callback - exchange code for tokens
+    // This will call /api/auth/oauth/callback which stores tokens in HttpOnly cookies
+    const response = await $fetch<{
+      success: boolean
+      user?: any
+      returnTo?: string
+      access_token?: string
+      refresh_token?: string
+    }>('/api/auth/oauth/callback', {
+      method: 'POST',
+      body: {
+        code,
+        state,
+        redirect_uri: useRuntimeConfig().public.oauth2RedirectUri,
+        code_verifier: '', // Will be read from cookie
+      },
+      credentials: 'include',
+    })
 
-    if (success) {
-      // Success - redirect will be handled by handleOAuth2Callback
-      // It will navigate to dashboard or returnTo
+    if (response.success) {
+      // Success - tokens are now in HttpOnly cookies
+      // Refresh user data to get updated state
+      const { refreshUser } = useUserData()
+      await refreshUser()
+      
+      // Redirect to returnTo or dashboard
+      const returnTo = response.returnTo || '/dashboard'
+      await router.push(returnTo)
     } else {
       // Failed - redirect to login
       await router.push('/auth/login')
     }
   } catch (err: any) {
     console.error('[callback.vue] Callback error:', err)
+    
+    // Show error toast
+    const toaster = useNuiToasts()
+    toaster.add({
+      title: 'Authentication Error',
+      description: err.message || 'Failed to complete authentication',
+      icon: 'ph:warning',
+      color: 'danger',
+      progress: true,
+    })
+    
     await router.push('/auth/login')
   }
 })

@@ -263,14 +263,20 @@ const onSubmit = handleSubmit(async (values) => {
         return
       }
       
-      // Email verified - redirect to dashboard
+      // Email verified - start OAuth2 flow to get Hydra tokens
+      // Redirect to OAuth2 authorize endpoint which will handle the flow from browser
+      // This ensures cookies are properly set and CSRF tokens work
       toaster.add({
         title: 'Success',
         description: 'Welcome back!',
         icon: 'ph:user-circle-fill',
         progress: true,
       })
-      await router.push('/dashboard')
+      
+      // Redirect to OAuth2 authorize endpoint (browser flow)
+      // Use window.location.href for server endpoint redirect
+      // This will handle login/consent challenges and get tokens
+      window.location.href = '/api/auth/oauth/authorize?return_to=/dashboard'
     } else if (loginResponse?.redirect_browser_to) {
       // Kratos wants to redirect (e.g., for verification)
       // Make sure it's a local URL

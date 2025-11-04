@@ -55,7 +55,7 @@ export default defineEventHandler(async (event) => {
       client_id: config.public.oauth2ClientId,
       redirect_uri: config.public.oauth2RedirectUri,
       response_type: 'code',
-      scope: 'openid profile email offline',
+      scope: 'openid profile email offline', // 'offline' scope for refresh tokens
       state,
       code_challenge: codeChallenge,
       code_challenge_method: 'S256',

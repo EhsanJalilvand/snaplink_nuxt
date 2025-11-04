@@ -13,9 +13,10 @@ import { z } from 'zod'
 
 const callbackSchema = z.object({
   code: z.string().min(1, 'Authorization code is required'),
-  code_verifier: z.string().min(43, 'Code verifier must be at least 43 characters'),
   redirect_uri: z.string().url('Invalid redirect URI'),
   state: z.string().min(1, 'State parameter is required'),
+  // code_verifier is optional in request body - will be read from cookie
+  code_verifier: z.string().optional(),
 })
 
 export default defineEventHandler(async (event) => {
@@ -34,7 +35,7 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    const { code, code_verifier, redirect_uri, state } = validation.data
+    const { code, redirect_uri, state } = validation.data
 
     // Verify state (CSRF protection)
     const storedState = getCookie(event, 'oauth2_state')
@@ -46,15 +47,18 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    // Get code verifier from cookie (should match provided one)
+    // Get code verifier from cookie (it's stored there, not in request body)
     const storedCodeVerifier = getCookie(event, 'oauth2_code_verifier')
-    if (!storedCodeVerifier || storedCodeVerifier !== code_verifier) {
+    if (!storedCodeVerifier) {
       throw createError({
         statusCode: 400,
         statusMessage: 'Invalid code verifier',
-        message: 'Code verifier mismatch.',
+        message: 'Code verifier not found in cookies.',
       })
     }
+    
+    // Use stored code verifier from cookie
+    const code_verifier = storedCodeVerifier
 
     // Exchange authorization code for tokens
     const tokenResponse = await $fetch(`${config.hydraPublicUrl}/oauth2/token`, {

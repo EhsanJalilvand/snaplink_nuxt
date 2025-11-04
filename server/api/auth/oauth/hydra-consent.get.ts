@@ -50,7 +50,7 @@ export default defineEventHandler(async (event) => {
         'Content-Type': 'application/json',
       },
       body: {
-        grant_scope: consentRequest.requested_scope || ['openid', 'profile', 'email', 'offline_access'],
+        grant_scope: consentRequest.requested_scope || ['openid', 'profile', 'email', 'offline'],
         grant_access_token_audience: consentRequest.client?.client_id ? [consentRequest.client.client_id] : [],
         session: {
           // Add user info to session
