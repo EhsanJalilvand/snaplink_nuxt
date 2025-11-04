@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { checkRateLimit, getClientIP } from '../../utils/rateLimit.js'
+import { Configuration, FrontendApi } from '@ory/client'
 
 // Sanitize code input (XSS prevention)
 function sanitizeCode(code: string): string {
@@ -8,8 +9,8 @@ function sanitizeCode(code: string): string {
 
 const verifyEmailSchema = z.object({
   token: z.string()
-    .min(1, 'Verification token is required')
-    .max(500, 'Invalid token'),
+    .min(1, 'Verification code is required')
+    .max(500, 'Invalid code'),
   email: z.string()
     .email('Invalid email address')
     .optional(), // Email is optional if token contains it
@@ -52,79 +53,76 @@ export default defineEventHandler(async (event) => {
   const { token, email } = validation.data
 
   try {
-    // Get admin token for user operations
-    const adminTokenUrl = `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/token`
-    
-    const adminTokenResponse = await $fetch(adminTokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: config.keycloakClientId || 'my-client',
-        client_secret: config.keycloakClientSecret || '0fA6K2dgvnr2ZZlt6mW0GcPad7ThGqvp',
-      }),
-    }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/verify-email.post.ts] Failed to get admin token:', error)
-      }
+    // Use Kratos Verification Flow to verify email
+    const kratosConfig = new Configuration({
+      basePath: config.kratosPublicUrl,
+    })
+    const frontendApi = new FrontendApi(kratosConfig)
+
+    // Create verification flow
+    // The token should be in the query parameter or flow context
+    const { data: verificationFlow } = await frontendApi.createBrowserVerificationFlow({
+      token, // Pass token to verification flow
+    })
+
+    if (!verificationFlow?.id) {
       throw createError({
-        statusCode: 500,
-        statusMessage: 'Service temporarily unavailable',
+        statusCode: 400,
+        statusMessage: 'Invalid verification code',
       })
-    }) as any
-
-    // Keycloak email verification typically uses action tokens sent via email
-    // The token should be validated and contain user ID
-    // For now, if email is provided, find user and verify email directly
-    
-    if (email) {
-      // Find user by email
-      const searchUsersUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users`
-      
-      const users = await $fetch(searchUsersUrl, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${adminTokenResponse.access_token}`,
-        },
-        query: {
-          email: email.toLowerCase().trim(),
-          exact: true,
-        },
-      }).catch(() => []) as any[]
-
-      if (users && users.length > 0) {
-        const user = users[0]
-        
-        // Verify email via Keycloak Admin API
-        const verifyEmailUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${user.id}`
-        
-        await $fetch(verifyEmailUrl, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${adminTokenResponse.access_token}`,
-          },
-          body: {
-            ...user,
-            emailVerified: true,
-          },
-        })
-
-        return {
-          success: true,
-          message: 'Email verified successfully',
-        }
-      }
     }
 
-    // If token validation is implemented, verify token here
-    // For now, return error indicating proper token validation is needed
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Invalid verification token',
+    // Find CSRF token in flow
+    const csrfToken = verificationFlow.ui?.nodes?.find(
+      (node: any) => node.attributes?.name === 'csrf_token'
+    )?.attributes?.value as string
+
+    if (!csrfToken) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: 'CSRF token not found in verification flow',
+      })
+    }
+
+    // Update verification flow with code
+    await frontendApi.updateVerificationFlow({
+      flow: verificationFlow.id,
+      updateVerificationFlowBody: {
+        method: 'code',
+        code: sanitizeCode(token), // Verification code
+        csrf_token: csrfToken,
+      },
+    }).catch((error: any) => {
+      if (import.meta.dev) {
+        console.error('[auth/verify-email.post.ts] Failed to verify email:', error)
+      }
+      
+      // Check if it's a code validation error
+      if (error.response?.data?.ui?.messages) {
+        const messages = error.response.data.ui.messages
+        const errorMessage = messages.find((m: any) => m.type === 'error')?.text
+        if (errorMessage) {
+          throw createError({
+            statusCode: 400,
+            statusMessage: errorMessage,
+          })
+        }
+      }
+      
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Invalid verification code',
+      })
     })
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[auth/verify-email.post.ts] Email verified successfully')
+    }
+
+    return {
+      success: true,
+      message: 'Email verified successfully',
+    }
   } catch (error: any) {
     if (process.env.NODE_ENV === 'development') {
       console.error('[auth/verify-email.post.ts] Error:', error.statusCode || error.status)
@@ -136,7 +134,7 @@ export default defineEventHandler(async (event) => {
     
     throw createError({
       statusCode: 400,
-      statusMessage: 'Invalid verification token',
+      statusMessage: 'Invalid verification code',
     })
   }
 })

@@ -4,6 +4,14 @@ definePageMeta({
   layout: 'dashboard',
 })
 
+// Get user data
+const { user, userDisplayName, refreshUser } = useUserData()
+
+// Refresh user data on mount
+onMounted(async () => {
+  await refreshUser()
+})
+
 // Mock data for demonstration
 const stats = ref([
   {
@@ -68,7 +76,7 @@ const recentLinks = ref([
       <div class="flex items-center justify-between">
         <div>
           <h1 class="text-2xl font-bold text-muted-900 dark:text-muted-100">
-            Welcome to SnapLink Dashboard
+            Welcome{{ user ? `, ${user.firstName || user.email}` : '' }} to SnapLink Dashboard
           </h1>
           <p class="text-muted-600 dark:text-muted-400 mt-1">
             Your professional URL shortener and analytics platform

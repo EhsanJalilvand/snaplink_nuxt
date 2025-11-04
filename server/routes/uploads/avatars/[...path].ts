@@ -3,8 +3,8 @@ import { readFile } from 'fs/promises'
 import { join, isAbsolute as pathIsAbsolute, resolve } from 'path'
 
 export default defineEventHandler(async (event) => {
-  // Check if user is authenticated (optional - avatars are generally public)
-  const accessToken = getCookie(event, 'kc_access')
+  // Avatars are generally public, no authentication check needed
+  // But we can optionally check for Hydra access token if needed
 
   const config = useRuntimeConfig()
   const pathParam = getRouterParam(event, 'path')
@@ -79,4 +79,3 @@ export default defineEventHandler(async (event) => {
     })
   }
 })
-

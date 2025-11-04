@@ -2,12 +2,13 @@ import { randomUUID } from 'crypto'
 import { existsSync } from 'fs'
 import { mkdir, writeFile } from 'fs/promises'
 import { join, isAbsolute as pathIsAbsolute, resolve } from 'path'
+import { Configuration, IdentityApi } from '@ory/client'
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
 
-  // Get access token from cookie
-  const accessToken = getCookie(event, 'kc_access')
+  // Get access token from cookie (Hydra token)
+  const accessToken = getCookie(event, 'hydra_access_token')
 
   if (!accessToken) {
     throw createError({
@@ -17,25 +18,30 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    // Parse token to get user ID
-    const tokenParts = accessToken.split('.')
-    if (tokenParts.length !== 3) {
+    // Get user info from Hydra's /userinfo endpoint
+    const hydraUserInfo = await $fetch(`${config.hydraPublicUrl}/userinfo`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }).catch((error: any) => {
+      if (import.meta.dev) {
+        console.error('[auth/profile/avatar.post.ts] Failed to get user info from Hydra:', error)
+      }
       throw createError({
         statusCode: 401,
-        statusMessage: 'Invalid token',
+        statusMessage: 'Invalid access token',
+      })
+    })
+
+    if (!hydraUserInfo || !hydraUserInfo.sub) {
+      throw createError({
+        statusCode: 401,
+        statusMessage: 'Invalid access token or user info not found',
       })
     }
 
-    const payload = Buffer.from(tokenParts[1], 'base64').toString('utf-8')
-    const tokenParsed = JSON.parse(payload)
-    const userId = tokenParsed.sub
-
-    if (!userId) {
-      throw createError({
-        statusCode: 401,
-        statusMessage: 'Invalid token',
-      })
-    }
+    const userId = hydraUserInfo.sub as string
 
     // Parse multipart form data
     const formData = await readMultipartFormData(event)
@@ -77,7 +83,6 @@ export default defineEventHandler(async (event) => {
 
     // Create storage directory if it doesn't exist
     const storagePath = config.avatarStoragePath || 'avatars'
-    // Get absolute path - if storagePath is already absolute, use it directly, otherwise resolve from workspace root
     const absoluteStoragePath = pathIsAbsolute(storagePath) ? storagePath : resolve(process.cwd(), storagePath)
 
     if (process.env.NODE_ENV === 'development') {
@@ -117,98 +122,37 @@ export default defineEventHandler(async (event) => {
       console.log('[auth/profile/avatar.post.ts] Avatar URL:', avatarUrl)
     }
 
-    // Get admin token
-    const adminTokenUrl = `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/token`
+    // Get Kratos Identity using Kratos Admin API
+    const kratosAdmin = new IdentityApi(new Configuration({
+      basePath: config.kratosAdminUrl,
+    }))
 
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[auth/profile/avatar.post.ts] Getting admin token with client_id:', config.keycloakClientId || 'my-client')
-    }
-
-    const adminTokenResponse = await $fetch(adminTokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: config.keycloakClientId || 'my-client',
-        client_secret: config.keycloakClientSecret || '0fA6K2dgvnr2ZZlt6mW0GcPad7ThGqvp',
-      }),
-    }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/profile/avatar.post.ts] Failed to get admin token:', error)
-        console.error('[auth/profile/avatar.post.ts] Admin token error details:', error.data || error.message)
-      }
-      throw createError({
-        statusCode: 500,
-        statusMessage: 'Service temporarily unavailable',
-      })
-    }) as any
-
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[auth/profile/avatar.post.ts] Admin token retrieved successfully')
-    }
-
-    // Get current user data
-    const getUserUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}`
-
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[auth/profile/avatar.post.ts] Getting user data for userId:', userId)
-    }
-
-    const currentUser = await $fetch(getUserUrl, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${adminTokenResponse.access_token}`,
-      },
-    }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/profile/avatar.post.ts] Failed to get user:', error)
-        console.error('[auth/profile/avatar.post.ts] Get user error details:', error.data || error.message)
+    // Get current identity
+    const { data: currentIdentity } = await kratosAdmin.getIdentity({ id: userId }).catch((error: any) => {
+      if (import.meta.dev) {
+        console.error('[auth/profile/avatar.post.ts] Failed to get identity from Kratos:', error)
       }
       throw createError({
         statusCode: 404,
         statusMessage: 'User not found',
       })
-    }) as any
+    })
 
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[auth/profile/avatar.post.ts] User data retrieved successfully, current attributes:', Object.keys(currentUser.attributes || {}))
+    // Update identity with avatar URL
+    const updatedTraits = {
+      ...currentIdentity.traits,
+      avatar: avatarUrl,
     }
 
-    // Update user attributes with avatar URL
-    const attributes = currentUser.attributes || {}
-    attributes.avatar = [avatarUrl] // Store URL as attribute
-
-    const updateUserUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}`
-
-    const updateData: any = {
-      ...currentUser,
-      attributes,
-    }
-
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[auth/profile/avatar.post.ts] Updating user with avatar attribute')
-      console.log('[auth/profile/avatar.post.ts] Update data structure:', {
-        hasAttributes: !!(updateData.attributes),
-        avatarArrayLength: updateData.attributes?.avatar?.length || 0,
-        avatarUrl: updateData.attributes?.avatar?.[0],
-      })
-    }
-
-    const updateResponse = await $fetch(updateUserUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${adminTokenResponse.access_token}`,
+    await kratosAdmin.updateIdentity({
+      id: userId,
+      updateIdentityBody: {
+        schema_id: currentIdentity.schema_id,
+        traits: updatedTraits,
       },
-      body: updateData,
     }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/profile/avatar.post.ts] Failed to update user:', error)
-        console.error('[auth/profile/avatar.post.ts] Error details:', error.data || error.message)
-        console.error('[auth/profile/avatar.post.ts] Error status:', error.statusCode)
-        console.error('[auth/profile/avatar.post.ts] Error response:', JSON.stringify(error.data || {}, null, 2))
+      if (import.meta.dev) {
+        console.error('[auth/profile/avatar.post.ts] Failed to update identity:', error)
       }
       throw createError({
         statusCode: 500,
@@ -217,8 +161,7 @@ export default defineEventHandler(async (event) => {
     })
 
     if (process.env.NODE_ENV === 'development') {
-      console.log('[auth/profile/avatar.post.ts] Avatar updated successfully in Keycloak')
-      console.log('[auth/profile/avatar.post.ts] Update response:', updateResponse)
+      console.log('[auth/profile/avatar.post.ts] Avatar updated successfully in Kratos')
     }
 
     return {

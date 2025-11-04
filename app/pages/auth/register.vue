@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { AddonInputPassword } from '#components'
 import { toTypedSchema } from '@vee-validate/zod'
 import { Field, useForm } from 'vee-validate'
 import { z } from 'zod'
@@ -7,14 +6,13 @@ import { z } from 'zod'
 definePageMeta({
   layout: 'empty',
   title: 'Register',
+  ssr: false,
 })
-
-const passwordRef = ref<InstanceType<typeof AddonInputPassword>>()
 
 const VALIDATION_TEXT = {
   EMAIL_REQUIRED: 'A valid email is required',
   USERNAME_LENGTH: 'Username must be at least 3 characters',
-  PASSWORD_LENGTH: 'Password must be at least 6 characters with letters and numbers',
+  PASSWORD_LENGTH: 'Password must be at least 6 characters',
   PASSWORD_CONTAINS_EMAIL: 'Password cannot contain your email',
   PASSWORD_MATCH: 'Passwords do not match',
   TERMS_REQUIRED: 'You must agree to the terms and conditions',
@@ -23,7 +21,6 @@ const VALIDATION_TEXT = {
 // This is the Zod schema for the form input
 const zodSchema = z
   .object({
-    username: z.string().min(3, VALIDATION_TEXT.USERNAME_LENGTH),
     email: z.string().email(VALIDATION_TEXT.EMAIL_REQUIRED),
     password: z.string().min(6, VALIDATION_TEXT.PASSWORD_LENGTH),
     confirmPassword: z.string(),
@@ -32,15 +29,6 @@ const zodSchema = z
     terms: z.boolean(),
   })
   .superRefine((data, ctx) => {
-    // This is a custom validation function that will be called
-    // before the form is submitted
-    if (passwordRef.value?.validation?.feedback?.warning || passwordRef.value?.validation?.feedback?.suggestions?.length) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: passwordRef.value?.validation?.feedback?.warning || passwordRef.value.validation.feedback?.suggestions?.[0],
-        path: ['password'],
-      })
-    }
     if (data.password !== data.confirmPassword) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -57,13 +45,10 @@ const zodSchema = z
     }
   })
 
-// Zod has a great infer method that will
-// infer the shape of the schema into a TypeScript type
 type FormInput = z.infer<typeof zodSchema>
 
 const validationSchema = toTypedSchema(zodSchema)
 const initialValues = {
-  username: '',
   email: '',
   password: '',
   confirmPassword: '',
@@ -79,36 +64,49 @@ const { values, handleSubmit, isSubmitting, setFieldError } = useForm({
 
 const router = useRouter()
 const toaster = useNuiToasts()
-const { register: registerKeycloak } = useKeycloak()
+const { startOAuth2Flow } = useAuth()
 
 // This is where you would send the form data to the server
 const onSubmit = handleSubmit(async (_values) => {
   try {
-    // Call register API
+    // Use server-side endpoint to handle registration
+    // This avoids CORS issues and handles Kratos flow properly
     const response = await $fetch('/api/auth/register', {
       method: 'POST',
       body: {
-        username: values.username,
         email: values.email,
         password: values.password,
-        confirmPassword: values.confirmPassword,
         firstName: values.firstName || undefined,
         lastName: values.lastName || undefined,
-        terms: values.terms,
       },
+      credentials: 'include',
     })
 
-    if (response.success) {
-      toaster.add({
-        title: 'Success',
-        description: response.message || 'Account created successfully. Please check your email to verify your account.',
-        icon: 'ph:user-circle-fill',
-        progress: true,
-      })
-      
-      // Redirect to verify email page
-      await router.push('/auth/verify-email')
-    }
+          if (response.success) {
+            if (response.session) {
+              // Session created - start OAuth2 flow to get tokens
+              toaster.add({
+                title: 'Success',
+                description: 'Account created successfully! Redirecting...',
+                icon: 'ph:user-circle-fill',
+                progress: true,
+              })
+              
+              // Start OAuth2 flow to get tokens from Hydra
+              await startOAuth2Flow('/dashboard')
+            } else {
+              // No session - redirect to login
+              toaster.add({
+                title: 'Success',
+                description: 'Account created! Please login to continue.',
+                icon: 'ph:check-circle',
+                progress: true,
+              })
+              
+              // Redirect to login page
+              await router.push('/auth/login')
+            }
+          }
   } catch (error: any) {
     // Handle errors
     if (error.statusCode === 429) {
@@ -119,27 +117,6 @@ const onSubmit = handleSubmit(async (_values) => {
         color: 'warning',
         progress: true,
       })
-    } else if (error.statusCode === 400 && error.data?.redirectToKeycloak) {
-      // Service Account not enabled - redirect to Keycloak registration
-      if (error.data?.registrationUrl) {
-        // Redirect to Keycloak registration page
-        window.location.href = error.data.registrationUrl
-      } else {
-        // Fallback: use Keycloak registration via useKeycloak
-        const { register: registerKeycloak } = useKeycloak()
-        try {
-          await registerKeycloak()
-        } catch (redirectError) {
-          toaster.add({
-            title: 'Configuration Required',
-            description: error.data?.help || 'Please enable Service Accounts in Keycloak settings',
-            icon: 'ph:warning',
-            color: 'warning',
-            progress: true,
-          })
-          setFieldError('email', error.message || 'Service Account not enabled. Using redirect...')
-        }
-      }
     } else if (error.statusCode === 400) {
       // Handle validation errors
       if (error.data) {
@@ -150,10 +127,8 @@ const onSubmit = handleSubmit(async (_values) => {
           }
         })
       } else if (error.message) {
-        // Handle specific errors like "Username is already taken"
-        if (error.message.includes('username')) {
-          setFieldError('username', 'Username is already taken')
-        } else if (error.message.includes('email')) {
+        // Handle specific errors like "Email is already registered"
+        if (error.message.includes('email') || error.message.includes('Email')) {
           setFieldError('email', 'Email is already registered')
         } else {
           setFieldError('email', error.message)
@@ -164,6 +139,23 @@ const onSubmit = handleSubmit(async (_values) => {
     }
   }
 })
+
+// Google OAuth registration
+const registerWithGoogle = async () => {
+  try {
+    // Start OAuth2 flow with Google provider
+    // This will redirect to Hydra, which will handle Google OAuth
+    await startOAuth2Flow('/dashboard')
+  } catch (error: any) {
+    toaster.add({
+      title: 'Error',
+      description: error.message || 'Failed to start Google registration',
+      icon: 'ph:warning',
+      color: 'danger',
+      progress: true,
+    })
+  }
+}
 </script>
 
 <template>
@@ -249,31 +241,34 @@ const onSubmit = handleSubmit(async (_values) => {
           Let's start by creating you account
         </BaseParagraph>
 
-        <div class="mb-4 space-y-3">
-          <Field
-            v-slot="{ field, errorMessage, handleChange, handleBlur }"
-            name="username"
+        <!-- Social Login Buttons -->
+        <div class="mb-6">
+          <BaseButton
+            :disabled="isSubmitting"
+            :loading="isSubmitting"
+            type="button"
+            variant="pastel"
+            rounded="lg"
+            class="w-full"
+            @click="registerWithGoogle"
           >
-            <BaseField
-              v-slot="{ inputAttrs, inputRef }"
-              label="Username"
-              :state="errorMessage ? 'error' : 'idle'"
-              :error="errorMessage"
-              :disabled="isSubmitting"
-              required
-            >
-              <TairoInput
-                :ref="inputRef"
-                v-bind="inputAttrs"
-                :model-value="field.value"
-                autocomplete="username"
-                rounded="lg"
-                icon="solar:user-rounded-linear"
-                @update:model-value="handleChange"
-                @blur="handleBlur"
-              />
-            </BaseField>
-          </Field>
+            <Icon name="logos:google-icon" class="size-5 mr-2" />
+            Continue with Google
+          </BaseButton>
+        </div>
+
+        <div class="relative mb-6">
+          <div class="absolute inset-0 flex items-center">
+            <div class="w-full border-t border-muted-300 dark:border-muted-700" />
+          </div>
+          <div class="relative flex justify-center text-sm">
+            <span class="bg-white dark:bg-muted-900 px-2 text-muted-500">
+              Or sign up with email
+            </span>
+          </div>
+        </div>
+
+        <div class="mb-4 space-y-3">
           <Field
             v-slot="{ field, errorMessage, handleChange, handleBlur }"
             name="email"
@@ -304,23 +299,21 @@ const onSubmit = handleSubmit(async (_values) => {
             name="password"
           >
             <BaseField
-              v-slot="{ inputAttrs }"
+              v-slot="{ inputAttrs, inputRef }"
               label="Password"
               :state="errorMessage ? 'error' : 'idle'"
               :error="errorMessage"
               :disabled="isSubmitting"
               required
             >
-              <LazyAddonInputPassword
-                ref="passwordRef"
+              <TairoInput
+                :ref="inputRef"
                 v-bind="inputAttrs"
                 :model-value="field.value"
-                :error="errorMessage"
-                icon="solar:lock-keyhole-linear"
-                :disabled="isSubmitting"
-                :user-inputs="[values.username ?? '', values.email ?? '']"
+                type="password"
+                autocomplete="new-password"
                 rounded="lg"
-                class="rounded-s-none border-s-0 ring-0!"
+                icon="solar:lock-keyhole-linear"
                 @update:model-value="handleChange"
                 @blur="handleBlur"
               />
@@ -350,6 +343,54 @@ const onSubmit = handleSubmit(async (_values) => {
               />
             </BaseField>
           </Field>
+          <div class="grid grid-cols-2 gap-3">
+            <Field
+              v-slot="{ field, errorMessage, handleChange, handleBlur }"
+              name="firstName"
+            >
+              <BaseField
+                v-slot="{ inputAttrs, inputRef }"
+                label="First Name (Optional)"
+                :state="errorMessage ? 'error' : 'idle'"
+                :error="errorMessage"
+                :disabled="isSubmitting"
+              >
+                <TairoInput
+                  :ref="inputRef"
+                  v-bind="inputAttrs"
+                  :model-value="field.value"
+                  autocomplete="given-name"
+                  rounded="lg"
+                  icon="solar:user-linear"
+                  @update:model-value="handleChange"
+                  @blur="handleBlur"
+                />
+              </BaseField>
+            </Field>
+            <Field
+              v-slot="{ field, errorMessage, handleChange, handleBlur }"
+              name="lastName"
+            >
+              <BaseField
+                v-slot="{ inputAttrs, inputRef }"
+                label="Last Name (Optional)"
+                :state="errorMessage ? 'error' : 'idle'"
+                :error="errorMessage"
+                :disabled="isSubmitting"
+              >
+                <TairoInput
+                  :ref="inputRef"
+                  v-bind="inputAttrs"
+                  :model-value="field.value"
+                  autocomplete="family-name"
+                  rounded="lg"
+                  icon="solar:user-linear"
+                  @update:model-value="handleChange"
+                  @blur="handleBlur"
+                />
+              </BaseField>
+            </Field>
+          </div>
         </div>
 
         <div class="mb-4">

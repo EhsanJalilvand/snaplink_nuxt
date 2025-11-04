@@ -1,12 +1,13 @@
 import { z } from 'zod'
 import { checkRateLimit, getClientIP } from '../../utils/rateLimit.js'
+import { Configuration, FrontendApi } from '@ory/client'
 
-// Password strength validation
+// Password strength validation (matches Kratos requirements)
 function validatePasswordStrength(password: string): { valid: boolean; error?: string } {
-  if (password.length < 6) {
-    return { valid: false, error: 'Password must be at least 6 characters' }
+  if (password.length < 8) {
+    return { valid: false, error: 'Password must be at least 8 characters' }
   }
-  // Must contain at least one letter and one number
+  // Must contain at least one letter and one number (Kratos default)
   if (!/[A-Za-z]/.test(password)) {
     return { valid: false, error: 'Password must contain at least one letter' }
   }
@@ -21,7 +22,7 @@ const changePasswordSchema = z.object({
     .min(1, 'Current password is required')
     .max(500, 'Invalid password'),
   newPassword: z.string()
-    .min(6, 'Password must be at least 6 characters')
+    .min(8, 'Password must be at least 8 characters')
     .max(500, 'Password is too long'),
   confirmPassword: z.string(),
 }).superRefine((data, ctx) => {
@@ -81,8 +82,8 @@ export default defineEventHandler(async (event) => {
 
   const { currentPassword, newPassword } = validation.data
 
-  // Get access token from cookie
-  const accessToken = getCookie(event, 'kc_access')
+  // Get access token from cookie (Hydra token)
+  const accessToken = getCookie(event, 'hydra_access_token')
   
   if (!accessToken) {
     throw createError({
@@ -92,118 +93,101 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    // Parse token to get user ID
-    const tokenParts = accessToken.split('.')
-    if (tokenParts.length !== 3) {
-      throw createError({
-        statusCode: 401,
-        statusMessage: 'Invalid token',
-      })
-    }
-
-    const payload = Buffer.from(tokenParts[1], 'base64').toString('utf-8')
-    const tokenParsed = JSON.parse(payload)
-    const userId = tokenParsed.sub
-
-    if (!userId) {
-      throw createError({
-        statusCode: 401,
-        statusMessage: 'Invalid token',
-      })
-    }
-
-    // Verify current password by attempting to get a token
-    const keycloakUrl = config.keycloakUrl || config.public.keycloakUrl || 'http://localhost:8080'
-    const keycloakRealm = config.keycloakRealm || config.public.keycloakRealm || 'master'
-    const clientId = config.keycloakClientId || config.public.keycloakClientId || 'my-client'
-    const clientSecret = config.keycloakClientSecret || ''
-
-    // Get user info to get username/email
-    const getUserUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}`
-    
-    // Get admin token for user operations
-    const adminTokenUrl = `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/token`
-    
-    const adminTokenResponse = await $fetch(adminTokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: clientId,
-        client_secret: clientSecret || '0fA6K2dgvnr2ZZlt6mW0GcPad7ThGqvp',
-      }),
-    }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/change-password.put.ts] Failed to get admin token:', error)
-      }
-      throw createError({
-        statusCode: 500,
-        statusMessage: 'Service temporarily unavailable',
-      })
-    }) as any
-
-    // Get user to verify current password
-    const user = await $fetch(getUserUrl, {
+    // Get user info from Hydra's /userinfo endpoint
+    const hydraUserInfo = await $fetch(`${config.hydraPublicUrl}/userinfo`, {
       method: 'GET',
       headers: {
-        Authorization: `Bearer ${adminTokenResponse.access_token}`,
+        Authorization: `Bearer ${accessToken}`,
       },
     }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/change-password.put.ts] Failed to get user:', error)
+      if (import.meta.dev) {
+        console.error('[auth/change-password.put.ts] Failed to get user info from Hydra:', error)
       }
-      throw createError({
-        statusCode: 404,
-        statusMessage: 'User not found',
-      })
-    }) as any
-
-    // Verify current password by attempting to get a token
-    const tokenUrl = `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/token`
-    
-    try {
-      await $fetch(tokenUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          grant_type: 'password',
-          client_id: clientId,
-          ...(clientSecret ? { client_secret: clientSecret } : {}),
-          username: user.username || user.email,
-          password: currentPassword,
-        }),
-      })
-    }
-    catch (verifyError: any) {
-      // If password verification fails, return 401
       throw createError({
         statusCode: 401,
-        statusMessage: 'Current password is incorrect',
+        statusMessage: 'Invalid access token',
+      })
+    })
+
+    if (!hydraUserInfo || !hydraUserInfo.sub) {
+      throw createError({
+        statusCode: 401,
+        statusMessage: 'Invalid access token or user info not found',
       })
     }
 
-    // Update password in Keycloak
-    const updatePasswordUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}/reset-password`
+    // Get Kratos session cookie for settings flow
+    const kratosSession = getCookie(event, 'ory_kratos_session')
     
-    await $fetch(updatePasswordUrl, {
-      method: 'PUT',
+    if (!kratosSession) {
+      throw createError({
+        statusCode: 401,
+        statusMessage: 'No active Kratos session found',
+      })
+    }
+
+    // Use Kratos Settings Flow to change password
+    // This requires creating a settings flow and updating it with password change
+    const kratosConfig = new Configuration({
+      basePath: config.kratosPublicUrl,
+    })
+    const frontendApi = new FrontendApi(kratosConfig)
+
+    // Create settings flow
+    const { data: settingsFlow } = await frontendApi.createBrowserSettingsFlow(undefined, {
       headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${adminTokenResponse.access_token}`,
+        Cookie: `ory_kratos_session=${kratosSession}`,
       },
-      body: {
-        type: 'password',
-        value: newPassword,
-        temporary: false,
+    })
+
+    if (!settingsFlow?.id) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: 'Failed to create settings flow',
+      })
+    }
+
+    // Find CSRF token in flow
+    const csrfToken = settingsFlow.ui?.nodes?.find(
+      (node: any) => node.attributes?.name === 'csrf_token'
+    )?.attributes?.value as string
+
+    if (!csrfToken) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: 'CSRF token not found in settings flow',
+      })
+    }
+
+    // Update settings flow with password change
+    await frontendApi.updateSettingsFlow({
+      flow: settingsFlow.id,
+      updateSettingsFlowBody: {
+        method: 'password',
+        password: newPassword,
+        csrf_token: csrfToken,
+      },
+    }, {
+      headers: {
+        Cookie: `ory_kratos_session=${kratosSession}`,
       },
     }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
+      if (import.meta.dev) {
         console.error('[auth/change-password.put.ts] Failed to update password:', error)
       }
+      
+      // Check if it's a password verification error
+      if (error.response?.data?.ui?.messages) {
+        const messages = error.response.data.ui.messages
+        const errorMessage = messages.find((m: any) => m.type === 'error')?.text
+        if (errorMessage) {
+          throw createError({
+            statusCode: 400,
+            statusMessage: errorMessage,
+          })
+        }
+      }
+      
       throw createError({
         statusCode: 500,
         statusMessage: 'Failed to update password',
@@ -234,6 +218,3 @@ export default defineEventHandler(async (event) => {
     })
   }
 })
-
-
-

@@ -9,8 +9,8 @@ const currentLocale = useAppLocale()
 const { open } = usePanels()
 const { t } = useTranslations()
 
-// Keycloak authentication
-const { user, isAuthenticated, logout, checkAuth } = useKeycloak()
+// Ory Kratos authentication
+const { user, isAuthenticated, logout, checkAuth } = useAuth()
 
 // Use shared user data composable for consistent state across all components
 const { userDisplayName, user: sharedUser, refreshUser } = useUserData()

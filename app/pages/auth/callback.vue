@@ -5,29 +5,43 @@ definePageMeta({
   ssr: false,
 })
 
-const { handleCallback, isAuthenticated, isLoading, error } = useKeycloak()
+const route = useRoute()
 const router = useRouter()
+const { handleOAuth2Callback, isLoading, error } = useAuth()
 
 onMounted(async () => {
   try {
-    console.log('[callback.vue] onMounted - Starting callback handling...')
-    const success = await handleCallback()
-    
-    // Wait a bit for state to update
-    await new Promise(resolve => setTimeout(resolve, 300))
-    
-    console.log('[callback.vue] Callback result:', success, 'isAuthenticated:', isAuthenticated.value)
-    
-    if (success && isAuthenticated.value) {
-      // Redirect to dashboard after successful authentication
-      console.log('[callback.vue] Redirecting to dashboard...')
-      await router.push('/dashboard')
+    // Get authorization code and state from query params
+    const code = route.query.code as string
+    const state = route.query.state as string
+    const errorParam = route.query.error as string
+
+    // Check for OAuth2 error
+    if (errorParam) {
+      const errorDescription = route.query.error_description as string || 'Authentication failed'
+      console.error('[callback.vue] OAuth2 error:', errorParam, errorDescription)
+      await router.push('/auth/login')
+      return
+    }
+
+    // Validate required parameters
+    if (!code || !state) {
+      console.error('[callback.vue] Missing code or state parameter')
+      await router.push('/auth/login')
+      return
+    }
+
+    // Handle OAuth2 callback
+    const success = await handleOAuth2Callback(code, state)
+
+    if (success) {
+      // Success - redirect will be handled by handleOAuth2Callback
+      // It will navigate to dashboard or returnTo
     } else {
-      // If authentication failed, redirect to login
-      console.log('[callback.vue] Authentication failed, redirecting to login...')
+      // Failed - redirect to login
       await router.push('/auth/login')
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error('[callback.vue] Callback error:', err)
     await router.push('/auth/login')
   }
@@ -93,4 +107,3 @@ onMounted(async () => {
     </div>
   </div>
 </template>
-

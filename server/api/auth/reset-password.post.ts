@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { checkRateLimit, getClientIP } from '../../utils/rateLimit.js'
+import { Configuration, FrontendApi } from '@ory/client'
 
-// Password strength validation
+// Password strength validation (matches Kratos requirements)
 function validatePasswordStrength(password: string): { valid: boolean; error?: string } {
   if (password.length < 8) {
     return { valid: false, error: 'Password must be at least 8 characters' }
@@ -20,8 +21,8 @@ function validatePasswordStrength(password: string): { valid: boolean; error?: s
 
 const resetPasswordSchema = z.object({
   token: z.string()
-    .min(1, 'Reset token is required')
-    .max(500, 'Invalid token'),
+    .min(1, 'Reset code is required')
+    .max(500, 'Invalid code'),
   newPassword: z.string()
     .min(8, 'Password must be at least 8 characters')
     .max(500, 'Password is too long'),
@@ -84,89 +85,78 @@ export default defineEventHandler(async (event) => {
   const { token, newPassword } = validation.data
 
   try {
-    // Get admin token for user operations
-    const adminTokenUrl = `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/token`
-    
-    const adminTokenResponse = await $fetch(adminTokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: config.keycloakClientId || 'my-client',
-        client_secret: config.keycloakClientSecret || '0fA6K2dgvnr2ZZlt6mW0GcPad7ThGqvp',
-      }),
-    }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/reset-password.post.ts] Failed to get admin token:', error)
-      }
-      throw createError({
-        statusCode: 500,
-        statusMessage: 'Service temporarily unavailable',
-      })
-    }) as any
+    // Use Kratos Recovery Flow to reset password
+    // The token is the recovery code sent via email
+    const kratosConfig = new Configuration({
+      basePath: config.kratosPublicUrl,
+    })
+    const frontendApi = new FrontendApi(kratosConfig)
 
-    // In Keycloak, password reset tokens are typically handled via email links
-    // The token should contain user ID or be validated via Keycloak's password reset flow
-    // For now, we'll extract user info from the token if it's a Keycloak action token
-    // In production, implement proper token validation and user lookup
-    
-    // TODO: Implement proper token validation
-    // Keycloak sends action tokens via email that can be validated
-    // For now, if token format suggests it's invalid, reject it
-    if (!token || token.length < 20) {
+    // Create recovery flow (Kratos will validate the token)
+    // The token should be in the query parameter or flow context
+    const { data: recoveryFlow } = await frontendApi.createBrowserRecoveryFlow({
+      token, // Pass token to recovery flow
+    })
+
+    if (!recoveryFlow?.id) {
       throw createError({
         statusCode: 400,
-        statusMessage: 'Invalid or expired reset token',
+        statusMessage: 'Invalid or expired reset code',
       })
     }
 
-    // Try to validate token and extract user ID
-    // This is a simplified version - in production, use Keycloak's token introspection
-    // or validate the action token properly
-    
-    // For now, we'll need the user to provide email along with token for security
-    // OR implement proper Keycloak action token validation
-    
-    // NOTE: Keycloak's password reset flow typically uses email links that redirect
-    // to a Keycloak page. For API-based reset, we need to:
-    // 1. Validate the token (if it's a Keycloak action token)
-    // 2. Extract user ID from token
-    // 3. Update password
-    
-    // For now, return error indicating token validation is needed
-    // In production, implement proper token validation
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Token validation not yet implemented. Please use Keycloak password reset email link.',
+    // Find CSRF token in flow
+    const csrfToken = recoveryFlow.ui?.nodes?.find(
+      (node: any) => node.attributes?.name === 'csrf_token'
+    )?.attributes?.value as string
+
+    if (!csrfToken) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: 'CSRF token not found in recovery flow',
+      })
+    }
+
+    // Update recovery flow with new password
+    await frontendApi.updateRecoveryFlow({
+      flow: recoveryFlow.id,
+      updateRecoveryFlowBody: {
+        method: 'code',
+        code: token, // Verify code again
+        password: newPassword, // Set new password
+        csrf_token: csrfToken,
+      },
+    }).catch((error: any) => {
+      if (import.meta.dev) {
+        console.error('[auth/reset-password.post.ts] Failed to reset password:', error)
+      }
+      
+      // Check if it's a token validation error
+      if (error.response?.data?.ui?.messages) {
+        const messages = error.response.data.ui.messages
+        const errorMessage = messages.find((m: any) => m.type === 'error')?.text
+        if (errorMessage) {
+          throw createError({
+            statusCode: 400,
+            statusMessage: errorMessage,
+          })
+        }
+      }
+      
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Invalid or expired reset code',
+      })
     })
 
-    // This would be the actual implementation once token validation is in place:
-    /*
-    const userId = extractUserIdFromToken(token) // Implement this
-    
-    // Update user password
-    const updatePasswordUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}/reset-password`
-    
-    await $fetch(updatePasswordUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${adminTokenResponse.access_token}`,
-      },
-      body: {
-        type: 'password',
-        value: newPassword,
-        temporary: false,
-      },
-    })
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[auth/reset-password.post.ts] Password reset successfully')
+    }
 
     return {
       success: true,
       message: 'Password reset successfully',
     }
-    */
   } catch (error: any) {
     if (process.env.NODE_ENV === 'development') {
       console.error('[auth/reset-password.post.ts] Error:', error.statusCode || error.status)
@@ -178,8 +168,7 @@ export default defineEventHandler(async (event) => {
     
     throw createError({
       statusCode: 400,
-      statusMessage: 'Invalid or expired reset token',
+      statusMessage: 'Invalid or expired reset code',
     })
   }
 })
-

@@ -350,8 +350,8 @@ const onSubmit = handleSubmit(async (values) => {
       // Refresh all user data from server (shared cache)
       await refreshUser()
       
-      // Also refresh Keycloak state to update layout
-      const { checkAuth: refreshAuth } = useKeycloak()
+      // Also refresh auth state to update layout
+      const { checkAuth: refreshAuth } = useAuth()
       await refreshAuth()
 
       toaster.add({
@@ -425,8 +425,8 @@ const verifyAndSubmit = async () => {
       // Refresh all user data from server (shared cache)
       await refreshUser()
       
-      // Also refresh Keycloak state to update layout
-      const { checkAuth: refreshAuth } = useKeycloak()
+      // Also refresh auth state to update layout
+      const { checkAuth: refreshAuth } = useAuth()
       await refreshAuth()
 
       toaster.add({

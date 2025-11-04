@@ -1,118 +1,154 @@
+import { Configuration, FrontendApi } from '@ory/client'
+
 export default defineEventHandler(async (event) => {
   try {
-    // Check if user has Keycloak access token
-    const accessToken = getCookie(event, 'kc_access')
+    const config = useRuntimeConfig()
     
-    if (!accessToken) {
-      return { 
+    // Check for Kratos session cookie
+    const kratosSession = getCookie(event, 'ory_kratos_session')
+    
+    // Check for Hydra access token cookie
+    const accessToken = getCookie(event, 'hydra_access_token')
+    
+    // If no tokens, user is not authenticated
+    if (!kratosSession && !accessToken) {
+      return {
         success: false,
         user: null,
-        isAuthenticated: false 
+        isAuthenticated: false,
       }
     }
 
-    const config = useRuntimeConfig()
-    const keycloakUrl = config.public.keycloakUrl || config.keycloakUrl || 'http://localhost:8080'
-    const keycloakRealm = config.public.keycloakRealm || config.keycloakRealm || 'master'
-
-    // Parse token first to get user info (in case userinfo endpoint fails)
-    let tokenParsed: any = null
-    try {
-      const tokenParts = accessToken.split('.')
-      if (tokenParts.length === 3) {
-        const payload = Buffer.from(tokenParts[1], 'base64').toString('utf-8')
-        tokenParsed = JSON.parse(payload)
-      }
-    } catch (parseError) {
-      console.error('[auth/me.get.ts] Error parsing token:', parseError)
-    }
-
-    // Always use Admin API for accurate data including custom attributes like avatar
-    let userInfo: any = null
+    // Try to get user info from Kratos session
+    let user: any = null
     
-    if (tokenParsed?.sub) {
+    // Get all cookies from request to forward to Kratos
+    const requestCookies = getHeader(event, 'cookie') || ''
+    
+    if (import.meta.dev) {
+      console.log('[auth/me.get.ts] Request cookies:', requestCookies.substring(0, 200))
+      console.log('[auth/me.get.ts] Kratos session cookie:', kratosSession ? 'Found' : 'Not found')
+    }
+    
+    if (kratosSession || requestCookies.includes('ory_kratos_session')) {
       try {
-        // Get admin token for user operations
-        const adminTokenUrl = `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/token`
+        if (import.meta.dev) {
+          console.log('[auth/me.get.ts] Checking Kratos session...')
+        }
         
-        const adminTokenResponse = await $fetch(adminTokenUrl, {
+        const kratosConfig = new Configuration({
+          basePath: config.kratosPublicUrl,
+        })
+        const frontendApi = new FrontendApi(kratosConfig)
+        
+        // Get session from Kratos using all cookies from request
+        const sessionResponse = await frontendApi.toSession(undefined, {
+          headers: {
+            Cookie: requestCookies || `ory_kratos_session=${kratosSession}`,
+          },
+        })
+        
+        if (sessionResponse.data?.identity) {
+          const identity = sessionResponse.data.identity
+          const traits = identity.traits || {}
+          
+          user = {
+            id: identity.id,
+            email: traits.email || traits.email_address || '',
+            emailVerified: traits.email_verified || traits.email_address_verified || false,
+            firstName: traits.name?.first || traits.given_name || '',
+            lastName: traits.name?.last || traits.family_name || '',
+            avatar: traits.avatar || null,
+            roles: [],
+          }
+          
+          if (import.meta.dev) {
+            console.log('[auth/me.get.ts] Kratos session valid, user:', user.id, user.email)
+          }
+        } else {
+          if (import.meta.dev) {
+            console.log('[auth/me.get.ts] Session response has no identity')
+          }
+        }
+      } catch (kratosError: any) {
+        // If Kratos session is invalid, try Hydra token
+        if (import.meta.dev) {
+          console.log('[auth/me.get.ts] Kratos session check failed:', kratosError.response?.status || kratosError.statusCode || kratosError.message)
+          console.log('[auth/me.get.ts] Kratos error details:', kratosError.response?.data || kratosError.data)
+        }
+      }
+    } else {
+      if (import.meta.dev) {
+        console.log('[auth/me.get.ts] No Kratos session cookie found')
+      }
+    }
+
+    // If Kratos session failed, try Hydra token
+    if (!user && accessToken) {
+      try {
+        // Validate token with Hydra
+        const hydraAdminUrl = config.hydraAdminUrl
+        const introspectResponse = await $fetch(`${hydraAdminUrl}/admin/oauth2/introspect`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
           },
           body: new URLSearchParams({
-            grant_type: 'client_credentials',
-            client_id: config.keycloakClientId || 'my-client',
-            client_secret: config.keycloakClientSecret || '0fA6K2dgvnr2ZZlt6mW0GcPad7ThGqvp',
+            token: accessToken,
+            token_type_hint: 'access_token',
           }),
         }) as any
 
-        // Get user from Admin API
-        const getUserUrl = `${keycloakUrl}/admin/realms/${keycloakRealm}/users/${tokenParsed.sub}`
-        userInfo = await $fetch(getUserUrl, {
-          method: 'GET',
-          headers: {
-            Authorization: `Bearer ${adminTokenResponse.access_token}`,
-          },
-        })
-      } catch (adminError: any) {
-        if (process.env.NODE_ENV === 'development') {
-          console.error('[auth/me.get.ts] Admin API failed, using token data:', adminError.statusCode || adminError.status)
+        if (introspectResponse.active && introspectResponse.sub) {
+          // Get user info from Hydra userinfo endpoint
+          const userinfoResponse = await $fetch(`${config.hydraPublicUrl}/userinfo`, {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }) as any
+
+          user = {
+            id: introspectResponse.sub || userinfoResponse.sub,
+            email: userinfoResponse.email || '',
+            emailVerified: userinfoResponse.email_verified || false,
+            firstName: userinfoResponse.given_name || userinfoResponse.name?.first || '',
+            lastName: userinfoResponse.family_name || userinfoResponse.name?.last || '',
+            avatar: userinfoResponse.picture || null,
+            roles: [],
+          }
+        }
+      } catch (hydraError: any) {
+        // If Hydra token is invalid, user is not authenticated
+        if (import.meta.dev) {
+          console.error('[auth/me.get.ts] Hydra error:', hydraError)
         }
       }
     }
 
-    // Extract roles from token
-    const realmAccess = tokenParsed?.realm_access?.roles || []
-    const clientId = config.keycloakClientId || config.public.keycloakClientId || 'my-client'
-    const resourceAccess = tokenParsed?.resource_access?.[clientId]?.roles || []
-    const allRoles = [...realmAccess, ...resourceAccess]
-
-    // Extract avatar from user attributes
-    const avatar = userInfo?.attributes?.avatar?.[0] || null
-
-    // Build user object - prioritize userInfo from endpoint, fallback to token data
-    // Note: Keycloak uses given_name/family_name, not firstName/lastName
-    const user = {
-      id: userInfo?.sub || userInfo?.id || tokenParsed?.sub || '',
-      username: userInfo?.preferred_username || userInfo?.username || tokenParsed?.preferred_username || tokenParsed?.username || '',
-      email: userInfo?.email || tokenParsed?.email || '',
-      firstName: userInfo?.firstName || userInfo?.given_name || tokenParsed?.given_name || tokenParsed?.firstName || tokenParsed?.preferred_username || '',
-      lastName: userInfo?.lastName || userInfo?.family_name || tokenParsed?.family_name || tokenParsed?.lastName || '',
-      emailVerified: userInfo?.emailVerified || userInfo?.email_verified || tokenParsed?.email_verified || false,
-      avatar,
-      roles: allRoles,
-    }
-
-    // Debug: Log token structure in development (without sensitive data)
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[auth/me.get.ts] User info retrieved', userInfo ? (userInfo.id ? 'from Admin API' : 'from userinfo endpoint') : 'from token')
-      console.log('[auth/me.get.ts] Avatar found:', !!(avatar))
-      if (avatar) {
-        console.log('[auth/me.get.ts] Avatar preview:', avatar.substring(0, 50) + '...')
+    // If we have user info, return it
+    if (user) {
+      return {
+        success: true,
+        user,
+        isAuthenticated: true,
       }
-      console.log('[auth/me.get.ts] Final user object:', {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        firstName: user.firstName || '(empty)',
-        lastName: user.lastName || '(empty)',
-        hasAvatar: !!(user.avatar),
-      })
     }
 
+    // No valid authentication found
     return {
-      success: true,
-      user,
-      isAuthenticated: true
+      success: false,
+      user: null,
+      isAuthenticated: false,
     }
   } catch (error: any) {
-    console.error('[auth/me.get.ts] Error:', error)
+    if (import.meta.dev) {
+      console.error('[auth/me.get.ts] Error:', error)
+    }
     
     return {
       success: false,
       user: null,
-      isAuthenticated: false
+      isAuthenticated: false,
     }
   }
 })

@@ -1,33 +1,25 @@
 import { z } from 'zod'
 import { checkRateLimit, getClientIP } from '../../utils/rateLimit.js'
+import { Configuration, FrontendApi } from '@ory/client'
 
-// Sanitize email input (XSS prevention)
-function sanitizeEmail(email: string): string {
-  return email.trim().toLowerCase().replace(/[<>]/g, '')
-}
-
-// Sanitize password (basic - don't log or expose)
-function sanitizePassword(password: string): string {
-  // Just return as-is, don't modify passwords
-  // This is just for type safety
-  return password
+// Sanitize input (XSS prevention)
+function sanitizeString(str: string): string {
+  return str.trim().replace(/[<>]/g, '')
 }
 
 const loginSchema = z.object({
   emailOrUsername: z.string()
     .min(1, 'Email or username is required')
     .max(255, 'Email or username is too long')
-    .transform((val) => val.trim().toLowerCase()),
+    .transform((val) => sanitizeString(val)),
   password: z.string()
     .min(1, 'Password is required')
-    .max(500, 'Password is too long')
-    .transform((val) => sanitizePassword(val)),
-  trustDevice: z.boolean().optional().default(false),
+    .max(500, 'Invalid password'),
 })
 
 export default defineEventHandler(async (event) => {
-  const body = await readBody(event)
   const config = useRuntimeConfig()
+  const body = await readBody(event)
 
   // Get client IP for rate limiting
   const clientIP = getClientIP(event)
@@ -62,132 +54,166 @@ export default defineEventHandler(async (event) => {
   const { emailOrUsername, password } = validation.data
 
   try {
-    // Direct Access Grant - Exchange credentials for tokens
-    // This sends credentials to Keycloak token endpoint
-    // Requires "Direct Access Grants Enabled" in Keycloak client settings
-    const keycloakUrl = config.keycloakUrl || config.public.keycloakUrl || 'http://localhost:8080'
-    const keycloakRealm = config.keycloakRealm || config.public.keycloakRealm || 'master'
-    const clientId = config.keycloakClientId || config.public.keycloakClientId || 'my-client'
-    const clientSecret = config.keycloakClientSecret || ''
-
-    const tokenUrl = `${keycloakUrl}/realms/${keycloakRealm}/protocol/openid-connect/token`
+    const kratosPublicUrl = config.kratosPublicUrl || 'http://localhost:4433'
     
-    // Request token from Keycloak using Direct Access Grant
-    // Keycloak accepts both email and username in the 'username' field
-    const tokenResponse = await $fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+    if (import.meta.dev) {
+      console.log('[auth/login.post.ts] Connecting to Kratos at:', kratosPublicUrl)
+    }
+
+    const kratosConfig = new Configuration({
+      basePath: kratosPublicUrl,
+      baseOptions: {
+        timeout: 10000, // 10 seconds timeout
       },
-      body: new URLSearchParams({
-        grant_type: 'password',
-        client_id: clientId,
-        ...(clientSecret ? { client_secret: clientSecret } : {}),
-        username: emailOrUsername, // Can be either email or username
-        password: password,
-      }),
+    })
+    const frontendApi = new FrontendApi(kratosConfig)
+
+    // Get all cookies from request to forward to Kratos
+    // This is important for CSRF cookie matching
+    const requestCookies = getHeader(event, 'cookie') || ''
+    
+    // Create login flow using FrontendApi
+    const { data: loginFlow } = await frontendApi.createBrowserLoginFlow({
+      returnTo: config.public.siteUrl,
+    }, {
+      headers: {
+        Cookie: requestCookies,
+      },
     }).catch((error: any) => {
-      // Log error without exposing sensitive info
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/login.post.ts] Keycloak token error:', {
-          statusCode: error.statusCode || error.status,
-          statusMessage: error.statusMessage || error.message,
-          error: error.data?.error,
-          errorDescription: error.data?.error_description,
-        })
+      if (import.meta.dev) {
+        console.error('[auth/login.post.ts] Failed to create login flow:', error.message)
       }
       
-      // Check for specific error types
-      const errorType = error.data?.error
-      const errorDescription = error.data?.error_description || ''
-      
-      // Handle specific Keycloak errors
-      if (errorType === 'invalid_grant') {
-        // Invalid credentials
-        throw createError({
-          statusCode: 401,
-          statusMessage: 'Invalid email or password',
-        })
-      } else if (errorType === 'unauthorized_client') {
-        // Direct Access Grant not enabled
-        // Return error that can be handled by frontend to show redirect option
-        throw createError({
-          statusCode: 400,
-          statusMessage: 'Direct Access Grant not enabled',
-          message: 'Direct Access Grant is not enabled. Please enable it in Keycloak client settings, or use redirect login.',
-          data: {
-            error: 'unauthorized_client',
-            redirectToKeycloak: true,
-            help: 'To enable: Keycloak Admin Console → Clients → your-client → Settings → Enable "Direct Access Grants"',
-          },
-        })
-      } else if (errorType === 'invalid_client') {
-        // Invalid client configuration
+      if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.message?.includes('connect')) {
         throw createError({
           statusCode: 500,
-          statusMessage: 'Authentication service configuration error',
+          statusMessage: 'Kratos service is not available. Please make sure Kratos is running.',
+          data: {
+            kratosUrl: kratosPublicUrl,
+            error: error.message,
+          },
         })
       }
       
-      // Always return generic error message (security best practice)
+      throw error
+    })
+
+    if (!loginFlow?.id) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: 'Failed to create login flow',
+      })
+    }
+
+    // Find CSRF token in flow
+    const csrfToken = loginFlow.ui?.nodes?.find(
+      (node: any) => node.attributes?.name === 'csrf_token'
+    )?.attributes?.value as string
+
+    if (!csrfToken) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: 'CSRF token not found in login flow',
+      })
+    }
+
+    // Update login flow with credentials using FrontendApi
+    // Important: We need to forward cookies from the request to Kratos
+    // This ensures CSRF cookie matches the CSRF token
+    const { data: loginResponse } = await frontendApi.updateLoginFlow({
+      flow: loginFlow.id,
+      updateLoginFlowBody: {
+        method: 'password',
+        password: password,
+        identifier: emailOrUsername,
+        csrf_token: csrfToken,
+      },
+    }, {
+      headers: {
+        Cookie: requestCookies,
+      },
+    }).catch((error: any) => {
+      if (import.meta.dev) {
+        console.error('[auth/login.post.ts] Login flow update error:', error.response?.data || error.message)
+      }
+      
+      // Check for CSRF errors first
+      if (error.response?.status === 403 || error.response?.statusCode === 403) {
+        const errorDetails = error.response?.data?.error || error.response?.data
+        if (errorDetails?.reason?.includes('CSRF') || errorDetails?.hint?.includes('CSRF') || error.message?.includes('CSRF')) {
+          throw createError({
+            statusCode: 403,
+            statusMessage: 'CSRF validation failed. Please refresh the page and try again.',
+            data: [{ path: ['password'], message: 'CSRF validation failed. Please refresh the page and try again.' }],
+          })
+        }
+      }
+
+      // Check for validation errors
+      if (error.response?.data?.ui?.messages) {
+        const messages = error.response.data.ui.messages
+        const errorMessage = messages.find((m: any) => m.type === 'error')?.text
+        
+        if (errorMessage) {
+          throw createError({
+            statusCode: 401,
+            statusMessage: errorMessage || 'Invalid email or password',
+            data: [{ path: ['password'], message: errorMessage || 'Invalid email or password' }],
+          })
+        }
+      }
+      
+      throw createError({
+        statusCode: error.response?.status || error.response?.statusCode || 401,
+        statusMessage: 'Invalid email or password',
+        data: [{ path: ['password'], message: 'Invalid email or password' }],
+      })
+    })
+
+    // Check if login was successful
+    if (loginResponse.session) {
+      // Session created successfully - Kratos will set the session cookie
+      // The cookie is HttpOnly and will be sent automatically by browser
+      if (import.meta.dev) {
+        console.log('[auth/login.post.ts] Login successful, session created')
+      }
+
+      return {
+        success: true,
+        message: 'Login successful',
+        session: true,
+      }
+    } else {
+      // No session - login failed
       throw createError({
         statusCode: 401,
         statusMessage: 'Invalid email or password',
       })
-    }) as any
-
-    if (!tokenResponse?.access_token) {
-      throw createError({
-        statusCode: 401,
-        statusMessage: 'Invalid credentials',
-      })
-    }
-
-    // Save tokens to HttpOnly cookies
-    const isDev = process.env.NODE_ENV === 'development'
-    const isSecure = !isDev && process.env.NODE_ENV === 'production'
-
-    setCookie(event, 'kc_access', tokenResponse.access_token, {
-      httpOnly: true,
-      secure: isSecure,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60, // 1 hour
-    })
-
-    if (tokenResponse.refresh_token) {
-      setCookie(event, 'kc_refresh', tokenResponse.refresh_token, {
-        httpOnly: true,
-        secure: isSecure,
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 60 * 60 * 24 * 14, // 14 days
-      })
-    }
-
-    // Don't log sensitive information
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[auth/login.post.ts] Login successful')
-    }
-
-    return {
-      success: true,
-      message: 'Login successful',
     }
   } catch (error: any) {
-    // Don't log sensitive information
-    if (process.env.NODE_ENV === 'development') {
-      console.error('[auth/login.post.ts] Login error:', error.statusCode || error.status)
+    if (import.meta.dev) {
+      console.error('[auth/login.post.ts] Login error:', error)
     }
-    
+
+    // If it's already a createError, re-throw it
     if (error.statusCode) {
       throw error
     }
-    
-    // Always return generic error message
+
+    // Check if it's a connection error
+    if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.message?.includes('connect')) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: 'Kratos service is not available. Please make sure Kratos is running at ' + config.kratosPublicUrl,
+        message: error.message || 'Kratos service is not available',
+      })
+    }
+
     throw createError({
-      statusCode: 401,
-      statusMessage: 'Invalid credentials',
+      statusCode: error.statusCode || 500,
+      statusMessage: error.statusMessage || 'Login failed',
+      message: error.message || 'Login failed',
     })
   }
 })
+

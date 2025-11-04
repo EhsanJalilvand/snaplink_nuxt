@@ -1,12 +1,13 @@
 import { existsSync } from 'fs'
 import { unlink } from 'fs/promises'
 import { join, isAbsolute as pathIsAbsolute, resolve } from 'path'
+import { Configuration, IdentityApi } from '@ory/client'
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
 
-  // Get access token from cookie
-  const accessToken = getCookie(event, 'kc_access')
+  // Get access token from cookie (Hydra token)
+  const accessToken = getCookie(event, 'hydra_access_token')
 
   if (!accessToken) {
     throw createError({
@@ -16,88 +17,50 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    // Parse token to get user ID
-    const tokenParts = accessToken.split('.')
-    if (tokenParts.length !== 3) {
-      throw createError({
-        statusCode: 401,
-        statusMessage: 'Invalid token',
-      })
-    }
-
-    const payload = Buffer.from(tokenParts[1], 'base64').toString('utf-8')
-    const tokenParsed = JSON.parse(payload)
-    const userId = tokenParsed.sub
-
-    if (!userId) {
-      throw createError({
-        statusCode: 401,
-        statusMessage: 'Invalid token',
-      })
-    }
-
-    // Get admin token
-    const adminTokenUrl = `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/token`
-
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[auth/profile/avatar.delete.ts] Getting admin token with client_id:', config.keycloakClientId || 'my-client')
-    }
-
-    const adminTokenResponse = await $fetch(adminTokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: config.keycloakClientId || 'my-client',
-        client_secret: config.keycloakClientSecret || '0fA6K2dgvnr2ZZlt6mW0GcPad7ThGqvp',
-      }),
-    }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/profile/avatar.delete.ts] Failed to get admin token:', error)
-        console.error('[auth/profile/avatar.delete.ts] Admin token error details:', error.data || error.message)
-      }
-      throw createError({
-        statusCode: 500,
-        statusMessage: 'Service temporarily unavailable',
-      })
-    }) as any
-
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[auth/profile/avatar.delete.ts] Admin token retrieved successfully')
-    }
-
-    // Get current user data to retrieve avatar URL
-    const getUserUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}`
-
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[auth/profile/avatar.delete.ts] Getting user data for userId:', userId)
-    }
-
-    const currentUser = await $fetch(getUserUrl, {
+    // Get user info from Hydra's /userinfo endpoint
+    const hydraUserInfo = await $fetch(`${config.hydraPublicUrl}/userinfo`, {
       method: 'GET',
       headers: {
-        Authorization: `Bearer ${adminTokenResponse.access_token}`,
+        Authorization: `Bearer ${accessToken}`,
       },
     }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/profile/avatar.delete.ts] Failed to get user:', error)
-        console.error('[auth/profile/avatar.delete.ts] Get user error details:', error.data || error.message)
+      if (import.meta.dev) {
+        console.error('[auth/profile/avatar.delete.ts] Failed to get user info from Hydra:', error)
+      }
+      throw createError({
+        statusCode: 401,
+        statusMessage: 'Invalid access token',
+      })
+    })
+
+    if (!hydraUserInfo || !hydraUserInfo.sub) {
+      throw createError({
+        statusCode: 401,
+        statusMessage: 'Invalid access token or user info not found',
+      })
+    }
+
+    const userId = hydraUserInfo.sub as string
+
+    // Get Kratos Identity using Kratos Admin API
+    const kratosAdmin = new IdentityApi(new Configuration({
+      basePath: config.kratosAdminUrl,
+    }))
+
+    // Get current identity
+    const { data: currentIdentity } = await kratosAdmin.getIdentity({ id: userId }).catch((error: any) => {
+      if (import.meta.dev) {
+        console.error('[auth/profile/avatar.delete.ts] Failed to get identity from Kratos:', error)
       }
       throw createError({
         statusCode: 404,
         statusMessage: 'User not found',
       })
-    }) as any
-
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[auth/profile/avatar.delete.ts] User data retrieved successfully, current attributes:', Object.keys(currentUser.attributes || {}))
-    }
+    })
 
     // Delete the physical file if it exists
-    const avatarUrl = currentUser.attributes?.avatar?.[0]
-    if (avatarUrl) {
+    const avatarUrl = currentIdentity.traits?.avatar
+    if (avatarUrl && typeof avatarUrl === 'string') {
       try {
         // Extract filename from URL (e.g., "/uploads/avatars/userid-123.jpg")
         const urlParts = avatarUrl.split('/')
@@ -124,32 +87,20 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    // Remove avatar from user attributes
-    const attributes = currentUser.attributes || {}
-    delete attributes.avatar
+    // Remove avatar from identity traits
+    const updatedTraits = { ...currentIdentity.traits }
+    delete updatedTraits.avatar
 
-    const updateUserUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}`
-
-    const updateData: any = {
-      ...currentUser,
-      attributes,
-    }
-
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[auth/profile/avatar.delete.ts] Updating user to remove avatar attribute')
-    }
-
-    await $fetch(updateUserUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${adminTokenResponse.access_token}`,
+    // Update identity in Kratos
+    await kratosAdmin.updateIdentity({
+      id: userId,
+      updateIdentityBody: {
+        schema_id: currentIdentity.schema_id,
+        traits: updatedTraits,
       },
-      body: updateData,
     }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/profile/avatar.delete.ts] Failed to update user:', error)
-        console.error('[auth/profile/avatar.delete.ts] Error details:', error.data || error.message)
+      if (import.meta.dev) {
+        console.error('[auth/profile/avatar.delete.ts] Failed to update identity:', error)
       }
       throw createError({
         statusCode: 500,

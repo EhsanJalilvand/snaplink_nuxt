@@ -2,12 +2,12 @@ import type { Ref } from 'vue'
 
 export interface User {
   id: string
-  username: string
   email: string
+  emailVerified: boolean
   firstName?: string
   lastName?: string
-  emailVerified: boolean
-  roles: string[]
+  avatar?: string
+  roles?: string[]
 }
 
 export interface AuthState {
@@ -20,6 +20,8 @@ export interface AuthState {
 export const useAuth = () => {
   const config = useRuntimeConfig()
   const toaster = useNuiToasts()
+  const { getSession, isAuthenticated: checkKratosAuth } = useKratos()
+  const { getStoredPKCE, clearPKCE } = useHydra()
   
   const state = reactive<AuthState>({
     user: null,
@@ -28,40 +30,147 @@ export const useAuth = () => {
     error: null,
   })
 
-  // Keycloak configuration (not used in this composable, kept for reference)
-  const keycloakConfig = {
-    url: config.public.keycloakUrl,
-    realm: config.public.keycloakRealm,
-    clientId: 'my-client', // Direct value - not reading from config
-  }
+  /**
+   * Check authentication status from server
+   * This calls /api/auth/me which checks both Kratos session and Hydra tokens
+   */
+  const checkAuth = async (): Promise<boolean> => {
+    if (process.server) {
+      return false
+    }
 
-  // Login with email/password
-  const login = async (email: string, password: string, trustDevice = false) => {
     state.isLoading = true
     state.error = null
 
     try {
-      const response = await $fetch('/api/auth/login', {
-        method: 'POST',
-        body: {
-          email,
-          password,
-          trustDevice,
-        },
+      const response = await $fetch<{
+        success: boolean
+        user: User | null
+        isAuthenticated: boolean
+      }>('/api/auth/me', {
+        credentials: 'include',
       })
 
-      if (response.success) {
+      if (response.success && response.user && response.isAuthenticated) {
+        state.user = response.user
+        state.isAuthenticated = true
+        return true
+      } else {
+        state.user = null
+        state.isAuthenticated = false
+        return false
+      }
+    } catch (error: any) {
+      // 401 means not authenticated, which is fine
+      if (error.statusCode === 401 || error.status === 401) {
+        state.user = null
+        state.isAuthenticated = false
+        return false
+      }
+      
+      // Other errors are unexpected
+      state.error = error.message || 'Failed to check authentication'
+      console.error('[useAuth] checkAuth error:', error)
+      return false
+    } finally {
+      state.isLoading = false
+    }
+  }
+
+  /**
+   * Initialize auth state on app start
+   */
+  const initAuth = async () => {
+    await checkAuth()
+  }
+
+  /**
+   * Start OAuth2 Authorization Flow
+   * This redirects to Hydra, which will check Kratos session
+   */
+  const startOAuth2Flow = async (returnTo?: string) => {
+    if (process.server) {
+      return
+    }
+
+    state.isLoading = true
+    state.error = null
+
+    try {
+      const { buildAuthorizationUrl } = useHydra()
+      const redirectUri = config.public.oauth2RedirectUri
+      
+      // Build authorization URL with PKCE
+      const { url } = await buildAuthorizationUrl(redirectUri)
+      
+      // Store returnTo in sessionStorage if provided
+      if (returnTo) {
+        sessionStorage.setItem('oauth2_return_to', returnTo)
+      }
+      
+      // Redirect to Hydra authorization endpoint
+      window.location.href = url
+    } catch (error: any) {
+      state.error = error.message || 'Failed to start OAuth2 flow'
+      state.isLoading = false
+      throw error
+    }
+  }
+
+  /**
+   * Handle OAuth2 callback
+   * This is called after redirect from Hydra
+   */
+  const handleOAuth2Callback = async (code: string, state: string): Promise<boolean> => {
+    if (process.server) {
+      return false
+    }
+
+    state.isLoading = true
+    state.error = null
+
+    try {
+      // Verify state (CSRF protection)
+      const storedPKCE = getStoredPKCE()
+      if (!storedPKCE.state || storedPKCE.state !== state) {
+        throw new Error('Invalid state parameter')
+      }
+
+      if (!storedPKCE.codeVerifier) {
+        throw new Error('Code verifier not found')
+      }
+
+      // Exchange code for tokens (server-side)
+      const redirectUri = config.public.oauth2RedirectUri
+      const response = await $fetch<{
+        success: boolean
+        access_token?: string
+        refresh_token?: string
+        expires_in?: number
+        user?: User
+      }>('/api/auth/oauth/callback', {
+        method: 'POST',
+        body: {
+          code,
+          code_verifier: storedPKCE.codeVerifier,
+          redirect_uri: redirectUri,
+          state,
+        },
+        credentials: 'include',
+      })
+
+      if (response.success && response.user) {
+        // Clear PKCE data
+        clearPKCE()
+        
+        // Update state
         state.user = response.user
         state.isAuthenticated = true
         
-        // Store tokens securely
-        if (process.client) {
-          localStorage.setItem('access_token', response.accessToken)
-          if (response.refreshToken) {
-            localStorage.setItem('refresh_token', response.refreshToken)
-          }
-        }
-
+        // Get returnTo from sessionStorage
+        const returnTo = sessionStorage.getItem('oauth2_return_to') || '/dashboard'
+        sessionStorage.removeItem('oauth2_return_to')
+        
         toaster.add({
           title: 'Success',
           description: 'Welcome back!',
@@ -69,72 +178,121 @@ export const useAuth = () => {
           progress: true,
         })
 
-        return { success: true }
+        // Navigate to returnTo or dashboard
+        await navigateTo(returnTo)
+        
+        return true
       } else {
-        throw new Error(response.error || 'Login failed')
+        throw new Error('Failed to exchange code for tokens')
       }
     } catch (error: any) {
-      state.error = error.message || 'Login failed'
-      return { success: false, error: state.error }
+      state.error = error.message || 'Failed to handle OAuth2 callback'
+      state.isLoading = false
+      
+      // Clear PKCE data on error
+      clearPKCE()
+      
+      // Redirect to login
+      await navigateTo('/auth/login')
+      
+      return false
     } finally {
       state.isLoading = false
     }
   }
 
-  // Register new user
-  const register = async (userData: {
-    username: string
-    email: string
-    password: string
-    firstName?: string
-    lastName?: string
-  }) => {
+  /**
+   * Login with email/username and password
+   */
+  const login = async (emailOrUsername: string, password: string) => {
+    if (process.server) {
+      return { success: false, error: 'Login must be called from client-side' }
+    }
+
     state.isLoading = true
     state.error = null
 
     try {
-      const response = await $fetch('/api/auth/register', {
+      const response = await $fetch<{
+        success: boolean
+        message?: string
+        session?: boolean
+      }>('/api/auth/login', {
         method: 'POST',
-        body: userData,
+        body: {
+          emailOrUsername,
+          password,
+        },
+        credentials: 'include',
       })
 
-      if (response.success) {
-        toaster.add({
-          title: 'Success',
-          description: 'Account created successfully!',
-          icon: 'ph:check',
-          progress: true,
-        })
-
-        return { success: true, userId: response.userId }
+      if (response.success && response.session) {
+        // Login successful - session created in Kratos
+        // The login page will handle setting the cookie via client-side request
+        return { success: true, redirecting: false }
       } else {
-        throw new Error(response.error || 'Registration failed')
+        return { success: false, error: 'Login failed' }
       }
     } catch (error: any) {
-      state.error = error.message || 'Registration failed'
-      return { success: false, error: state.error }
+      state.error = error.message || 'Login failed'
+      
+      if (error.statusCode === 401) {
+        // Check if error.data is an array
+        let errorMessage = 'Invalid email or password'
+        if (Array.isArray(error.data)) {
+          const passwordError = error.data.find((e: any) => e.path?.includes('password'))
+          if (passwordError?.message) {
+            errorMessage = passwordError.message
+          }
+        } else if (error.statusMessage) {
+          errorMessage = error.statusMessage
+        }
+        return { success: false, error: errorMessage }
+      }
+      
+      if (error.statusCode === 403) {
+        // CSRF error
+        let errorMessage = 'Security validation failed. Please refresh the page and try again.'
+        if (Array.isArray(error.data)) {
+          const csrfError = error.data.find((e: any) => e.path?.includes('password'))
+          if (csrfError?.message) {
+            errorMessage = csrfError.message
+          }
+        } else if (error.statusMessage) {
+          errorMessage = error.statusMessage
+        }
+        return { success: false, error: errorMessage }
+      }
+      
+      return { success: false, error: error.message || 'Login failed' }
     } finally {
       state.isLoading = false
     }
   }
 
-  // Logout
+  /**
+   * Logout
+   */
   const logout = async () => {
     state.isLoading = true
 
     try {
+      // Call server logout endpoint (handles CSRF token automatically)
       await $fetch('/api/auth/logout', {
         method: 'POST',
+        credentials: 'include',
       })
 
       // Clear local state
       state.user = null
       state.isAuthenticated = false
-
-      // Clear tokens
+      
+      // Clear PKCE data
+      clearPKCE()
+      
+      // Clear any stored data
       if (process.client) {
-        localStorage.removeItem('access_token')
-        localStorage.removeItem('refresh_token')
+        sessionStorage.clear()
       }
 
       toaster.add({
@@ -144,169 +302,45 @@ export const useAuth = () => {
         progress: true,
       })
 
+      // Navigate to login
       await navigateTo('/auth/login')
     } catch (error: any) {
-      console.error('Logout error:', error)
+      console.error('[useAuth] logout error:', error)
+      // Even if logout fails, clear local state and navigate
+      state.user = null
+      state.isAuthenticated = false
+      clearPKCE()
+      await navigateTo('/auth/login')
     } finally {
       state.isLoading = false
     }
   }
 
-  // Forgot password
-  const forgotPassword = async (email: string) => {
-    state.isLoading = true
-    state.error = null
-
+  /**
+   * Refresh access token
+   */
+  const refreshAccessToken = async (): Promise<boolean> => {
     try {
-      const response = await $fetch('/api/auth/forgot-password', {
+      const response = await $fetch<{
+        success: boolean
+        access_token?: string
+        expires_in?: number
+      }>('/api/auth/oauth/refresh', {
         method: 'POST',
-        body: { email },
+        credentials: 'include',
       })
 
       if (response.success) {
-        toaster.add({
-          title: 'Success',
-          description: 'Password reset email sent',
-          icon: 'ph:envelope',
-          progress: true,
-        })
-
-        return { success: true }
-      } else {
-        throw new Error(response.error || 'Failed to send reset email')
+        return true
       }
+      return false
     } catch (error: any) {
-      state.error = error.message || 'Failed to send reset email'
-      return { success: false, error: state.error }
-    } finally {
-      state.isLoading = false
-    }
-  }
-
-  // Verify email
-  const verifyEmail = async (code: string) => {
-    state.isLoading = true
-    state.error = null
-
-    try {
-      const response = await $fetch('/api/auth/verify-email', {
-        method: 'POST',
-        body: { code },
-      })
-
-      if (response.success) {
-        toaster.add({
-          title: 'Success',
-          description: 'Email verified successfully!',
-          icon: 'ph:check',
-          progress: true,
-        })
-
-        return { success: true }
-      } else {
-        throw new Error(response.error || 'Email verification failed')
+      // If refresh fails, user needs to re-authenticate
+      if (error.statusCode === 401 || error.status === 401) {
+        await logout()
       }
-    } catch (error: any) {
-      state.error = error.message || 'Email verification failed'
-      return { success: false, error: state.error }
-    } finally {
-      state.isLoading = false
+      return false
     }
-  }
-
-  // Two-factor authentication
-  const verify2FA = async (code: string, method: 'email' | 'sms' | 'app') => {
-    state.isLoading = true
-    state.error = null
-
-    try {
-      const response = await $fetch('/api/auth/verify-2fa', {
-        method: 'POST',
-        body: { code, method },
-      })
-
-      if (response.success) {
-        state.user = response.user
-        state.isAuthenticated = true
-
-        toaster.add({
-          title: 'Success',
-          description: 'Two-factor authentication successful!',
-          icon: 'ph:shield-check',
-          progress: true,
-        })
-
-        return { success: true }
-      } else {
-        throw new Error(response.error || '2FA verification failed')
-      }
-    } catch (error: any) {
-      state.error = error.message || '2FA verification failed'
-      return { success: false, error: state.error }
-    } finally {
-      state.isLoading = false
-    }
-  }
-
-  // Reset password
-  const resetPassword = async (token: string, newPassword: string) => {
-    state.isLoading = true
-    state.error = null
-
-    try {
-      const response = await $fetch('/api/auth/reset-password', {
-        method: 'POST',
-        body: { token, newPassword },
-      })
-
-      if (response.success) {
-        toaster.add({
-          title: 'Success',
-          description: 'Password reset successfully!',
-          icon: 'ph:check',
-          progress: true,
-        })
-
-        return { success: true }
-      } else {
-        throw new Error(response.error || 'Password reset failed')
-      }
-    } catch (error: any) {
-      state.error = error.message || 'Password reset failed'
-      return { success: false, error: state.error }
-    } finally {
-      state.isLoading = false
-    }
-  }
-
-  // Check authentication status
-  const checkAuth = async () => {
-    if (process.client) {
-      const token = localStorage.getItem('access_token')
-      if (token) {
-        try {
-          const response = await $fetch('/api/auth/me', {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          })
-
-          if (response.success) {
-            state.user = response.user
-            state.isAuthenticated = true
-          }
-        } catch (error) {
-          // Token is invalid, clear it
-          localStorage.removeItem('access_token')
-          localStorage.removeItem('refresh_token')
-        }
-      }
-    }
-  }
-
-  // Initialize auth state
-  const initAuth = async () => {
-    await checkAuth()
   }
 
   return {
@@ -316,15 +350,13 @@ export const useAuth = () => {
     isLoading: readonly(toRef(state, 'isLoading')),
     error: readonly(toRef(state, 'error')),
     
-    // Methods
-    login,
-    register,
-    logout,
-    forgotPassword,
-    verifyEmail,
-    verify2FA,
-    resetPassword,
-    checkAuth,
-    initAuth,
+          // Methods
+          checkAuth,
+          initAuth,
+          login,
+          startOAuth2Flow,
+          handleOAuth2Callback,
+          logout,
+          refreshAccessToken,
   }
 }

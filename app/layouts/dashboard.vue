@@ -6,8 +6,8 @@ import { useAppLocale } from '~/composables/useLocale'
 const currentLocale = useAppLocale()
 const { open } = usePanels()
 
-// Keycloak authentication - check auth on mount to restore state after refresh
-const { user, isAuthenticated, logout, checkAuth } = useKeycloak()
+// Ory Kratos authentication
+const { user, isAuthenticated, logout, checkAuth } = useAuth()
 
 // Use shared user data composable for consistent state across all components
 const { user: sharedUser, userDisplayName, refreshUser } = useUserData()
@@ -15,6 +15,7 @@ const { user: sharedUser, userDisplayName, refreshUser } = useUserData()
 // Also check auth on mount to ensure state is synced
 onMounted(async () => {
   await checkAuth()
+  await refreshUser()
 })
 
 // Get user avatar - prioritize user avatar, fallback to ui-avatars
@@ -30,16 +31,6 @@ const handleLogout = async () => {
   await logout()
   // Refresh user data after logout
   await refreshUser()
-}
-
-// Open Keycloak Account Console
-const openKeycloakAccount = () => {
-  const keycloakUrl = config.public.keycloakUrl || 'http://localhost:8080'
-  const keycloakRealm = config.public.keycloakRealm || 'master'
-  const accountUrl = `${keycloakUrl}/realms/${keycloakRealm}/account`
-  
-  // Open in new tab - Keycloak will handle SSO authentication
-  window.open(accountUrl, '_blank')
 }
 
 const menu = [

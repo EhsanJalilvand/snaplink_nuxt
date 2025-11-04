@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { checkRateLimit, getClientIP } from '../../utils/rateLimit.js'
+import { Configuration, FrontendApi } from '@ory/client'
 
 // Sanitize email input (XSS prevention)
 function sanitizeEmail(email: string): string {
@@ -51,75 +52,57 @@ export default defineEventHandler(async (event) => {
   const { email } = validation.data
 
   try {
-    // Get admin token for user operations
-    const adminTokenUrl = `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/token`
-    
-    const adminTokenResponse = await $fetch(adminTokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: config.keycloakClientId || 'my-client',
-        client_secret: config.keycloakClientSecret || '0fA6K2dgvnr2ZZlt6mW0GcPad7ThGqvp',
-      }),
-    }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/forgot-password.post.ts] Failed to get admin token:', error)
-      }
+    // Use Kratos Recovery Flow to initiate password reset
+    const kratosConfig = new Configuration({
+      basePath: config.kratosPublicUrl,
+    })
+    const frontendApi = new FrontendApi(kratosConfig)
+
+    // Create recovery flow
+    const { data: recoveryFlow } = await frontendApi.createBrowserRecoveryFlow()
+
+    if (!recoveryFlow?.id) {
       throw createError({
         statusCode: 500,
-        statusMessage: 'Service temporarily unavailable',
+        statusMessage: 'Failed to create recovery flow',
       })
-    }) as any
-
-    // Find user by email
-    const searchUsersUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users`
-    
-    const users = await $fetch(searchUsersUrl, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${adminTokenResponse.access_token}`,
-      },
-      query: {
-        email,
-        exact: true,
-      },
-    }).catch(() => []) as any[]
-
-    if (!users || users.length === 0) {
-      // Don't reveal if user exists or not for security (security best practice)
-      // Always return success to prevent email enumeration
-      return {
-        success: true,
-        message: 'If the email exists, a password reset link has been sent.',
-      }
     }
 
-    const user = users[0]
+    // Find CSRF token in flow
+    const csrfToken = recoveryFlow.ui?.nodes?.find(
+      (node: any) => node.attributes?.name === 'csrf_token'
+    )?.attributes?.value as string
 
-    // Send password reset email via Keycloak
-    const sendResetUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${user.id}/execute-actions-email`
-    
-    await $fetch(sendResetUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${adminTokenResponse.access_token}`,
+    if (!csrfToken) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: 'CSRF token not found in recovery flow',
+      })
+    }
+
+    // Update recovery flow with email
+    // This will trigger Kratos to send a password reset email
+    await frontendApi.updateRecoveryFlow({
+      flow: recoveryFlow.id,
+      updateRecoveryFlowBody: {
+        method: 'code', // Kratos uses code-based recovery
+        email,
+        csrf_token: csrfToken,
       },
-      body: ['UPDATE_PASSWORD'],
     }).catch((error: any) => {
-      // Log but don't fail if email sending fails
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/forgot-password.post.ts] Failed to send reset email:', error.statusCode || error.status)
+      // Even if there's an error, don't reveal if email exists or not
+      // This prevents email enumeration attacks
+      if (import.meta.dev) {
+        console.error('[auth/forgot-password.post.ts] Recovery flow error:', error)
       }
+      // Don't throw error - always return success message
     })
 
     // Always return success to prevent email enumeration (security best practice)
+    // Even if the email doesn't exist, we return the same message
     return {
       success: true,
-      message: 'If the email exists, a password reset link has been sent.',
+      message: 'If the email exists, a password reset code has been sent.',
     }
   } catch (error: any) {
     if (process.env.NODE_ENV === 'development') {
@@ -130,8 +113,7 @@ export default defineEventHandler(async (event) => {
     // Even if there's an error, don't reveal it
     return {
       success: true,
-      message: 'If the email exists, a password reset link has been sent.',
+      message: 'If the email exists, a password reset code has been sent.',
     }
   }
 })
-

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { checkRateLimit, getClientIP } from '../../utils/rateLimit.js'
+import { Configuration, IdentityApi } from '@ory/client'
 
 // Sanitize input (XSS prevention)
 function sanitizeString(str: string): string {
@@ -58,8 +59,8 @@ export default defineEventHandler(async (event) => {
 
   const { firstName, lastName, email } = validation.data
 
-  // Get access token from cookie
-  const accessToken = getCookie(event, 'kc_access')
+  // Get access token from cookie (Hydra token)
+  const accessToken = getCookie(event, 'hydra_access_token')
   
   if (!accessToken) {
     throw createError({
@@ -69,122 +70,104 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    // Parse token to get user ID
-    const tokenParts = accessToken.split('.')
-    if (tokenParts.length !== 3) {
-      throw createError({
-        statusCode: 401,
-        statusMessage: 'Invalid token',
-      })
-    }
-
-    const payload = Buffer.from(tokenParts[1], 'base64').toString('utf-8')
-    const tokenParsed = JSON.parse(payload)
-    const userId = tokenParsed.sub
-
-    if (!userId) {
-      throw createError({
-        statusCode: 401,
-        statusMessage: 'Invalid token',
-      })
-    }
-
-    // Get admin token for user operations
-    const adminTokenUrl = `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/token`
-    
-    const adminTokenResponse = await $fetch(adminTokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: config.keycloakClientId || 'my-client',
-        client_secret: config.keycloakClientSecret || '0fA6K2dgvnr2ZZlt6mW0GcPad7ThGqvp',
-      }),
-    }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/profile.put.ts] Failed to get admin token:', error)
-      }
-      throw createError({
-        statusCode: 500,
-        statusMessage: 'Service temporarily unavailable',
-      })
-    }) as any
-
-    // Get current user data
-    const getUserUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}`
-    
-    const currentUser = await $fetch(getUserUrl, {
+    // Get user info from Hydra's /userinfo endpoint
+    const hydraUserInfo = await $fetch(`${config.hydraPublicUrl}/userinfo`, {
       method: 'GET',
       headers: {
-        Authorization: `Bearer ${adminTokenResponse.access_token}`,
+        Authorization: `Bearer ${accessToken}`,
       },
     }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/profile.put.ts] Failed to get user:', error)
+      if (import.meta.dev) {
+        console.error('[auth/profile.put.ts] Failed to get user info from Hydra:', error)
+      }
+      throw createError({
+        statusCode: 401,
+        statusMessage: 'Invalid access token',
+      })
+    })
+
+    if (!hydraUserInfo || !hydraUserInfo.sub) {
+      throw createError({
+        statusCode: 401,
+        statusMessage: 'Invalid access token or user info not found',
+      })
+    }
+
+    const userId = hydraUserInfo.sub as string
+
+    // Get Kratos Identity using Kratos Admin API
+    const kratosAdmin = new IdentityApi(new Configuration({
+      basePath: config.kratosAdminUrl,
+    }))
+
+    // Get current identity
+    const { data: currentIdentity } = await kratosAdmin.getIdentity({ id: userId }).catch((error: any) => {
+      if (import.meta.dev) {
+        console.error('[auth/profile.put.ts] Failed to get identity from Kratos:', error)
       }
       throw createError({
         statusCode: 404,
         statusMessage: 'User not found',
       })
-    }) as any
+    })
 
     // Check if email is already taken by another user
     if (email) {
-      const searchUsersUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users`
-      
-      const existingUsers = await $fetch(searchUsersUrl, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${adminTokenResponse.access_token}`,
-        },
-        query: {
-          email,
-          exact: true,
-        },
-      }).catch(() => []) as any[]
+      try {
+        // List all identities to check for email conflicts
+        const { data: allIdentities } = await kratosAdmin.listIdentities()
+        
+        // Check if email exists for another user
+        const emailExists = allIdentities?.some((identity: any) => {
+          return identity.id !== userId && 
+                 identity.traits?.email?.toLowerCase() === email.toLowerCase()
+        })
 
-      // If email exists and belongs to a different user, return error
-      if (existingUsers && existingUsers.length > 0) {
-        const existingUser = existingUsers.find((u: any) => u.id !== userId)
-        if (existingUser) {
+        if (emailExists) {
           throw createError({
             statusCode: 409,
             statusMessage: 'Email is already registered',
           })
         }
+      } catch (error: any) {
+        if (error.statusCode === 409) {
+          throw error
+        }
+        // Log but continue if listing fails
+        if (import.meta.dev) {
+          console.error('[auth/profile.put.ts] Failed to check email uniqueness:', error)
+        }
       }
     }
 
     // Check if email is changing
-    const isEmailChanging = email && email !== currentUser.email
+    const isEmailChanging = email && email !== currentIdentity.traits?.email
 
-    // Update user in Keycloak
-    const updateUserUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}`
-    
-    const updateData: any = {
-      ...currentUser,
-      firstName: firstName || currentUser.firstName,
-      lastName: lastName !== undefined ? lastName : currentUser.lastName,
-      email: email || currentUser.email,
+    // Prepare updated traits
+    const updatedTraits = {
+      ...currentIdentity.traits,
+      email: email || currentIdentity.traits?.email,
+      name: {
+        first: firstName || currentIdentity.traits?.name?.first || '',
+        last: lastName !== undefined ? (lastName || '') : (currentIdentity.traits?.name?.last || ''),
+      },
     }
 
     // If email changed, mark as unverified
     if (isEmailChanging) {
-      updateData.emailVerified = false
+      updatedTraits.email_verified = false
     }
 
-    await $fetch(updateUserUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${adminTokenResponse.access_token}`,
+    // Update identity in Kratos
+    await kratosAdmin.updateIdentity({
+      id: userId,
+      updateIdentityBody: {
+        schema_id: currentIdentity.schema_id,
+        traits: updatedTraits,
       },
-      body: updateData,
     }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/profile.put.ts] Failed to update user:', error)
+      if (import.meta.dev) {
+        console.error('[auth/profile.put.ts] Failed to update identity:', error)
       }
       
       if (error.statusCode === 409 || error.status === 409) {
@@ -200,26 +183,13 @@ export default defineEventHandler(async (event) => {
       })
     })
 
-    // If email changed, send verification email
-    if (email && email !== currentUser.email) {
-      const sendVerificationUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}/execute-actions-email`
-      
-      await $fetch(sendVerificationUrl, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminTokenResponse.access_token}`,
-        },
-        body: ['VERIFY_EMAIL'],
-      }).catch((error: any) => {
-        // Log but don't fail update if email sending fails
-        if (process.env.NODE_ENV === 'development') {
-          console.error('[auth/profile.put.ts] Failed to send verification email:', error.statusCode || error.status)
-        }
-      })
+    // If email changed, trigger verification flow
+    // Note: Kratos will handle email verification automatically if configured
+    if (isEmailChanging && import.meta.dev) {
+      console.log('[auth/profile.put.ts] Email changed, verification should be triggered by Kratos')
     }
 
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.dev) {
       console.log('[auth/profile.put.ts] Profile updated successfully')
     }
 
@@ -229,7 +199,7 @@ export default defineEventHandler(async (event) => {
     }
   }
   catch (error: any) {
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.dev) {
       console.error('[auth/profile.put.ts] Error:', error.statusCode || error.status)
     }
     
@@ -243,5 +213,3 @@ export default defineEventHandler(async (event) => {
     })
   }
 })
-
-

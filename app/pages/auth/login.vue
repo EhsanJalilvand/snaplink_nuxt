@@ -6,6 +6,7 @@ import { z } from 'zod'
 definePageMeta({
   layout: 'empty',
   title: 'Login',
+  ssr: false,
 })
 
 const VALIDATION_TEXT = {
@@ -14,15 +15,12 @@ const VALIDATION_TEXT = {
 }
 
 // This is the Zod schema for the form input
-// It's used to define the shape that the form data will have
 const zodSchema = z.object({
   emailOrUsername: z.string().min(1, VALIDATION_TEXT.EMAIL_OR_USERNAME_REQUIRED),
   password: z.string().min(1, VALIDATION_TEXT.PASSWORD_REQUIRED),
   trustDevice: z.boolean(),
 })
 
-// Zod has a great infer method that will
-// infer the shape of the schema into a TypeScript type
 type FormInput = z.infer<typeof zodSchema>
 
 const validationSchema = toTypedSchema(zodSchema)
@@ -43,65 +41,193 @@ const {
 
 const router = useRouter()
 const toaster = useNuiToasts()
-const { login: loginKeycloak } = useKeycloak()
+const { login: authLogin, startOAuth2Flow } = useAuth()
 
 // This is where you would send the form data to the server
 const onSubmit = handleSubmit(async (values) => {
   try {
-    // Call login API
-    const response = await $fetch('/api/auth/login', {
-      method: 'POST',
-      body: {
-        emailOrUsername: values.emailOrUsername,
-        password: values.password,
-        trustDevice: values.trustDevice,
+    // Use client-side login directly with Kratos
+    // This ensures cookie is set in browser properly
+    const config = useRuntimeConfig()
+    
+    // Get login flow from Kratos directly (client-side)
+    // This ensures CSRF cookie is set in browser properly
+    const returnTo = encodeURIComponent('http://localhost:3000/dashboard')
+    const flowResponse = await $fetch(`${config.public.kratosPublicUrl}/self-service/login/browser?return_to=${returnTo}`, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        'Accept': 'application/json',
       },
     })
-
-    if (response.success) {
+    
+    if (import.meta.dev) {
+      console.log('[auth/login.vue] Flow response:', flowResponse)
+      console.log('[auth/login.vue] Flow response type:', typeof flowResponse)
+      console.log('[auth/login.vue] Flow response id:', flowResponse?.id)
+      console.log('[auth/login.vue] Flow response keys:', Object.keys(flowResponse || {}))
+    }
+    
+    // Check if response has redirect_browser_to (Kratos wants to redirect)
+    if (flowResponse?.redirect_browser_to) {
+      // Kratos wants to redirect - check if it's a valid URL
+      const redirectUrl = flowResponse.redirect_browser_to
+      if (import.meta.dev) {
+        console.log('[auth/login.vue] Kratos wants to redirect to:', redirectUrl)
+      }
+      if (redirectUrl.includes('ory.sh') || redirectUrl.includes('fallback')) {
+        // Fallback URL - error
+        setFieldError('password', 'Kratos redirected to fallback URL. Please check configuration.')
+        return
+      }
+      // Valid redirect - follow it
+      window.location.href = redirectUrl
+      return
+    }
+    
+    // Check if flowResponse is a string (HTML response)
+    if (typeof flowResponse === 'string') {
+      if (import.meta.dev) {
+        console.error('[auth/login.vue] Flow response is HTML string, not JSON:', flowResponse.substring(0, 200))
+      }
+      setFieldError('password', 'Kratos returned HTML instead of JSON. Please check configuration.')
+      return
+    }
+    
+    if (!flowResponse?.id) {
+      if (import.meta.dev) {
+        console.error('[auth/login.vue] Flow response has no id:', flowResponse)
+        console.error('[auth/login.vue] Flow response structure:', JSON.stringify(flowResponse, null, 2))
+      }
+      setFieldError('password', 'Failed to initialize login flow. Please try again.')
+      return
+    }
+    
+    // Get CSRF token from flow
+    const csrfToken = flowResponse.ui?.nodes?.find((n: any) => n.attributes?.name === 'csrf_token')?.attributes?.value
+    
+    if (!csrfToken) {
+      setFieldError('password', 'Failed to get CSRF token. Please refresh the page and try again.')
+      return
+    }
+    
+    // Submit login form with credentials
+    // This will set the session cookie in browser
+    // Important: flow parameter must be in query string, not body
+    const loginResponse = await $fetch(`${config.public.kratosPublicUrl}/self-service/login?flow=${flowResponse.id}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: {
+        method: 'password',
+        password: values.password,
+        identifier: values.emailOrUsername,
+        csrf_token: csrfToken,
+      },
+    }).catch((error: any) => {
+      // Handle CORS or network errors
+      if (import.meta.dev) {
+        console.error('[auth/login.vue] Login error:', error)
+      }
+      
+      // Check for validation errors
+      if (error.response?.data?.ui?.messages) {
+        const messages = error.response.data.ui.messages
+        const errorMessage = messages.find((m: any) => m.type === 'error')?.text
+        if (errorMessage) {
+          setFieldError('password', errorMessage)
+          return
+        }
+      }
+      
+      // Check for CORS errors
+      if (error.message?.includes('CORS') || error.message?.includes('fetch')) {
+        setFieldError('password', 'Network error. Please check CORS settings.')
+        return
+      }
+      
+      setFieldError('password', 'Login failed. Please try again.')
+      throw error
+    })
+    
+    // Check if login was successful
+    if (loginResponse?.session) {
+      // Cookie is now set - redirect to dashboard
       toaster.add({
         title: 'Success',
         description: 'Welcome back!',
         icon: 'ph:user-circle-fill',
         progress: true,
       })
-      
-      // Redirect to dashboard after successful login
       await router.push('/dashboard')
+    } else if (loginResponse?.redirect_browser_to) {
+      // Kratos wants to redirect (e.g., for verification)
+      // Make sure it's a local URL
+      const redirectUrl = loginResponse.redirect_browser_to
+      if (redirectUrl.startsWith('http://localhost:3000') || redirectUrl.startsWith('/')) {
+        window.location.href = redirectUrl
+      } else {
+        // Invalid redirect - go to dashboard
+        await router.push('/dashboard')
+      }
+    } else {
+      // Login failed - check for errors
+      const errorMessage = loginResponse?.ui?.messages?.find((m: any) => m.type === 'error')?.text
+      setFieldError('password', errorMessage || 'Login failed. Please try again.')
     }
   } catch (error: any) {
     // Handle errors
-    if (error.statusCode === 429) {
-      setFieldError('password', 'Too many login attempts. Please try again later.')
-    } else if (error.statusCode === 401) {
-      setFieldError('password', 'Invalid email or password')
-    } else if (error.statusCode === 400 && error.data?.redirectToKeycloak) {
-      // Direct Access Grant not enabled - fallback to redirect login
-      try {
-        await loginKeycloak()
-      } catch (redirectError) {
-        toaster.add({
-          title: 'Configuration Required',
-          description: error.data?.help || 'Please enable Direct Access Grant in Keycloak settings',
-          icon: 'ph:warning',
-          color: 'warning',
-          progress: true,
-        })
-        setFieldError('emailOrUsername', error.message || 'Direct Access Grant not enabled. Using redirect...')
-      }
-    } else if (error.data) {
-      // Handle validation errors
-      const errors = error.data as Array<{ path: string[]; message: string }>
-      errors.forEach((err) => {
-        if (err.path && err.path.length > 0) {
-          setFieldError(err.path[0] as keyof FormInput, err.message)
+    if (error.statusCode === 401 || error.status === 401) {
+      // Check if error.data is an array
+      let errorMessage = 'Invalid email or password'
+      if (Array.isArray(error.data)) {
+        const passwordError = error.data.find((e: any) => e.path?.includes('password'))
+        if (passwordError?.message) {
+          errorMessage = passwordError.message
         }
-      })
+      } else if (error.statusMessage) {
+        errorMessage = error.statusMessage
+      }
+      setFieldError('password', errorMessage)
+    } else if (error.statusCode === 403) {
+      // CSRF error
+      let errorMessage = 'Security validation failed. Please refresh the page and try again.'
+      if (Array.isArray(error.data)) {
+        const csrfError = error.data.find((e: any) => e.path?.includes('password'))
+        if (csrfError?.message) {
+          errorMessage = csrfError.message
+        }
+      } else if (error.statusMessage) {
+        errorMessage = error.statusMessage
+      }
+      setFieldError('password', errorMessage)
+    } else if (error.statusCode === 429) {
+      setFieldError('password', 'Too many login attempts. Please try again later.')
     } else {
       setFieldError('password', error.message || 'Login failed. Please try again.')
     }
   }
 })
+
+// Google OAuth login
+const loginWithGoogle = async () => {
+  try {
+    // Start OAuth2 flow with Google provider
+    // This will redirect to Hydra, which will handle Google OAuth
+    await startOAuth2Flow('/dashboard')
+  } catch (error: any) {
+    toaster.add({
+      title: 'Error',
+      description: error.message || 'Failed to start Google login',
+      icon: 'ph:warning',
+      color: 'danger',
+      progress: true,
+    })
+  }
+}
 </script>
 
 <template>
@@ -151,6 +277,33 @@ const onSubmit = handleSubmit(async (values) => {
           <BaseParagraph size="sm" class="text-muted-400 mb-6">
             Login with your credentials
           </BaseParagraph>
+        </div>
+
+        <!-- Social Login Buttons -->
+        <div class="mb-6">
+          <BaseButton
+            :disabled="isSubmitting"
+            :loading="isSubmitting"
+            type="button"
+            variant="pastel"
+            rounded="lg"
+            class="w-full"
+            @click="loginWithGoogle"
+          >
+            <Icon name="logos:google-icon" class="size-5 mr-2" />
+            Continue with Google
+          </BaseButton>
+        </div>
+
+        <div class="relative mb-6">
+          <div class="absolute inset-0 flex items-center">
+            <div class="w-full border-t border-muted-300 dark:border-muted-700" />
+          </div>
+          <div class="relative flex justify-center text-sm">
+            <span class="bg-white dark:bg-muted-800 px-2 text-muted-500">
+              Or continue with email
+            </span>
+          </div>
         </div>
 
         <!-- Form section -->
@@ -261,7 +414,7 @@ const onSubmit = handleSubmit(async (values) => {
 
             <!-- No account link -->
             <p
-              class="text-muted-400 mt-4 flex justify-between font-sans text-xs leading-5"
+              class="muted-400 mt-4 flex justify-between font-sans text-xs leading-5"
             >
               <span>Don't have an account?</span>
               <NuxtLink

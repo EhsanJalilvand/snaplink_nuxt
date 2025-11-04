@@ -63,31 +63,29 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     // Private keys (only available on server-side)
-    keycloakUrl: process.env.KEYCLOAK_URL || 'http://localhost:8080',
-    keycloakRealm: process.env.KEYCLOAK_REALM || 'master',
-    keycloakClientId: (() => {
-      const clientId = process.env.KEYCLOAK_CLIENT_ID || 'my-client'
-      console.log('[nuxt.config.ts] KEYCLOAK_CLIENT_ID from env:', process.env.KEYCLOAK_CLIENT_ID)
-      console.log('[nuxt.config.ts] KEYCLOAK_CLIENT_ID final value:', clientId)
-      return clientId
-    })(),
-    keycloakClientSecret: process.env.KEYCLOAK_CLIENT_SECRET || '',
+    // Ory Kratos
+    kratosAdminUrl: process.env.KRATOS_ADMIN_URL || 'http://localhost:4434',
+    kratosPublicUrl: process.env.KRATOS_PUBLIC_URL || 'http://localhost:4433',
+    // Ory Hydra
+    hydraAdminUrl: process.env.HYDRA_ADMIN_URL || 'http://localhost:4445',
+    hydraPublicUrl: process.env.HYDRA_PUBLIC_URL || 'http://localhost:4444',
+    // OAuth2 Client
+    oauth2ClientId: process.env.OAUTH2_CLIENT_ID || 'snapplink-frontend',
+    // Avatar Storage
     avatarStoragePath: process.env.AVATAR_STORAGE_PATH || 'avatars',
     avatarBaseUrl: process.env.AVATAR_BASE_URL || '/uploads/avatars',
-    smtpHost: process.env.SMTP_HOST || '',
-    smtpPort: process.env.SMTP_PORT || '587',
-    smtpUser: process.env.SMTP_USER || '',
-    smtpPass: process.env.SMTP_PASS || '',
-    smtpFrom: process.env.SMTP_FROM || 'noreply@snaplink.com',
     
     // Public keys (exposed to client-side)
     public: {
-      siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+      siteUrl: process.env.NUXT_PUBLIC_SITE_URL || process.env.APP_URL || 'http://localhost:3000',
       appName: process.env.NUXT_PUBLIC_APP_NAME || 'SnapLink',
-      keycloakUrl: process.env.KEYCLOAK_URL || 'http://localhost:8080',
-      keycloakRealm: process.env.KEYCLOAK_REALM || 'master',
-      keycloakClientId: process.env.KEYCLOAK_CLIENT_ID || 'my-client', // Read from env
-      keycloakRedirectUri: process.env.KEYCLOAK_REDIRECT_URI || 'http://localhost:3000/auth/callback',
+      // Ory Kratos
+      kratosPublicUrl: process.env.KRATOS_PUBLIC_URL || 'http://localhost:4433',
+      // Ory Hydra
+      hydraPublicUrl: process.env.HYDRA_PUBLIC_URL || 'http://localhost:4444',
+      // OAuth2
+      oauth2ClientId: process.env.OAUTH2_CLIENT_ID || 'snapplink-frontend',
+      oauth2RedirectUri: process.env.OAUTH2_REDIRECT_URI || 'http://localhost:3000/auth/callback',
     },
   },
 
