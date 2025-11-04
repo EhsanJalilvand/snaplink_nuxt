@@ -2,14 +2,63 @@ import { existsSync } from 'fs'
 import { unlink } from 'fs/promises'
 import { join, isAbsolute as pathIsAbsolute, resolve } from 'path'
 import { Configuration, IdentityApi } from '@ory/client'
+import { getHeader } from 'h3'
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
 
-  // Get access token from cookie (Hydra token)
+  // Check for Kratos session cookie or Hydra access token
+  const kratosSession = getCookie(event, 'ory_kratos_session')
   const accessToken = getCookie(event, 'hydra_access_token')
 
-  if (!accessToken) {
+  let userId: string | null = null
+
+  // Try to get user ID from Kratos session first
+  if (kratosSession) {
+    try {
+      const requestCookies = getHeader(event, 'cookie') || ''
+      const sessionResponse = await $fetch<{
+        id?: string
+        identity?: any
+      }>(`${config.kratosPublicUrl}/sessions/whoami`, {
+        headers: {
+          Cookie: requestCookies,
+        },
+      })
+
+      if (sessionResponse?.id && sessionResponse?.identity) {
+        userId = sessionResponse.identity.id
+      }
+    } catch (kratosError: any) {
+      if (import.meta.dev) {
+        console.log('[auth/profile/avatar.delete.ts] Kratos session check failed:', kratosError.message)
+      }
+    }
+  }
+
+  // If no Kratos session, try Hydra token
+  if (!userId && accessToken) {
+    try {
+      // Get user info from Hydra's /userinfo endpoint
+      const hydraUserInfo = await $fetch(`${config.hydraPublicUrl}/userinfo`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }) as any
+
+      if (hydraUserInfo?.sub) {
+        userId = hydraUserInfo.sub
+      }
+    } catch (hydraError: any) {
+      if (import.meta.dev) {
+        console.log('[auth/profile/avatar.delete.ts] Hydra token check failed:', hydraError.message)
+      }
+    }
+  }
+
+  // If no valid authentication found, return 401
+  if (!userId) {
     throw createError({
       statusCode: 401,
       statusMessage: 'Unauthorized',
@@ -17,30 +66,6 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    // Get user info from Hydra's /userinfo endpoint
-    const hydraUserInfo = await $fetch(`${config.hydraPublicUrl}/userinfo`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    }).catch((error: any) => {
-      if (import.meta.dev) {
-        console.error('[auth/profile/avatar.delete.ts] Failed to get user info from Hydra:', error)
-      }
-      throw createError({
-        statusCode: 401,
-        statusMessage: 'Invalid access token',
-      })
-    })
-
-    if (!hydraUserInfo || !hydraUserInfo.sub) {
-      throw createError({
-        statusCode: 401,
-        statusMessage: 'Invalid access token or user info not found',
-      })
-    }
-
-    const userId = hydraUserInfo.sub as string
 
     // Get Kratos Identity using Kratos Admin API
     const kratosAdmin = new IdentityApi(new Configuration({
