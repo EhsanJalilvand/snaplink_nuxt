@@ -86,39 +86,101 @@ const onSubmit = handleSubmit(async (formValues) => {
       // Wait a moment for Kratos to update the identity
       await new Promise(resolve => setTimeout(resolve, 1000))
       
-      // Create a session for the user after email verification
-      // This is needed because registration doesn't create a session
-      if (response.identityId) {
+      // After email verification, create a session using the password from registration
+      // Password is passed in query params (temporary, only for this flow)
+      // We need to do this from client-side to ensure cookie is set in browser
+      const passwordFromQuery = route.query.password as string
+      
+      if (passwordFromQuery && response.identityId) {
         try {
-          // Create session using Admin API
-          await $fetch('/api/auth/create-session', {
-            method: 'POST',
-            body: {
-              identityId: response.identityId,
-            },
+          // Create session using client-side login flow (like login.vue does)
+          // This ensures cookie is set in browser properly
+          const config = useRuntimeConfig()
+          
+          // Create login flow from client-side
+          const loginFlow = await $fetch(`${config.public.kratosPublicUrl}/self-service/login/browser?return_to=${encodeURIComponent('http://localhost:3000/dashboard')}`, {
+            method: 'GET',
             credentials: 'include',
+            headers: {
+              'Accept': 'application/json',
+            },
           })
           
-          if (import.meta.dev) {
-            console.log('[auth/verify-email.vue] Session created for identity:', response.identityId)
+          if (loginFlow?.id) {
+            // Get CSRF token from flow
+            const csrfToken = loginFlow.ui?.nodes?.find(
+              (node: any) => node.attributes?.name === 'csrf_token'
+            )?.attributes?.value
+            
+            if (csrfToken) {
+              // Submit login form with credentials (client-side)
+              // This will set the session cookie in browser
+              const loginResponse = await $fetch(`${config.public.kratosPublicUrl}/self-service/login?flow=${loginFlow.id}`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                },
+                body: {
+                  method: 'password',
+                  password: passwordFromQuery,
+                  identifier: email.value,
+                  csrf_token: csrfToken,
+                },
+              })
+              
+              if (loginResponse?.session) {
+                if (import.meta.dev) {
+                  console.log('[auth/verify-email.vue] Session created for identity:', response.identityId)
+                }
+                
+                // Show success message
+                toaster.add({
+                  title: 'Success',
+                  description: 'Email verified! Redirecting to dashboard...',
+                  icon: 'ph:check-circle-fill',
+                  color: 'success',
+                  progress: true,
+                })
+                
+                // Refresh user data to get updated email verification status and session
+                const { refreshUser } = useUserData()
+                await refreshUser()
+                
+                // Wait a bit more for session to be set
+                await new Promise(resolve => setTimeout(resolve, 500))
+                
+                // Redirect to dashboard
+                await router.push('/dashboard')
+                return
+              }
+            }
           }
         } catch (sessionError: any) {
-          // Log but continue - user can login manually
+          // If session creation fails, redirect to login
           if (import.meta.dev) {
             console.warn('[auth/verify-email.vue] Failed to create session:', sessionError)
           }
         }
       }
       
-      // Refresh user data to get updated email verification status and session
-      const { refreshUser } = useUserData()
-      await refreshUser()
+      // If no password or session creation failed, redirect to login
+      toaster.add({
+        title: 'Email Verified',
+        description: 'Your email has been verified. Please login to continue.',
+        icon: 'ph:check-circle-fill',
+        color: 'success',
+        progress: true,
+      })
       
-      // Wait a bit more for session to be set
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
-      // Redirect to dashboard (middleware will check email verification)
-      await router.push('/dashboard')
+      await router.push({
+        path: '/auth/login',
+        query: {
+          verified: 'true',
+          email: email.value,
+        },
+      })
     } else {
       setFieldError('code', response.error || 'Verification failed. Please try again.')
     }

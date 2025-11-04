@@ -41,12 +41,29 @@ const {
 })
 
 const router = useRouter()
+const route = useRoute()
 const toaster = useNuiToasts()
 const { login: authLogin, startOAuth2Flow, checkAuth } = useAuth()
 
 // Check if user is already authenticated on mount
 // If session exists, logout first to allow fresh login
 onMounted(async () => {
+  // Check if user just verified their email
+  if (route.query.verified === 'true') {
+    toaster.add({
+      title: 'Email Verified',
+      description: 'Your email has been verified. Please login to continue.',
+      icon: 'ph:check-circle-fill',
+      color: 'success',
+      progress: true,
+    })
+    
+    // Pre-fill email if provided
+    if (route.query.email) {
+      values.emailOrUsername = route.query.email as string
+    }
+  }
+  
   try {
     const { isAuthenticated } = await checkAuth()
     

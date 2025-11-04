@@ -151,12 +151,14 @@ const onSubmit = handleSubmit(async (_values) => {
                   progress: true,
                 })
                 
-                // Redirect to verify email page with flow ID and email
+                // Redirect to verify email page with flow ID, email, and password
+                // Password is needed to create session after verification
                 await router.push({
                   path: '/auth/verify-email',
                   query: {
                     flow: verificationFlow.id,
                     email: userEmail,
+                    password: values.password, // Store password temporarily for session creation
                   },
                 })
               } else {
