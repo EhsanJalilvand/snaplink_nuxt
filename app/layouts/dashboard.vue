@@ -45,27 +45,6 @@ const menu = [
       },
     ],
   },
-  {
-    label: 'Settings',
-    icon: 'solar:settings-linear',
-    links: [
-      {
-        label: 'Account Settings',
-        icon: 'solar:settings-linear',
-        to: '/dashboard/settings',
-      },
-      {
-        label: 'Profile',
-        icon: 'solar:user-linear',
-        to: '/dashboard/settings/profile',
-      },
-      {
-        label: 'Security',
-        icon: 'solar:lock-keyhole-linear',
-        to: '/dashboard/settings/security',
-      },
-    ],
-  },
 ]
 
 const route = useRoute()
