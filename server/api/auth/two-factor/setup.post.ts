@@ -101,6 +101,23 @@ export default defineEventHandler(async (event) => {
         headers: requestCookies ? { Cookie: requestCookies } : undefined,
       })
       
+      if (import.meta.dev) {
+        console.log('[auth/two-factor/setup.post.ts] Settings flow created:', {
+          hasData: !!settingsFlow.data,
+          flowId: settingsFlow.data?.id,
+          hasUi: !!settingsFlow.data?.ui,
+          nodesCount: settingsFlow.data?.ui?.nodes?.length || 0,
+        })
+      }
+      
+      if (!settingsFlow.data?.id) {
+        throw createError({
+          statusCode: 500,
+          statusMessage: 'Failed to create settings flow',
+          message: 'Settings flow was created but no flow ID was returned',
+        })
+      }
+      
       if (settingsFlow.data?.id) {
         // Get CSRF token from flow
         const csrfToken = settingsFlow.data.ui?.nodes?.find(
@@ -166,19 +183,77 @@ export default defineEventHandler(async (event) => {
           let totpError: any = null
           
           try {
-            totpSetupResponse = await frontendApi.updateSettingsFlow({
-              flow: settingsFlow.data.id,
-              updateSettingsFlowBody: {
-                method: 'totp',
-                csrf_token: csrfToken,
-              },
-            }, {
-              headers: requestCookies ? { Cookie: requestCookies } : undefined,
-            })
+            // Use direct $fetch to POST to Kratos settings endpoint
+            // This bypasses the SDK which might have issues with the endpoint
+            const flowUrl = `${config.kratosPublicUrl}/self-service/settings?flow=${settingsFlow.data.id}`
+            
+            if (import.meta.dev) {
+              console.log('[auth/two-factor/setup.post.ts] Calling flow URL:', flowUrl)
+            }
+            
+            try {
+              const response = await $fetch(flowUrl, {
+                method: 'POST',
+                headers: requestCookies ? { Cookie: requestCookies } : undefined,
+                body: {
+                  method: 'totp',
+                  csrf_token: csrfToken,
+                },
+              })
+              
+              totpSetupResponse = { data: response }
+              
+              if (import.meta.dev) {
+                console.log('[auth/two-factor/setup.post.ts] Settings flow update succeeded')
+              }
+            } catch (fetchError: any) {
+              // $fetch might throw error even when response contains QR code
+              // Check if error has response data
+              if (import.meta.dev) {
+                console.error('[auth/two-factor/setup.post.ts] $fetch error:', {
+                  statusCode: fetchError.statusCode || fetchError.status,
+                  message: fetchError.message,
+                  hasResponse: !!fetchError.response,
+                  hasData: !!fetchError.data,
+                  responseData: fetchError.response?._data || fetchError.data,
+                })
+              }
+              
+              // Check if error has response data
+              if (fetchError.response?._data) {
+                totpSetupResponse = { data: fetchError.response._data }
+              } else if (fetchError.data) {
+                totpSetupResponse = { data: fetchError.data }
+              } else if (fetchError.response) {
+                totpSetupResponse = { data: fetchError.response }
+              } else {
+                // If it's a 404, check if it's because endpoint is disabled
+                // In that case, we might need to use Admin API instead
+                if (fetchError.statusCode === 404 || fetchError.status === 404) {
+                  if (import.meta.dev) {
+                    console.error('[auth/two-factor/setup.post.ts] 404 error - endpoint might be disabled')
+                  }
+                  // Re-throw to be handled by outer catch
+                  throw fetchError
+                }
+                // Re-throw if we can't extract response
+                throw fetchError
+              }
+            }
           } catch (error: any) {
             // @ory/client might throw error even when response contains QR code
             // Store error but continue to check response
             totpError = error
+            
+            if (import.meta.dev) {
+              console.error('[auth/two-factor/setup.post.ts] Error:', {
+                statusCode: error.statusCode || error.status,
+                message: error.message,
+                errorId: error.response?.data?.error?.id || error.data?.error?.id,
+                errorReason: error.response?.data?.error?.reason || error.data?.error?.reason,
+              })
+            }
+            
             // Check if error has response data
             if (error.response?.data) {
               totpSetupResponse = { data: error.response.data }
@@ -186,11 +261,22 @@ export default defineEventHandler(async (event) => {
               totpSetupResponse = { data: error.data }
             } else if (error.body) {
               totpSetupResponse = { data: error.body }
+            } else if (error.response) {
+              totpSetupResponse = { data: error.response._data || error.response }
             }
           }
           
           // Use response from either success or error
           const responseData = totpSetupResponse?.data
+          
+          if (import.meta.dev) {
+            console.log('[auth/two-factor/setup.post.ts] Response data check:', {
+              hasTotpSetupResponse: !!totpSetupResponse,
+              hasResponseData: !!responseData,
+              responseDataType: typeof responseData,
+              responseDataKeys: responseData ? Object.keys(responseData) : [],
+            })
+          }
           
           if (responseData) {
             // Check for session refresh error
@@ -202,6 +288,29 @@ export default defineEventHandler(async (event) => {
                 data: {
                   error: responseData.error,
                   redirect_browser_to: responseData.redirect_browser_to,
+                },
+              })
+            }
+            
+            // Check if response has error (like 404 - endpoint disabled)
+            if (responseData.error && !responseData.ui) {
+              if (import.meta.dev) {
+                console.error('[auth/two-factor/setup.post.ts] Kratos returned error:', responseData.error)
+                console.error('[auth/two-factor/setup.post.ts] Endpoint disabled - endpoint is disabled in Kratos config')
+              }
+              
+              // If endpoint is disabled (404), we cannot use settings flow
+              // User needs to enable TOTP in Kratos configuration
+              // This is a configuration issue, not a code issue
+              throw createError({
+                statusCode: 503,
+                statusMessage: 'TOTP endpoint disabled',
+                message: 'The TOTP setup endpoint is disabled in your Kratos configuration. Please enable TOTP in your Kratos config file:\n\nselfservice:\n  methods:\n    totp:\n      enabled: true\n      config:\n        issuer: "SnapLink"\n\nAfter enabling, restart your Kratos service.',
+                data: {
+                  error: responseData.error,
+                  kratosError: true,
+                  solution: 'Enable TOTP in Kratos config: selfservice.methods.totp.enabled = true',
+                  configLocation: 'kratos.yml or kratos.yaml',
                 },
               })
             }
@@ -242,6 +351,23 @@ export default defineEventHandler(async (event) => {
                 )?.attributes?.value || csrfToken,
                 qrCode: totpQrCode,
                 secret: totpSecret,
+                configured: false,
+              }
+            }
+            
+            // If no QR code but response has UI nodes, it might be in a different format
+            // Return flow ID for retry
+            if (responseData.ui?.nodes && responseData.ui.nodes.length > 0) {
+              if (import.meta.dev) {
+                console.log('[auth/two-factor/setup.post.ts] Response has UI nodes but no QR code, returning flow ID for retry')
+              }
+              return {
+                success: true,
+                message: 'TOTP setup flow created',
+                flowId: responseData.id || settingsFlow.data.id,
+                csrfToken: responseData.ui?.nodes?.find(
+                  (node: any) => node.attributes?.name === 'csrf_token'
+                )?.attributes?.value || csrfToken,
                 configured: false,
               }
             }
@@ -324,6 +450,9 @@ export default defineEventHandler(async (event) => {
             }
             
             // If other error and no QR code, return the flow ID so frontend can retry
+            if (import.meta.dev) {
+              console.log('[auth/two-factor/setup.post.ts] No QR code found, returning flow ID for retry')
+            }
             return {
               success: true,
               message: 'TOTP setup flow created',
@@ -332,11 +461,45 @@ export default defineEventHandler(async (event) => {
               configured: false,
             }
           }
+          
+          // If we got here and totpSetupResponse is null, it means we couldn't get a response
+          if (!totpSetupResponse) {
+            if (import.meta.dev) {
+              console.error('[auth/two-factor/setup.post.ts] No response from TOTP setup attempt')
+            }
+            throw createError({
+              statusCode: 500,
+              statusMessage: 'Failed to setup TOTP',
+              message: 'No response received from TOTP setup',
+            })
+          }
+        } else {
+          if (import.meta.dev) {
+            console.error('[auth/two-factor/setup.post.ts] No CSRF token found in settings flow')
+          }
+          throw createError({
+            statusCode: 500,
+            statusMessage: 'Failed to setup TOTP',
+            message: 'CSRF token not found in settings flow',
+          })
         }
+      } else {
+        if (import.meta.dev) {
+          console.error('[auth/two-factor/setup.post.ts] Settings flow created but no flow ID')
+        }
+        throw createError({
+          statusCode: 500,
+          statusMessage: 'Failed to create settings flow',
+          message: 'Settings flow was created but no flow ID was returned',
+        })
       }
     } catch (flowError: any) {
       if (import.meta.dev) {
         console.error('[auth/two-factor/setup.post.ts] Failed to create settings flow:', flowError)
+        console.error('[auth/two-factor/setup.post.ts] Flow error type:', typeof flowError)
+        console.error('[auth/two-factor/setup.post.ts] Flow error keys:', Object.keys(flowError))
+        console.error('[auth/two-factor/setup.post.ts] Flow error statusCode:', flowError.statusCode || flowError.status)
+        console.error('[auth/two-factor/setup.post.ts] Flow error message:', flowError.message)
         console.error('[auth/two-factor/setup.post.ts] Flow error response:', JSON.stringify(flowError.response?.data || flowError.data || flowError, null, 2))
       }
       
@@ -358,13 +521,21 @@ export default defineEventHandler(async (event) => {
         statusCode: flowError.statusCode || 500,
         statusMessage: 'Failed to create 2FA setup flow',
         message: flowError.message || 'Failed to create 2FA setup flow',
+        data: {
+          originalError: flowError.message,
+          errorType: typeof flowError,
+        },
       })
     }
     
+    // This should never be reached, but just in case
+    if (import.meta.dev) {
+      console.error('[auth/two-factor/setup.post.ts] Reached end of TOTP setup without returning')
+    }
     throw createError({
       statusCode: 500,
       statusMessage: 'Failed to setup 2FA',
-      message: 'Unable to create TOTP setup flow',
+      message: 'Unable to create TOTP setup flow - unexpected error',
     })
   }
   catch (error: any) {
