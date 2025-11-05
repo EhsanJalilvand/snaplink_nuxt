@@ -127,18 +127,6 @@ function getRouteSidebarId() {
               <Icon name="solar:settings-linear" class="size-5" />
             </TairoSidebarLink>
           </BaseTooltip>
-          <TairoSidebarLink>
-            <BaseThemeToggle class="scale-90" />
-          </TairoSidebarLink>
-          <TairoSidebarLink to="/dashboard/settings">
-            <BaseChip size="sm" color="custom" :offset="3" class="text-green-600 flex items-center justify-center">
-              <BaseAvatar
-                v-if="sharedUser"
-                size="xs"
-                :src="userAvatar"
-              />
-            </BaseChip>
-          </TairoSidebarLink>
         </TairoSidebarLinks>
       </TairoSidebar>
 
