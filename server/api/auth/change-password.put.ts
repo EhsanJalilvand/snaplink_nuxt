@@ -18,9 +18,6 @@ function validatePasswordStrength(password: string): { valid: boolean; error?: s
 }
 
 const changePasswordSchema = z.object({
-  currentPassword: z.string()
-    .min(1, 'Current password is required')
-    .max(500, 'Invalid password'),
   newPassword: z.string()
     .min(8, 'Password must be at least 8 characters')
     .max(500, 'Password is too long'),
@@ -80,7 +77,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { currentPassword, newPassword } = validation.data
+  const { newPassword } = validation.data
 
   // Get access token from cookie (Hydra token)
   const accessToken = getCookie(event, 'hydra_access_token')
@@ -134,9 +131,13 @@ export default defineEventHandler(async (event) => {
     const frontendApi = new FrontendApi(kratosConfig)
 
     // Create settings flow
+    // Forward all cookies from the request to Kratos
+    const requestCookies = getHeader(event, 'cookie') || ''
+    const cookieHeader = requestCookies || `ory_kratos_session=${kratosSession}`
+    
     const { data: settingsFlow } = await frontendApi.createBrowserSettingsFlow(undefined, {
       headers: {
-        Cookie: `ory_kratos_session=${kratosSession}`,
+        Cookie: cookieHeader,
       },
     })
 
@@ -160,61 +161,162 @@ export default defineEventHandler(async (event) => {
     }
 
     // Update settings flow with password change
-    await frontendApi.updateSettingsFlow({
-      flow: settingsFlow.id,
-      updateSettingsFlowBody: {
-        method: 'password',
-        password: newPassword,
-        csrf_token: csrfToken,
-      },
-    }, {
-      headers: {
-        Cookie: `ory_kratos_session=${kratosSession}`,
-      },
-    }).catch((error: any) => {
+    // Note: Kratos requires password_confirmation for password updates
+    // The current password check is typically done by Kratos automatically
+    try {
+      await frontendApi.updateSettingsFlow({
+        flow: settingsFlow.id,
+        updateSettingsFlowBody: {
+          method: 'password',
+          password: newPassword,
+          password_confirm: newPassword, // Kratos requires password confirmation
+          csrf_token: csrfToken,
+        },
+      }, {
+        headers: {
+          Cookie: cookieHeader,
+        },
+      })
+
       if (import.meta.dev) {
-        console.error('[auth/change-password.put.ts] Failed to update password:', error)
+        console.log('[auth/change-password.put.ts] Password changed successfully')
+      }
+
+      return {
+        success: true,
+        message: 'Password changed successfully',
+      }
+    } catch (updateError: any) {
+      if (import.meta.dev) {
+        console.error('[auth/change-password.put.ts] Failed to update password:', updateError)
+        console.error('[auth/change-password.put.ts] Error response:', JSON.stringify(updateError.response?.data || updateError.body || updateError, null, 2))
+        console.error('[auth/change-password.put.ts] Error response status:', updateError.response?.status)
+        console.error('[auth/change-password.put.ts] Error response headers:', updateError.response?.headers)
+        console.error('[auth/change-password.put.ts] Error message:', updateError.message)
       }
       
-      // Check if it's a password verification error
-      if (error.response?.data?.ui?.messages) {
-        const messages = error.response.data.ui.messages
+      // Check for session refresh required error (403)
+      if (updateError.response?.status === 403 || updateError.response?.data?.error?.code === 403) {
+        const errorData = updateError.response?.data?.error
+        const errorMessage = errorData?.reason || errorData?.message || 'Your session has expired. Please log in again to change your password.'
+        
+        throw createError({
+          statusCode: 403,
+          statusMessage: String(errorMessage),
+          message: String(errorMessage),
+        })
+      }
+      
+      // Check for Kratos UI nodes with errors (this is where validation errors usually come from)
+      if (updateError.response?.data?.ui?.nodes) {
+        const nodes = updateError.response.data.ui.nodes
+        const errorNodes = nodes.filter((n: any) => n.messages && n.messages.some((m: any) => m.type === 'error'))
+        if (errorNodes.length > 0) {
+          // Get the first error message
+          const errorMessage = errorNodes[0].messages.find((m: any) => m.type === 'error')?.text
+          if (errorMessage) {
+            throw createError({
+              statusCode: 400,
+              statusMessage: String(errorMessage),
+              message: String(errorMessage),
+              data: updateError.response.data, // Include full error data for frontend
+            })
+          }
+        }
+      }
+      
+      // Check if it's a password verification error from Kratos UI messages
+      if (updateError.response?.data?.ui?.messages) {
+        const messages = updateError.response.data.ui.messages
         const errorMessage = messages.find((m: any) => m.type === 'error')?.text
         if (errorMessage) {
           throw createError({
             statusCode: 400,
-            statusMessage: errorMessage,
+            statusMessage: String(errorMessage),
+            message: String(errorMessage),
+            data: updateError.response.data, // Include full error data for frontend
           })
         }
       }
       
+      // Check if error message is directly in the error object
+      if (updateError.message && typeof updateError.message === 'string') {
+        // This handles cases where Kratos throws an error with message directly
+        throw createError({
+          statusCode: updateError.response?.status || 400,
+          statusMessage: updateError.message,
+          message: updateError.message,
+          data: updateError.response?.data, // Include full error data for frontend
+        })
+      }
+      
+      // Check for other error messages in the response
+      if (updateError.response?.data?.error_description) {
+        throw createError({
+          statusCode: 400,
+          statusMessage: String(updateError.response.data.error_description),
+          message: String(updateError.response.data.error_description),
+        })
+      }
+
+      if (updateError.response?.data?.error) {
+        const errorObj = updateError.response.data.error
+        const errorMessage = typeof errorObj === 'string' ? errorObj : (errorObj.message || errorObj.reason || 'Failed to update password')
+        
+        throw createError({
+          statusCode: updateError.response?.status || 400,
+          statusMessage: String(errorMessage),
+          message: String(errorMessage),
+        })
+      }
+      
+      // If we have a status code, use it
+      if (updateError.response?.status) {
+        // Check if we have a message from the error
+        const errorMessage = updateError.message || updateError.response?.data?.message || 'Failed to update password'
+        const statusText = typeof updateError.response.statusText === 'string' 
+          ? updateError.response.statusText 
+          : errorMessage
+        
+        throw createError({
+          statusCode: updateError.response.status,
+          statusMessage: statusText,
+          message: String(errorMessage),
+          data: updateError.response.data, // Include full error data
+        })
+      }
+      
+      // Last resort: use the error message if available
+      const finalMessage = updateError.message || 'Failed to update password'
       throw createError({
         statusCode: 500,
-        statusMessage: 'Failed to update password',
+        statusMessage: finalMessage,
+        message: String(finalMessage),
+        data: updateError.response?.data, // Include full error data
       })
-    })
-
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[auth/change-password.put.ts] Password changed successfully')
-    }
-
-    return {
-      success: true,
-      message: 'Password changed successfully',
     }
   }
   catch (error: any) {
-    if (process.env.NODE_ENV === 'development') {
-      console.error('[auth/change-password.put.ts] Error:', error.statusCode || error.status)
+    if (import.meta.dev) {
+      console.error('[auth/change-password.put.ts] Outer catch error:', error)
+      console.error('[auth/change-password.put.ts] Error statusCode:', error.statusCode)
+      console.error('[auth/change-password.put.ts] Error message:', error.message)
+      if (error.stack) {
+        console.error('[auth/change-password.put.ts] Error stack:', error.stack)
+      }
     }
     
+    // If error already has statusCode, it's already a proper error, re-throw it
     if (error.statusCode) {
       throw error
     }
     
+    // Otherwise, create a generic error
+    const errorMessage = typeof error.message === 'string' ? error.message : 'Failed to change password'
     throw createError({
       statusCode: 500,
-      statusMessage: 'Failed to change password',
+      statusMessage: errorMessage,
+      message: errorMessage,
     })
   }
 })

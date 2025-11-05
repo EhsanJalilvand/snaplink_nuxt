@@ -1,3 +1,5 @@
+import { Configuration, FrontendApi } from '@ory/client'
+
 /**
  * Get Login Flow Endpoint
  * 
@@ -18,12 +20,21 @@ export default defineEventHandler(async (event) => {
       console.log('[auth/login-flow.get.ts] Getting login flow with return_to:', fullReturnTo)
     }
 
+    // Use Kratos Frontend API to get login flow
+    const kratosConfig = new Configuration({
+      basePath: config.kratosPublicUrl,
+    })
+    const frontendApi = new FrontendApi(kratosConfig)
+    
+    // Forward cookies from the request
+    const requestCookies = getHeader(event, 'cookie') || ''
+    
     // Get login flow from Kratos
-    // Use Accept: application/json header to get JSON response, not redirect
-    const flowResponse = await $fetch(`${config.kratosPublicUrl}/self-service/login/browser?return_to=${encodeURIComponent(fullReturnTo)}`, {
-      method: 'GET',
+    const { data: flowResponse } = await frontendApi.createBrowserLoginFlow({
+      returnTo: fullReturnTo,
+    }, {
       headers: {
-        'Accept': 'application/json',
+        Cookie: requestCookies,
       },
     })
 
@@ -38,10 +49,17 @@ export default defineEventHandler(async (event) => {
       console.error('[auth/login-flow.get.ts] Error response:', error.response?.data || error.data)
     }
 
+    // Check if it's a redirect response (Kratos wants to redirect)
+    if (error.response?.data?.redirect_browser_to) {
+      return {
+        redirect_browser_to: error.response.data.redirect_browser_to,
+      }
+    }
+
     throw createError({
       statusCode: error.statusCode || error.status || 500,
-      statusMessage: error.statusMessage || 'Failed to get login flow',
-      message: error.message,
+      statusMessage: String(error.statusMessage || 'Failed to get login flow'),
+      message: String(error.message || 'Failed to get login flow'),
     })
   }
 })

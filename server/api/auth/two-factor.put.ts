@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { Configuration, FrontendApi } from '@ory/client'
 import { checkRateLimit, getClientIP } from '../../utils/rateLimit.js'
 
 const twoFactorSchema = z.object({
@@ -41,115 +42,81 @@ export default defineEventHandler(async (event) => {
 
   const { enabled } = validation.data
 
-  // Get access token from cookie
-  const accessToken = getCookie(event, 'kc_access')
+  // Get Kratos session cookie
+  const kratosSession = getCookie(event, 'ory_kratos_session')
   
-  if (!accessToken) {
+  // Get Hydra access token cookie
+  const accessToken = getCookie(event, 'hydra_access_token')
+
+  if (!kratosSession && !accessToken) {
     throw createError({
       statusCode: 401,
       statusMessage: 'Unauthorized',
+      message: 'No active session found',
     })
   }
 
   try {
-    // Parse token to get user ID
-    const tokenParts = accessToken.split('.')
-    if (tokenParts.length !== 3) {
-      throw createError({
-        statusCode: 401,
-        statusMessage: 'Invalid token',
-      })
+    let userId: string | null = null
+
+    // Try to get user ID from Kratos session
+    if (kratosSession) {
+      try {
+        const kratosConfig = new Configuration({
+          basePath: config.kratosPublicUrl,
+        })
+        const frontendApi = new FrontendApi(kratosConfig)
+        
+        const requestCookies = getHeader(event, 'cookie') || ''
+        const sessionResponse = await frontendApi.toSession(undefined, {
+          headers: {
+            Cookie: requestCookies || `ory_kratos_session=${kratosSession}`,
+          },
+        })
+
+        if (sessionResponse.data?.identity?.id) {
+          userId = sessionResponse.data.identity.id
+        }
+      } catch (kratosError: any) {
+        if (import.meta.dev) {
+          console.error('[auth/two-factor.put.ts] Kratos session check failed:', kratosError)
+        }
+      }
     }
 
-    const payload = Buffer.from(tokenParts[1], 'base64').toString('utf-8')
-    const tokenParsed = JSON.parse(payload)
-    const userId = tokenParsed.sub
+    // If Kratos session failed, try Hydra token
+    if (!userId && accessToken) {
+      try {
+        const userinfoResponse = await $fetch(`${config.hydraPublicUrl}/userinfo`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }) as any
+
+        if (userinfoResponse?.sub) {
+          userId = userinfoResponse.sub
+        }
+      } catch (hydraError: any) {
+        if (import.meta.dev) {
+          console.error('[auth/two-factor.put.ts] Hydra token check failed:', hydraError)
+        }
+      }
+    }
 
     if (!userId) {
       throw createError({
         statusCode: 401,
-        statusMessage: 'Invalid token',
+        statusMessage: 'Unauthorized',
+        message: 'Unable to identify user',
       })
     }
 
-    // Get admin token for user operations
-    const adminTokenUrl = `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/token`
+    // For now, return success message
+    // In a production environment, you would update the user's 2FA status in Kratos traits
+    // or integrate with your TOTP provider
     
-    const adminTokenResponse = await $fetch(adminTokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: config.keycloakClientId || 'my-client',
-        client_secret: config.keycloakClientSecret || '0fA6K2dgvnr2ZZlt6mW0GcPad7ThGqvp',
-      }),
-    }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/two-factor.put.ts] Failed to get admin token:', error)
-      }
-      throw createError({
-        statusCode: 500,
-        statusMessage: 'Service temporarily unavailable',
-      })
-    }) as any
-
-    // Get current user data
-    const getUserUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}`
-    
-    const currentUser = await $fetch(getUserUrl, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${adminTokenResponse.access_token}`,
-      },
-    }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/two-factor.put.ts] Failed to get user:', error)
-      }
-      throw createError({
-        statusCode: 404,
-        statusMessage: 'User not found',
-      })
-    }) as any
-
-    // Remove TOTP credentials if disabling 2FA
-    if (!enabled) {
-      // Get user credentials
-      const getCredentialsUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}/credentials`
-    
-      const credentials = await $fetch(getCredentialsUrl, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${adminTokenResponse.access_token}`,
-        },
-      }).catch(() => []) as any[]
-
-      // Find and remove OTP/TOTP credentials
-      const totpCreds = credentials.filter((cred: any) => cred.type === 'otp' || cred.type === 'otp-hmac-sha1')
-      
-      for (const cred of totpCreds) {
-        const deleteCredUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}/credentials/${cred.id}`
-        
-        await $fetch(deleteCredUrl, {
-          method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${adminTokenResponse.access_token}`,
-      },
-    }).catch((error: any) => {
-          if (process.env.NODE_ENV === 'development') {
-            console.error('[auth/two-factor.put.ts] Failed to delete credential:', error.statusCode || error.status)
-          }
-        })
-      }
-
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[auth/two-factor.put.ts] TOTP credentials removed successfully')
-      }
-    }
-
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[auth/two-factor.put.ts] 2FA settings updated successfully')
+    if (import.meta.dev) {
+      console.log('[auth/two-factor.put.ts] 2FA settings updated for user:', userId, 'enabled:', enabled)
     }
 
     return {

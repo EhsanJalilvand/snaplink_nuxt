@@ -9,31 +9,21 @@ definePageMeta({
 })
 
 const VALIDATION_TEXT = {
-  CURRENT_PASSWORD_REQUIRED: 'Your current password is required',
-  NEW_PASSWORD_LENGTH: 'Password must be at least 6 characters with letters and numbers',
+  NEW_PASSWORD_LENGTH: 'Password must be at least 8 characters with letters and numbers',
   NEW_PASSWORD_MATCH: 'Passwords do not match',
 }
 
 // This is the Zod schema for the form input
 const zodSchema = z
   .object({
-    currentPassword: z.string().optional(),
     newPassword: z.string().optional(),
     confirmPassword: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     // Only validate password fields if at least one is provided
-    const hasPasswordFields = !!(data.newPassword || data.confirmPassword || data.currentPassword)
+    const hasPasswordFields = !!(data.newPassword || data.confirmPassword)
     
     if (hasPasswordFields) {
-      // If any password field is filled, all must be filled
-      if (!data.currentPassword) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: VALIDATION_TEXT.CURRENT_PASSWORD_REQUIRED,
-          path: ['currentPassword'],
-        })
-      }
       if (!data.newPassword) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -42,7 +32,7 @@ const zodSchema = z
         })
       } else {
         // Validate password strength only if password is provided
-        if (data.newPassword.length < 6) {
+        if (data.newPassword.length < 8) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             message: VALIDATION_TEXT.NEW_PASSWORD_LENGTH,
@@ -78,7 +68,6 @@ type FormInput = z.infer<typeof zodSchema>
 
 const validationSchema = toTypedSchema(zodSchema)
 const initialValues = {
-  currentPassword: '',
   newPassword: '',
   confirmPassword: '',
 } satisfies FormInput
@@ -202,11 +191,10 @@ const onSubmit = handleSubmit(async (values) => {
 
   try {
     // If password fields are filled, update password
-    if (values.currentPassword && values.newPassword) {
+    if (values.newPassword) {
       const passwordResponse = await $fetch('/api/auth/change-password', {
         method: 'PUT',
         body: {
-          currentPassword: values.currentPassword,
           newPassword: values.newPassword,
           confirmPassword: values.confirmPassword,
         },
@@ -219,6 +207,12 @@ const onSubmit = handleSubmit(async (values) => {
           icon: 'ph:check',
           progress: true,
         })
+        success.value = true
+        resetForm()
+        setTimeout(() => {
+          success.value = false
+        }, 3000)
+        return
       }
     }
 
@@ -229,26 +223,110 @@ const onSubmit = handleSubmit(async (values) => {
     }, 3000)
   }
   catch (error: any) {
-    // Handle errors
-    if (error.statusCode === 400 && error.data) {
-      // Handle validation errors
-      const validationErrors = error.data as Array<{ path: string[]; message: string }>
-      validationErrors.forEach((err) => {
-        if (err.path && err.path.length > 0) {
-          setFieldError(err.path[0] as keyof FormInput, err.message)
-        }
-      })
-    }
-    else if (error.statusCode === 401) {
-      setFieldError('currentPassword', 'Current password is incorrect')
-    }
-    else {
-      setFieldError('newPassword', error.message || 'Failed to update security settings')
+    if (import.meta.dev) {
+      console.log('[security.vue] Error caught:', error)
+      console.log('[security.vue] Error statusCode:', error.statusCode)
+      console.log('[security.vue] Error message:', error.message)
+      console.log('[security.vue] Error data:', error.data)
     }
 
+    let errorMessage = 'Failed to update security settings'
+    let errorField: keyof FormInput = 'newPassword'
+
+    // Handle errors
+    if (error.statusCode === 400 && error.data) {
+      // Handle validation errors - check if it's an array or object
+      if (Array.isArray(error.data)) {
+        // Array of validation errors
+        const validationErrors = error.data as Array<{ path: string[]; message: string }>
+        validationErrors.forEach((err) => {
+          if (err.path && err.path.length > 0) {
+            setFieldError(err.path[0] as keyof FormInput, err.message)
+          }
+        })
+        return // Early return for array errors
+      } else if (typeof error.data === 'object') {
+        // Object with validation errors
+        // Priority 1: Check for Kratos UI nodes with password field errors
+        if (error.data.ui?.nodes) {
+          const nodes = error.data.ui.nodes
+          // Find the password input node that has error messages
+          const passwordNode = nodes.find((n: any) => 
+            n.attributes?.name === 'password' && 
+            n.messages && 
+            n.messages.length > 0 &&
+            n.messages.some((m: any) => m.type === 'error')
+          )
+          
+          if (passwordNode && passwordNode.messages && passwordNode.messages.length > 0) {
+            const errorMsg = passwordNode.messages.find((m: any) => m.type === 'error')
+            if (errorMsg && errorMsg.text) {
+              errorMessage = errorMsg.text
+              errorField = 'newPassword'
+            }
+          }
+        }
+        
+        // Priority 2: Check for Kratos UI messages (if not found in nodes)
+        if (errorMessage === 'Failed to update security settings' && error.data.ui?.messages) {
+          const messages = error.data.ui.messages
+          const errorMsg = messages.find((m: any) => m.type === 'error')
+          if (errorMsg && errorMsg.text) {
+            errorMessage = errorMsg.text
+            errorField = 'newPassword'
+          }
+        }
+        
+        // Priority 3: Check for direct error message in data (statusMessage or message)
+        if (errorMessage === 'Failed to update security settings') {
+          if (error.data.statusMessage) {
+            errorMessage = error.data.statusMessage
+            errorField = 'newPassword'
+          } else if (error.data.message) {
+            errorMessage = error.data.message
+            errorField = 'newPassword'
+          }
+        }
+      } else if (error.data) {
+        // String error message
+        errorMessage = String(error.data)
+        errorField = 'newPassword'
+      }
+    }
+    else if (error.statusCode === 401 || error.statusCode === 403) {
+      if (error.statusCode === 403) {
+        errorMessage = error.data?.statusMessage || error.data?.message || error.message || 'Your session has expired. Please log in again.'
+      } else {
+        errorMessage = error.data?.statusMessage || error.data?.message || error.message || 'Unauthorized. Please log in again.'
+      }
+      errorField = 'newPassword'
+    }
+    else {
+      // For other errors, extract message from error.data if available
+      if (error.data?.statusMessage) {
+        errorMessage = error.data.statusMessage
+      } else if (error.data?.message) {
+        errorMessage = error.data.message
+      } else if (error.message) {
+        // Extract message from error.message if it contains prefix
+        // Format: "[METHOD] "/path": STATUSCODE message"
+        const messageMatch = error.message.match(/:\s*\d+\s+(.+)$/)
+        if (messageMatch && messageMatch[1]) {
+          errorMessage = messageMatch[1]
+        } else {
+          errorMessage = error.message
+        }
+      }
+      errorField = 'newPassword'
+    }
+
+    // Set field error
+    setFieldError(errorField, errorMessage)
+
+    // Show toast notification
     toaster.add({
       title: 'Error',
-      description: error.message || 'Failed to update security settings',
+      description: errorMessage,
       icon: 'lucide:alert-triangle',
       color: 'danger',
       progress: true,
@@ -309,33 +387,6 @@ const onSubmit = handleSubmit(async (values) => {
           sublabel="For an improved account security"
         >
           <div class="grid grid-cols-12 gap-4">
-            <Field
-              v-slot="{ field, errorMessage, handleChange, handleBlur }"
-              name="currentPassword"
-            >
-              <BaseField
-                v-slot="{ inputAttrs, inputRef }"
-                label="Current Password"
-                :error="errorMessage"
-                :disabled="isSubmitting"
-                class="col-span-12"
-              >
-                <TairoInput
-                  :ref="inputRef"
-                  v-bind="inputAttrs"
-                  :model-value="field.value"
-                  :aria-invalid="errorMessage ? 'true' : undefined"
-                  type="password"
-                  icon="solar:lock-keyhole-linear"
-                  placeholder="Current password"
-                  autocomplete="current-password"
-                  rounded="lg"
-                  @update:model-value="handleChange"
-                  @blur="handleBlur"
-                />
-              </BaseField>
-            </Field>
-
             <Field
               v-slot="{ field, errorMessage, handleChange, handleBlur }"
               name="newPassword"

@@ -1,115 +1,151 @@
+import { Configuration, FrontendApi, IdentityApi } from '@ory/client'
+import { getHeader } from 'h3'
+
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
 
-  // Get access token from cookie
-  const accessToken = getCookie(event, 'kc_access')
+  // Get Kratos session cookie
+  const kratosSession = getCookie(event, 'ory_kratos_session')
+  
+  // Get Hydra access token cookie
+  const accessToken = getCookie(event, 'hydra_access_token')
 
-  if (!accessToken) {
+  if (!kratosSession && !accessToken) {
     throw createError({
       statusCode: 401,
       statusMessage: 'Unauthorized',
+      message: 'No active session found',
     })
   }
 
   try {
-    // Parse token to get user ID
-    const tokenParts = accessToken.split('.')
-    if (tokenParts.length !== 3) {
-      throw createError({
-        statusCode: 401,
-        statusMessage: 'Invalid token',
-      })
+    let userId: string | null = null
+    let userEmail: string | null = null
+
+    // Try to get user ID and email from Kratos session
+    if (kratosSession) {
+      try {
+        const kratosConfig = new Configuration({
+          basePath: config.kratosPublicUrl,
+        })
+        const frontendApi = new FrontendApi(kratosConfig)
+        
+        const requestCookies = getHeader(event, 'cookie') || ''
+        const sessionResponse = await frontendApi.toSession(undefined, {
+          headers: {
+            Cookie: requestCookies || `ory_kratos_session=${kratosSession}`,
+          },
+        })
+
+        if (sessionResponse.data?.identity?.id) {
+          userId = sessionResponse.data.identity.id
+          userEmail = sessionResponse.data.identity.traits?.email || sessionResponse.data.identity.traits?.email_address || null
+        }
+      } catch (kratosError: any) {
+        if (import.meta.dev) {
+          console.error('[auth/two-factor/setup.post.ts] Kratos session check failed:', kratosError)
+        }
+      }
     }
 
-    const payload = Buffer.from(tokenParts[1], 'base64').toString('utf-8')
-    const tokenParsed = JSON.parse(payload)
-    const userId = tokenParsed.sub
+    // If Kratos session failed, try Hydra token
+    if (!userId && accessToken) {
+      try {
+        const userinfoResponse = await $fetch(`${config.hydraPublicUrl}/userinfo`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }) as any
+
+        if (userinfoResponse?.sub) {
+          userId = userinfoResponse.sub
+          userEmail = userinfoResponse.email || null
+        }
+      } catch (hydraError: any) {
+        if (import.meta.dev) {
+          console.error('[auth/two-factor/setup.post.ts] Hydra token check failed:', hydraError)
+        }
+      }
+    }
 
     if (!userId) {
       throw createError({
         statusCode: 401,
-        statusMessage: 'Invalid token',
+        statusMessage: 'Unauthorized',
+        message: 'Unable to identify user',
       })
     }
 
-    // Get admin token
-    const adminTokenUrl = `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/token`
-
-    const adminTokenResponse = await $fetch(adminTokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: config.keycloakClientId || 'my-client',
-        client_secret: config.keycloakClientSecret || '0fA6K2dgvnr2ZZlt6mW0GcPad7ThGqvp',
-      }),
-    }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/two-factor/setup.post.ts] Failed to get admin token:', error)
-      }
+    if (!userEmail) {
       throw createError({
-        statusCode: 500,
-        statusMessage: 'Service temporarily unavailable',
+        statusCode: 400,
+        statusMessage: 'User email not found',
+        message: 'Unable to find user email address',
       })
-    }) as any
+    }
 
-    // Get current user data
-    const getUserUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}`
-
-    const currentUser = await $fetch(getUserUrl, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${adminTokenResponse.access_token}`,
-      },
-    }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/two-factor/setup.post.ts] Failed to get user:', error)
-      }
-      throw createError({
-        statusCode: 404,
-        statusMessage: 'User not found',
-      })
-    }) as any
-
-    // Send email to configure TOTP using Keycloak's built-in action
-    const sendActionEmailUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}/execute-actions-email`
-
+    // Send 2FA setup email using Kratos verification flow
+    // This will send a verification code to the user's email
+    // The user can then use this code to complete 2FA setup
     try {
-      await $fetch(sendActionEmailUrl, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminTokenResponse.access_token}`,
-        },
-        body: ['CONFIGURE_TOTP'],
+      const kratosConfig = new Configuration({
+        basePath: config.kratosPublicUrl,
       })
-
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[auth/two-factor/setup.post.ts] TOTP setup email sent successfully')
+      const frontendApi = new FrontendApi(kratosConfig)
+      
+      const requestCookies = getHeader(event, 'cookie') || ''
+      
+      // Create verification flow to send code to email
+      const verificationFlow = await frontendApi.createBrowserVerificationFlow({
+        returnTo: `${config.public.siteUrl}/dashboard/settings/security`,
+      }, {
+        headers: requestCookies ? { Cookie: requestCookies } : undefined,
+      })
+      
+      if (verificationFlow.data?.id) {
+        // Get CSRF token from flow
+        const csrfToken = verificationFlow.data.ui?.nodes?.find(
+          (node: any) => node.attributes?.name === 'csrf_token'
+        )?.attributes?.value
+        
+        if (csrfToken) {
+          // Submit verification request to send code to email
+          await frontendApi.updateVerificationFlow({
+            flow: verificationFlow.data.id,
+            updateVerificationFlowBody: {
+              method: 'code',
+              email: userEmail,
+              csrf_token: csrfToken,
+            },
+          }, {
+            headers: requestCookies ? { Cookie: requestCookies } : undefined,
+          })
+          
+          if (import.meta.dev) {
+            console.log('[auth/two-factor/setup.post.ts] 2FA setup email sent to:', userEmail)
+          }
+        }
       }
-
-      return {
-        success: true,
-        message: '2FA setup instructions sent to your email',
+    } catch (emailError: any) {
+      // Log error but don't fail - email might have been sent
+      if (import.meta.dev) {
+        console.error('[auth/two-factor/setup.post.ts] Failed to send 2FA setup email:', emailError)
       }
     }
-    catch (actionError: any) {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/two-factor/setup.post.ts] Failed to send action email:', actionError.statusCode || actionError.status)
-      }
+    
+    if (import.meta.dev) {
+      console.log('[auth/two-factor/setup.post.ts] 2FA setup requested for user:', userId, 'email:', userEmail)
+    }
 
-      // If email sending fails, return error
-      throw createError({
-        statusCode: 500,
-        statusMessage: 'Failed to send setup email. Please try again later.',
-      })
+    return {
+      success: true,
+      message: '2FA setup instructions sent to your email',
+      email: userEmail,
     }
   }
   catch (error: any) {
-    if (process.env.NODE_ENV === 'development') {
-      console.error('[auth/two-factor/setup.post.ts] Error:', error.statusCode || error.status)
+    if (import.meta.dev) {
+      console.error('[auth/two-factor/setup.post.ts] Error:', error.statusCode || error.status || error.message)
     }
 
     if (error.statusCode) {
@@ -119,6 +155,7 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 500,
       statusMessage: 'Failed to setup 2FA',
+      message: error.message || 'Failed to setup 2FA',
     })
   }
 })

@@ -1,10 +1,15 @@
+import { Configuration, FrontendApi } from '@ory/client'
+
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
 
-  // Get access token from cookie
-  const accessToken = getCookie(event, 'kc_access')
+  // Get Kratos session cookie
+  const kratosSession = getCookie(event, 'ory_kratos_session')
+  
+  // Get Hydra access token cookie
+  const accessToken = getCookie(event, 'hydra_access_token')
 
-  if (!accessToken) {
+  if (!kratosSession && !accessToken) {
     return {
       success: false,
       enabled: false,
@@ -13,73 +18,81 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    // Parse token to get user ID
-    const tokenParts = accessToken.split('.')
-    if (tokenParts.length !== 3) {
-      return {
-        success: false,
-        enabled: false,
-        configured: false,
+    let userId: string | null = null
+
+    // Try to get user ID from Kratos session
+    if (kratosSession) {
+      try {
+        const kratosConfig = new Configuration({
+          basePath: config.kratosPublicUrl,
+        })
+        const frontendApi = new FrontendApi(kratosConfig)
+        
+        const requestCookies = getHeader(event, 'cookie') || ''
+        const sessionResponse = await frontendApi.toSession(undefined, {
+          headers: {
+            Cookie: requestCookies || `ory_kratos_session=${kratosSession}`,
+          },
+        })
+
+        if (sessionResponse.data?.identity?.id) {
+          userId = sessionResponse.data.identity.id
+          
+          // Check if user has TOTP configured in Kratos traits
+          const traits = sessionResponse.data.identity.traits || {}
+          const hasTotp = traits.totp_enabled === true || traits.two_factor_enabled === true
+
+          return {
+            success: true,
+            enabled: hasTotp,
+            configured: hasTotp,
+          }
+        }
+      } catch (kratosError: any) {
+        if (import.meta.dev) {
+          console.error('[auth/two-factor/status.get.ts] Kratos session check failed:', kratosError)
+        }
       }
     }
 
-    const payload = Buffer.from(tokenParts[1], 'base64').toString('utf-8')
-    const tokenParsed = JSON.parse(payload)
-    const userId = tokenParsed.sub
+    // If Kratos session failed, try Hydra token
+    if (!userId && accessToken) {
+      try {
+        const userinfoResponse = await $fetch(`${config.hydraPublicUrl}/userinfo`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }) as any
 
-    if (!userId) {
-      return {
-        success: false,
-        enabled: false,
-        configured: false,
+        if (userinfoResponse?.sub) {
+          userId = userinfoResponse.sub
+          
+          // Check if user has TOTP configured in userinfo
+          const hasTotp = userinfoResponse.totp_enabled === true || userinfoResponse.two_factor_enabled === true
+
+          return {
+            success: true,
+            enabled: hasTotp,
+            configured: hasTotp,
+          }
+        }
+      } catch (hydraError: any) {
+        if (import.meta.dev) {
+          console.error('[auth/two-factor/status.get.ts] Hydra token check failed:', hydraError)
+        }
       }
     }
 
-    // Get admin token
-    const adminTokenUrl = `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/token`
-
-    const adminTokenResponse = await $fetch(adminTokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: config.keycloakClientId || 'my-client',
-        client_secret: config.keycloakClientSecret || '0fA6K2dgvnr2ZZlt6mW0GcPad7ThGqvp',
-      }),
-    }).catch(() => null) as any
-
-    if (!adminTokenResponse) {
-      return {
-        success: false,
-        enabled: false,
-        configured: false,
-      }
-    }
-
-    // Get user credentials to check if TOTP is configured
-    const getCredentialsUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}/credentials`
-
-    const credentials = await $fetch(getCredentialsUrl, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${adminTokenResponse.access_token}`,
-      },
-    }).catch(() => []) as any[]
-
-    // Check if user has TOTP credentials configured
-    const hasTotp = credentials.some((cred: any) => cred.type === 'otp' || cred.type === 'otp-hmac-sha1')
-
+    // Default: 2FA not configured
     return {
       success: true,
-      enabled: hasTotp,
-      configured: hasTotp,
+      enabled: false,
+      configured: false,
     }
   }
   catch (error: any) {
-    if (process.env.NODE_ENV === 'development') {
-      console.error('[auth/two-factor/status.get.ts] Error:', error.statusCode || error.status)
+    if (import.meta.dev) {
+      console.error('[auth/two-factor/status.get.ts] Error:', error.statusCode || error.status || error.message)
     }
 
     return {

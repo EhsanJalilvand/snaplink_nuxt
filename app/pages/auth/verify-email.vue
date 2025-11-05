@@ -86,19 +86,101 @@ const onSubmit = handleSubmit(async (formValues) => {
       // Wait a moment for Kratos to update the identity
       await new Promise(resolve => setTimeout(resolve, 1000))
       
-      // After email verification, create a session using the password from registration
-      // Password is passed in query params (temporary, only for this flow)
-      // We need to do this from client-side to ensure cookie is set in browser
-      const passwordFromQuery = route.query.password as string
+      // Check if user already has a session (from login flow)
+      // If they do, they should be redirected to dashboard
+      // If they don't, they need to login (from registration flow)
+      const config = useRuntimeConfig()
       
-      if (passwordFromQuery && response.identityId) {
+      try {
+        // Check if user has an active session by checking cookies
+        // Use document.cookie to check for session cookie (more reliable)
+        const cookies = document.cookie.split(';').map(c => c.trim())
+        const kratosSessionCookie = cookies.find(c => c.startsWith('ory_kratos_session='))
+        
+        if (import.meta.dev) {
+          console.log('[auth/verify-email.vue] All cookies:', cookies)
+          console.log('[auth/verify-email.vue] Kratos session cookie:', kratosSessionCookie)
+        }
+        
+        // Priority 1: Try to create session using password from registration (if available)
+        // This is for registration flow where user has password in query params
+        const passwordFromQuery = route.query.password as string
+        
+        if (passwordFromQuery && response.identityId) {
+          try {
+            if (import.meta.dev) {
+              console.log('[auth/verify-email.vue] Password found in query params, creating session...')
+            }
+            
+            // Create session using client-side login flow (like login.vue does)
+            const loginFlow = await $fetch(`${config.public.kratosPublicUrl}/self-service/login/browser?return_to=${encodeURIComponent('http://localhost:3000/dashboard')}`, {
+              method: 'GET',
+              credentials: 'include',
+              headers: {
+                'Accept': 'application/json',
+              },
+            })
+            
+            if (loginFlow?.id) {
+              // Get CSRF token from flow
+              const csrfToken = loginFlow.ui?.nodes?.find(
+                (node: any) => node.attributes?.name === 'csrf_token'
+              )?.attributes?.value
+              
+              if (csrfToken) {
+                // Submit login form with credentials (client-side)
+                const loginResponse = await $fetch(`${config.public.kratosPublicUrl}/self-service/login?flow=${loginFlow.id}`, {
+                  method: 'POST',
+                  credentials: 'include',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                  },
+                  body: {
+                    method: 'password',
+                    password: passwordFromQuery,
+                    identifier: email.value,
+                    csrf_token: csrfToken,
+                  },
+                })
+                
+                if (loginResponse?.session) {
+                  if (import.meta.dev) {
+                    console.log('[auth/verify-email.vue] Session created successfully from registration password')
+                  }
+                  
+                  // Refresh user data
+                  const { refreshUser } = useUserData()
+                  await refreshUser()
+                  
+                  // Redirect to OAuth2 authorize endpoint
+                  toaster.add({
+                    title: 'Success',
+                    description: 'Email verified! Redirecting to dashboard...',
+                    icon: 'ph:check-circle-fill',
+                    color: 'success',
+                    progress: true,
+                  })
+                  
+                  window.location.href = '/api/auth/oauth/authorize?return_to=/dashboard'
+                  return
+                }
+              }
+            }
+          } catch (sessionError: any) {
+            if (import.meta.dev) {
+              console.warn('[auth/verify-email.vue] Failed to create session from password:', sessionError)
+            }
+          }
+        }
+        
+        // Priority 2: Check if session already exists via API (for login flow)
+        // This is for login flow where user already has session
+        let hasSession = false
+        
+        // Always try to check session via API (even if cookie is not found)
         try {
-          // Create session using client-side login flow (like login.vue does)
-          // This ensures cookie is set in browser properly
-          const config = useRuntimeConfig()
-          
-          // Create login flow from client-side
-          const loginFlow = await $fetch(`${config.public.kratosPublicUrl}/self-service/login/browser?return_to=${encodeURIComponent('http://localhost:3000/dashboard')}`, {
+          const sessionCheck = await $fetch(`${config.public.kratosPublicUrl}/sessions/whoami`, {
             method: 'GET',
             credentials: 'include',
             headers: {
@@ -106,66 +188,68 @@ const onSubmit = handleSubmit(async (formValues) => {
             },
           })
           
-          if (loginFlow?.id) {
-            // Get CSRF token from flow
-            const csrfToken = loginFlow.ui?.nodes?.find(
-              (node: any) => node.attributes?.name === 'csrf_token'
-            )?.attributes?.value
-            
-            if (csrfToken) {
-              // Submit login form with credentials (client-side)
-              // This will set the session cookie in browser
-              const loginResponse = await $fetch(`${config.public.kratosPublicUrl}/self-service/login?flow=${loginFlow.id}`, {
-                method: 'POST',
-                credentials: 'include',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Accept': 'application/json',
-                },
-                body: {
-                  method: 'password',
-                  password: passwordFromQuery,
-                  identifier: email.value,
-                  csrf_token: csrfToken,
-                },
-              })
-              
-              if (loginResponse?.session) {
-                if (import.meta.dev) {
-                  console.log('[auth/verify-email.vue] Session created for identity:', response.identityId)
-                }
-                
-                // Show success message
-                toaster.add({
-                  title: 'Success',
-                  description: 'Email verified! Redirecting to dashboard...',
-                  icon: 'ph:check-circle-fill',
-                  color: 'success',
-                  progress: true,
-                })
-                
-                // Refresh user data to get updated email verification status and session
-                const { refreshUser } = useUserData()
-                await refreshUser()
-                
-                // Wait a bit more for session to be set
-                await new Promise(resolve => setTimeout(resolve, 500))
-                
-                // Redirect to dashboard
-                await router.push('/dashboard')
-                return
-              }
+          if (sessionCheck?.identity?.id) {
+            hasSession = true
+            if (import.meta.dev) {
+              console.log('[auth/verify-email.vue] Session verified via API:', sessionCheck.identity.id)
+              console.log('[auth/verify-email.vue] Verified identity ID:', response.identityId)
+              console.log('[auth/verify-email.vue] Session matches verified identity:', sessionCheck.identity.id === response.identityId)
             }
           }
         } catch (sessionError: any) {
-          // If session creation fails, redirect to login
           if (import.meta.dev) {
-            console.warn('[auth/verify-email.vue] Failed to create session:', sessionError)
+            console.warn('[auth/verify-email.vue] Session check failed:', sessionError)
+            console.warn('[auth/verify-email.vue] Session error details:', sessionError.response?.data || sessionError.message)
           }
+        }
+        
+        if (hasSession) {
+          // Session exists - refresh user data and redirect to OAuth2 authorize
+          const { refreshUser } = useUserData()
+          await refreshUser()
+          
+          // Start OAuth2 flow to get Hydra tokens
+          toaster.add({
+            title: 'Success',
+            description: 'Email verified! Redirecting to dashboard...',
+            icon: 'ph:check-circle-fill',
+            color: 'success',
+            progress: true,
+          })
+          
+          // Redirect to OAuth2 authorize endpoint to get tokens
+          window.location.href = '/api/auth/oauth/authorize?return_to=/dashboard'
+          return
+        }
+        
+        // No session found and no password - redirect to login
+        if (import.meta.dev) {
+          console.log('[auth/verify-email.vue] No session found and no password, redirecting to login')
+        }
+        
+        toaster.add({
+          title: 'Email Verified',
+          description: 'Your email has been verified. Please login to continue.',
+          icon: 'ph:check-circle-fill',
+          color: 'success',
+          progress: true,
+        })
+        
+        await router.push({
+          path: '/auth/login',
+          query: {
+            verified: 'true',
+            email: email.value,
+          },
+        })
+        return
+      } catch (error: any) {
+        if (import.meta.dev) {
+          console.warn('[auth/verify-email.vue] Error checking session:', error)
         }
       }
       
-      // If no password or session creation failed, redirect to login
+      // If no session exists and no password from registration, redirect to login
       toaster.add({
         title: 'Email Verified',
         description: 'Your email has been verified. Please login to continue.',
