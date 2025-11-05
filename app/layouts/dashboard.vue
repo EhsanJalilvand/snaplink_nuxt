@@ -79,6 +79,32 @@ const menu = [
       },
     ],
   },
+  {
+    label: 'Billing',
+    icon: 'solar:card-linear',
+    links: [
+      {
+        label: 'Overview',
+        icon: 'solar:chart-2-linear',
+        to: '/dashboard/billing/overview',
+      },
+      {
+        label: 'Usage',
+        icon: 'solar:graph-up-linear',
+        to: '/dashboard/billing/usage',
+      },
+      {
+        label: 'Invoices',
+        icon: 'solar:document-linear',
+        to: '/dashboard/billing/invoices',
+      },
+      {
+        label: 'Alerts & Limits',
+        icon: 'solar:bell-linear',
+        to: '/dashboard/billing/alerts',
+      },
+    ],
+  },
 ]
 
 const route = useRoute()
