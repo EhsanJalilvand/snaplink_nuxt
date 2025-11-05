@@ -164,10 +164,82 @@ const onSubmit = handleSubmit(async (values) => {
         identifier: values.emailOrUsername,
         csrf_token: csrfToken,
       },
-    }).catch((error: any) => {
+    }).catch(async (error: any) => {
       // Handle CORS or network errors
       if (import.meta.dev) {
         console.error('[auth/login.vue] Login error:', error)
+        console.error('[auth/login.vue] Error data:', error.data)
+        console.error('[auth/login.vue] Error response:', error.response?.data)
+      }
+      
+      // Check for browser_location_change_required (2FA required)
+      const errorData = error.data || error.response?.data || {}
+      if (errorData.error?.id === 'browser_location_change_required' || errorData.redirect_browser_to) {
+        const redirectUrl = errorData.redirect_browser_to || errorData.error?.details?.redirect_browser_to
+        
+        if (redirectUrl && redirectUrl.includes('aal=aal2')) {
+          // 2FA required - create a new login flow with AAL2
+          const config = useRuntimeConfig()
+          const url = new URL(redirectUrl)
+          let returnToParam = url.searchParams.get('return_to') || '/dashboard'
+          
+          // Parse return_to - if it's a full URL, extract the path
+          try {
+            const returnToUrl = new URL(returnToParam)
+            returnToParam = returnToUrl.pathname + (returnToUrl.search || '') + (returnToUrl.hash || '')
+          } catch {
+            // If it's not a valid URL, use it as is (should be a path like /dashboard)
+            if (!returnToParam.startsWith('/')) {
+              returnToParam = `/${returnToParam}`
+            }
+          }
+          
+          try {
+            // Create new login flow with AAL2 requirement and refresh=true to allow login even with existing session
+            const aal2Flow = await $fetch(`${config.public.kratosPublicUrl}/self-service/login/browser?aal=aal2&return_to=${encodeURIComponent(returnToParam)}&refresh=true`, {
+              method: 'GET',
+              credentials: 'include',
+              headers: {
+                'Accept': 'application/json',
+              },
+            })
+            
+            if (aal2Flow?.id) {
+              // Redirect to 2FA verification page with flow ID
+              await router.push({
+                path: '/auth/verify-2fa',
+                query: {
+                  flow: aal2Flow.id,
+                  return_to: returnToParam,
+                },
+              })
+              return
+            }
+          } catch (flowError: any) {
+            if (import.meta.dev) {
+              console.error('[auth/login.vue] Failed to create AAL2 flow:', flowError)
+            }
+          }
+          
+          // Fallback: try to extract flow from redirect URL
+          const flowParam = url.searchParams.get('flow')
+          if (flowParam) {
+            await router.push({
+              path: '/auth/verify-2fa',
+              query: {
+                flow: flowParam,
+                return_to: returnToParam,
+              },
+            })
+            return
+          }
+        }
+        
+        // If redirect URL is valid, follow it
+        if (redirectUrl && (redirectUrl.startsWith('http://localhost:3000') || redirectUrl.startsWith('/'))) {
+          window.location.href = redirectUrl
+          return
+        }
       }
       
       // Check for validation errors
@@ -278,10 +350,34 @@ const onSubmit = handleSubmit(async (values) => {
       // This will handle login/consent challenges and get tokens
       window.location.href = '/api/auth/oauth/authorize?return_to=/dashboard'
     } else if (loginResponse?.redirect_browser_to) {
-      // Kratos wants to redirect (e.g., for verification)
-      // Make sure it's a local URL
+      // Check if redirect is for 2FA (AAL2)
       const redirectUrl = loginResponse.redirect_browser_to
-      if (redirectUrl.startsWith('http://localhost:3000') || redirectUrl.startsWith('/')) {
+      
+      if (redirectUrl.includes('aal=aal2')) {
+        // 2FA required - extract flow ID and redirect to 2FA verification page
+        const url = new URL(redirectUrl)
+        const flowParam = url.searchParams.get('flow')
+        const returnToParam = url.searchParams.get('return_to') || '/dashboard'
+        
+        if (flowParam) {
+          // Redirect to 2FA verification page
+          await router.push({
+            path: '/auth/verify-2fa',
+            query: {
+              flow: flowParam,
+              return_to: returnToParam,
+            },
+          })
+        } else {
+          // Invalid flow - try to follow redirect
+          if (redirectUrl.startsWith('http://localhost:3000') || redirectUrl.startsWith('/')) {
+            window.location.href = redirectUrl
+          } else {
+            setFieldError('password', '2FA verification required. Please try again.')
+          }
+        }
+      } else if (redirectUrl.startsWith('http://localhost:3000') || redirectUrl.startsWith('/')) {
+        // Other redirect (e.g., for verification)
         window.location.href = redirectUrl
       } else {
         // Invalid redirect - go to dashboard
