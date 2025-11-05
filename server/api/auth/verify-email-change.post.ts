@@ -15,6 +15,9 @@ const verifyEmailChangeSchema = z.object({
     .regex(/^\d{6}$/, 'Code must be 6 digits'),
   flow: z.string()
     .min(1, 'Verification flow ID is required'),
+  newEmail: z.string()
+    .email('Invalid email address')
+    .min(1, 'Email is required'),
 })
 
 export default defineEventHandler(async (event) => {
@@ -51,7 +54,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { code, flow } = validation.data
+  const { code, flow, newEmail } = validation.data
 
   // Get Kratos session cookie
   const kratosSession = getCookie(event, 'ory_kratos_session')
@@ -69,7 +72,7 @@ export default defineEventHandler(async (event) => {
 
   try {
     // Use Kratos Verification Flow to verify email change
-    // The email was already changed to unverified state, now we verify it
+    // Verification flow can verify any email, even if not in identity
     const kratosConfig = new Configuration({
       basePath: config.kratosPublicUrl,
     })
@@ -134,14 +137,15 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    // Update verification flow with code
+    // Update verification flow with verification code
     const sanitizedCode = sanitizeCode(code)
     
     if (import.meta.dev) {
-      console.log('[auth/verify-email-change.post.ts] Verifying code for flow:', flow)
+      console.log('[auth/verify-email-change.post.ts] Verifying code for verification flow:', flow)
+      console.log('[auth/verify-email-change.post.ts] New email:', newEmail)
     }
     
-    // Update verification flow with code
+    // Update verification flow with verification code
     const updateBody: any = {
       method: 'code',
       code: sanitizedCode, // Verification code (6 digits)
@@ -170,11 +174,12 @@ export default defineEventHandler(async (event) => {
     const isVerified = verificationResponse.data?.state === 'passed_challenge' || 
                        verificationResponse.data?.state === 'success' ||
                        verificationResponse.data?.ui?.messages?.some((m: any) => m.type === 'success')
-
+    
     if (isVerified) {
-      // Verification successful - now mark email as verified in identity
+      // Verification successful - NOW change the email in identity
+      // This ensures email only changes after successful verification
       if (import.meta.dev) {
-        console.log('[auth/verify-email-change.post.ts] Verification code correct, marking email as verified...')
+        console.log('[auth/verify-email-change.post.ts] Verification successful, now changing email to:', newEmail)
       }
 
       // Get identity from verification response or from session
@@ -191,12 +196,26 @@ export default defineEventHandler(async (event) => {
           if (import.meta.dev) {
             console.error('[auth/verify-email-change.post.ts] Failed to get session:', sessionError)
           }
+          throw createError({
+            statusCode: 401,
+            statusMessage: 'Failed to get user session',
+          })
         }
       }
       
-      if (verifiedIdentity?.id) {
+      if (!verifiedIdentity?.id) {
+        throw createError({
+          statusCode: 401,
+          statusMessage: 'User not found',
+        })
+      }
+
+      // Email was temporarily added as unverified in send-email-verification
+      // Now we just need to mark it as verified
+      // Check if email matches (should be the same since we added it temporarily)
+      if (verifiedIdentity.traits?.email === newEmail) {
+        // Email matches - just mark as verified
         try {
-          // Use Admin API to mark email as verified
           const kratosAdminConfig = new Configuration({
             basePath: config.kratosAdminUrl || 'http://localhost:4434',
           })
@@ -207,44 +226,122 @@ export default defineEventHandler(async (event) => {
             id: verifiedIdentity.id,
           })
 
-          if (currentIdentity?.traits) {
-            // Update identity traits to mark email as verified
-            const updatedTraits: any = {
-              ...currentIdentity.traits,
-              email_verified: true,
-            }
-
-            // Preserve email and name
-            if (currentIdentity.traits.email) {
-              updatedTraits.email = currentIdentity.traits.email
-            }
-            if (currentIdentity.traits.name) {
-              updatedTraits.name = currentIdentity.traits.name
-            }
-
-            // Update identity
-            await identityApi.updateIdentity({
-              id: verifiedIdentity.id,
-              updateIdentityBody: {
-                schema_id: currentIdentity.schema_id,
-                traits: updatedTraits,
-              },
+          if (!currentIdentity?.traits) {
+            throw createError({
+              statusCode: 500,
+              statusMessage: 'Failed to get identity data',
             })
+          }
 
-            if (import.meta.dev) {
-              console.log('[auth/verify-email-change.post.ts] Identity email marked as verified:', verifiedIdentity.id)
-            }
+          // Update identity to mark email as verified
+          const updatedTraits: any = {
+            ...currentIdentity.traits,
+            email: newEmail, // Ensure it's set
+            email_verified: true, // Mark as verified
+          }
+
+          // Preserve other traits
+          if (currentIdentity.traits.name) {
+            updatedTraits.name = currentIdentity.traits.name
+          }
+
+          // Update identity
+          await identityApi.updateIdentity({
+            id: verifiedIdentity.id,
+            updateIdentityBody: {
+              schema_id: currentIdentity.schema_id,
+              traits: updatedTraits,
+            },
+          })
+
+          if (import.meta.dev) {
+            console.log('[auth/verify-email-change.post.ts] Email marked as verified:', newEmail)
           }
         } catch (updateError: any) {
-          // Log error but don't fail - verification was successful
+          if (import.meta.dev) {
+            console.error('[auth/verify-email-change.post.ts] Failed to mark email as verified:', updateError.response?.data || updateError.message)
+          }
+          
+          // Re-throw if it's already a createError
+          if (updateError.statusCode) {
+            throw updateError
+          }
+          
+          throw createError({
+            statusCode: 500,
+            statusMessage: 'Failed to mark email as verified',
+            message: updateError.message || 'Failed to mark email as verified',
+          })
+        }
+      } else {
+        // Email doesn't match - update it
+        if (import.meta.dev) {
+          console.log('[auth/verify-email-change.post.ts] Email mismatch, updating:', verifiedIdentity.traits?.email, 'to', newEmail)
+        }
+
+        try {
+          const kratosAdminConfig = new Configuration({
+            basePath: config.kratosAdminUrl || 'http://localhost:4434',
+          })
+          const identityApi = new IdentityApi(kratosAdminConfig)
+
+          // Get current identity
+          const { data: currentIdentity } = await identityApi.getIdentity({
+            id: verifiedIdentity.id,
+          })
+
+          if (!currentIdentity?.traits) {
+            throw createError({
+              statusCode: 500,
+              statusMessage: 'Failed to get identity data',
+            })
+          }
+
+          // Update identity with new email (verified)
+          const updatedTraits: any = {
+            ...currentIdentity.traits,
+            email: newEmail,
+            email_verified: true, // Mark as verified
+          }
+
+          // Preserve other traits
+          if (currentIdentity.traits.name) {
+            updatedTraits.name = currentIdentity.traits.name
+          }
+
+          // Update identity
+          await identityApi.updateIdentity({
+            id: verifiedIdentity.id,
+            updateIdentityBody: {
+              schema_id: currentIdentity.schema_id,
+              traits: updatedTraits,
+            },
+          })
+
+          if (import.meta.dev) {
+            console.log('[auth/verify-email-change.post.ts] Identity email updated to:', newEmail)
+            console.log('[auth/verify-email-change.post.ts] Email marked as verified')
+          }
+        } catch (updateError: any) {
           if (import.meta.dev) {
             console.error('[auth/verify-email-change.post.ts] Failed to update identity:', updateError.response?.data || updateError.message)
           }
+          
+          // Re-throw if it's already a createError
+          if (updateError.statusCode) {
+            throw updateError
+          }
+          
+          throw createError({
+            statusCode: 500,
+            statusMessage: 'Failed to update email after verification',
+            message: updateError.message || 'Failed to update email',
+          })
         }
       }
       
       if (import.meta.dev) {
-        console.log('[auth/verify-email-change.post.ts] Email verified successfully')
+        console.log('[auth/verify-email-change.post.ts] Email verified and changed successfully')
       }
       
       return {

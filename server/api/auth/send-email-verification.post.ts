@@ -173,11 +173,12 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    // If 2FA is not enabled, change email using Admin API
-    // Frontend will create verification flow and send code
+    // If 2FA is not enabled, temporarily add email to identity (unverified)
+    // This allows verification flow to send code to the new email
+    // Email will only be verified after successful verification
     try {
-      // Step 1: Update identity email to new email (unverified) using Admin API
-      // This is necessary before we can send verification code to the new address
+      // Temporarily add email to identity as unverified
+      // This allows verification flow to send code to this email
       const kratosAdminConfig = new Configuration({
         basePath: config.kratosAdminUrl,
       })
@@ -189,33 +190,35 @@ export default defineEventHandler(async (event) => {
         id: currentIdentity.id,
       })
 
-      // Update identity with new email (unverified)
+      // Temporarily add new email as unverified to identity
+      // This allows verification flow to send code to this email
       await identityApi.updateIdentity({
         id: currentIdentity.id,
         updateIdentityBody: {
           schema_id: currentIdentityData.schema_id,
           traits: {
             ...currentIdentityData.traits,
-            email: newEmail,
+            email: newEmail, // Temporarily set to new email (unverified)
             email_verified: false, // Mark as unverified
           },
         },
       })
 
       if (import.meta.dev) {
-        console.log('[auth/send-email-verification.post.ts] Identity email updated to:', newEmail)
+        console.log('[auth/send-email-verification.post.ts] Temporarily added email to identity (unverified):', newEmail)
       }
 
-      // Return success - frontend will create verification flow and send code
+      // Return success - frontend will create verification flow
+      // Verification flow can now send code to this email since it's in identity
       return {
         success: true,
-        message: 'Email updated. Please create verification flow in frontend.',
+        message: 'Please create verification flow in frontend.',
         email: newEmail,
         requiresVerificationFlow: true,
       }
     } catch (updateError: any) {
       if (import.meta.dev) {
-        console.error('[auth/send-email-verification.post.ts] Failed to change email:', updateError)
+        console.error('[auth/send-email-verification.post.ts] Failed to temporarily add email:', updateError)
         console.error('[auth/send-email-verification.post.ts] Error details:', updateError.response?.data || updateError.data)
       }
 
@@ -238,8 +241,8 @@ export default defineEventHandler(async (event) => {
 
       throw createError({
         statusCode: 500,
-        statusMessage: 'Failed to send verification code',
-        message: updateError.message || 'Failed to send verification code',
+        statusMessage: 'Failed to prepare email for verification',
+        message: updateError.message || 'Failed to prepare email for verification',
       })
     }
   } catch (error: any) {

@@ -284,9 +284,11 @@ const submitNewEmail = async () => {
           emailChangeErrors.value.newEmail = 'Failed to create 2FA flow. Please try again.'
         }
       } else if (response.requiresVerificationFlow) {
-        // Email was updated, now create verification flow from frontend
+        // Use verification flow to send code to new email
+        // Verification flow can send code to any email, even if not in identity
         const config = useRuntimeConfig()
         try {
+          // Create verification flow for new email
           const verificationFlow = await $fetch(`${config.public.kratosPublicUrl}/self-service/verification/browser?return_to=${encodeURIComponent(`${config.public.siteUrl}/auth/verify-email-change?email=${encodeURIComponent(newEmailValue.value)}`)}`, {
             method: 'GET',
             credentials: 'include',
@@ -307,7 +309,7 @@ const submitNewEmail = async () => {
             }
             
             // Submit verification request to send code to new email
-            await $fetch(`${config.public.kratosPublicUrl}/self-service/verification?flow=${verificationFlow.id}`, {
+            const verificationResponse = await $fetch(`${config.public.kratosPublicUrl}/self-service/verification?flow=${verificationFlow.id}`, {
               method: 'POST',
               credentials: 'include',
               headers: {
@@ -321,16 +323,63 @@ const submitNewEmail = async () => {
               },
             })
             
-            emailChangeVerificationFlowId.value = verificationFlow.id
-            emailChangeWizardStep.value = 2 // Go directly to verification step
+            if (import.meta.dev) {
+              console.log('[profile.vue] Verification flow response:', verificationResponse)
+              console.log('[profile.vue] Verification flow state:', verificationResponse?.state)
+              console.log('[profile.vue] Verification flow messages:', verificationResponse?.ui?.messages)
+            }
+            
+            // Check if verification code was sent
+            const codeNode = verificationResponse?.ui?.nodes?.find(
+              (node: any) => node.group === 'code' && node.attributes?.name === 'code'
+            )
+            
+            const hasCodeMessage = verificationResponse?.ui?.messages?.some((m: any) => 
+              m.type === 'info' && (m.text?.includes('verification code') || m.text?.includes('sent to'))
+            )
+            
+            if (codeNode || hasCodeMessage || verificationResponse?.state === 'sent_email') {
+              // Verification code was sent, use verification flow for verification
+              emailChangeVerificationFlowId.value = verificationFlow.id
+              emailChangeWizardStep.value = 2 // Go directly to verification step
+              
+              if (import.meta.dev) {
+                console.log('[profile.vue] Verification code sent, flow ID:', verificationFlow.id)
+              }
+            } else {
+              // Check for errors
+              const errorMessage = verificationResponse?.ui?.messages?.find((m: any) => m.type === 'error')?.text
+              if (errorMessage) {
+                emailChangeErrors.value.newEmail = errorMessage
+              } else {
+                emailChangeErrors.value.newEmail = 'Failed to send verification code. Please try again.'
+              }
+              
+              if (import.meta.dev) {
+                console.error('[profile.vue] Failed to send verification code')
+                console.error('[profile.vue] Response:', verificationResponse)
+              }
+            }
           } else {
             emailChangeErrors.value.newEmail = 'Failed to create verification flow. Please try again.'
           }
         } catch (flowError: any) {
           if (import.meta.dev) {
             console.error('[profile.vue] Failed to create verification flow:', flowError)
+            console.error('[profile.vue] Error details:', flowError.data || flowError.response?.data)
           }
-          emailChangeErrors.value.newEmail = 'Failed to create verification flow. Please try again.'
+          
+          // Check for specific error messages
+          if (flowError.data?.ui?.messages) {
+            const errorMessage = flowError.data.ui.messages.find((m: any) => m.type === 'error')?.text
+            if (errorMessage) {
+              emailChangeErrors.value.newEmail = errorMessage
+            } else {
+              emailChangeErrors.value.newEmail = 'Failed to create verification flow. Please try again.'
+            }
+          } else {
+            emailChangeErrors.value.newEmail = 'Failed to create verification flow. Please try again.'
+          }
         }
       } else if (response.verificationFlowId) {
         emailChangeVerificationFlowId.value = response.verificationFlowId
@@ -452,6 +501,7 @@ const verifyEmailCode = async () => {
       body: {
         code: emailChangeVerificationCode.value,
         flow: emailChangeVerificationFlowId.value,
+        newEmail: newEmailValue.value, // Send newEmail so backend can change it after verification
       },
       credentials: 'include',
     })
