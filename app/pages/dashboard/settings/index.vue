@@ -6,6 +6,32 @@ definePageMeta({
 
 // Use shared user data composable for consistent state across all components
 const { user } = useUserData()
+
+// 2FA status
+const twoFactorEnabled = ref(false)
+const isTwoFactorLoading = ref(true)
+
+// Fetch 2FA status
+const fetchTwoFactorStatus = async () => {
+  isTwoFactorLoading.value = true
+  try {
+    const response = await $fetch('/api/auth/two-factor/status')
+    if (response.success) {
+      twoFactorEnabled.value = response.enabled
+    }
+  } catch (error: any) {
+    if (import.meta.dev) {
+      console.error('[settings/index.vue] Failed to fetch 2FA status:', error)
+    }
+  } finally {
+    isTwoFactorLoading.value = false
+  }
+}
+
+// Fetch 2FA status on mount
+onMounted(() => {
+  fetchTwoFactorStatus()
+})
 </script>
 
 <template>
@@ -123,8 +149,7 @@ const { user } = useUserData()
           </div>
           <!-- Item -->
           <div class="group">
-            <NuxtLink
-              to="/dashboard/settings/profile"
+            <div
               class="font-heading text-muted-600 dark:text-muted-400 hover:bg-muted-50 dark:hover:bg-muted-800 flex items-center gap-4 p-4 text-sm transition-colors duration-300"
             >
               <div class="flex-1">
@@ -138,15 +163,26 @@ const { user } = useUserData()
                 </BaseHeading>
                 <BaseText size="sm">{{ user?.email || 'Not set' }}</BaseText>
               </div>
-              <Icon name="solar:pen-2-linear" class="ms-auto size-4" />
+              <Icon 
+                v-if="user?.emailVerified" 
+                name="ph:check-circle-fill" 
+                class="size-4 text-success-600 dark:text-success-500 ms-auto" 
+              />
+              <Icon 
+                v-else
+                name="solar:pen-2-linear" 
+                class="ms-auto size-4" 
+              />
               <BaseText
                 size="xs"
                 weight="semibold"
-                class="text-primary-500 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+                :class="user?.emailVerified 
+                  ? 'text-muted-400 opacity-50' 
+                  : 'text-primary-500 opacity-0 transition-opacity duration-300 group-hover:opacity-100'"
               >
                 Edit
               </BaseText>
-            </NuxtLink>
+            </div>
           </div>
         </div>
       </div>
@@ -223,7 +259,16 @@ const { user } = useUserData()
                 >
                   2 Factor Authentication
                 </BaseHeading>
-                <BaseText size="sm">Setup 2FA for additional security</BaseText>
+                <BaseText 
+                  size="sm"
+                  :class="!isTwoFactorLoading && twoFactorEnabled 
+                    ? 'text-success-600 dark:text-success-500' 
+                    : ''"
+                >
+                  <span v-if="isTwoFactorLoading">Loading...</span>
+                  <span v-else-if="twoFactorEnabled">2FA is enabled</span>
+                  <span v-else>2FA is disabled</span>
+                </BaseText>
               </div>
               <Icon name="solar:pen-2-linear" class="ms-auto size-4" />
               <BaseText

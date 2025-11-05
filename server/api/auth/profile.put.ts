@@ -16,11 +16,7 @@ const profileSchema = z.object({
     .max(100, 'Last name is too long')
     .optional()
     .transform((val) => val ? sanitizeString(val) : undefined),
-  email: z.string()
-    .email('Invalid email address')
-    .min(1, 'Email is required')
-    .max(255, 'Email is too long')
-    .transform((val) => sanitizeString(val).toLowerCase()),
+  // Email is not allowed to be changed through this endpoint
 })
 
 export default defineEventHandler(async (event) => {
@@ -57,7 +53,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { firstName, lastName, email } = validation.data
+  const { firstName, lastName } = validation.data
 
   // Get access token from cookie (Hydra token)
   const accessToken = getCookie(event, 'hydra_access_token')
@@ -111,51 +107,14 @@ export default defineEventHandler(async (event) => {
       })
     })
 
-    // Check if email is already taken by another user
-    if (email) {
-      try {
-        // List all identities to check for email conflicts
-        const { data: allIdentities } = await kratosAdmin.listIdentities()
-        
-        // Check if email exists for another user
-        const emailExists = allIdentities?.some((identity: any) => {
-          return identity.id !== userId && 
-                 identity.traits?.email?.toLowerCase() === email.toLowerCase()
-        })
-
-        if (emailExists) {
-          throw createError({
-            statusCode: 409,
-            statusMessage: 'Email is already registered',
-          })
-        }
-      } catch (error: any) {
-        if (error.statusCode === 409) {
-          throw error
-        }
-        // Log but continue if listing fails
-        if (import.meta.dev) {
-          console.error('[auth/profile.put.ts] Failed to check email uniqueness:', error)
-        }
-      }
-    }
-
-    // Check if email is changing
-    const isEmailChanging = email && email !== currentIdentity.traits?.email
-
-    // Prepare updated traits
+    // Prepare updated traits (only firstName and lastName, email cannot be changed)
     const updatedTraits = {
       ...currentIdentity.traits,
-      email: email || currentIdentity.traits?.email,
       name: {
         first: firstName || currentIdentity.traits?.name?.first || '',
         last: lastName !== undefined ? (lastName || '') : (currentIdentity.traits?.name?.last || ''),
       },
-    }
-
-    // If email changed, mark as unverified
-    if (isEmailChanging) {
-      updatedTraits.email_verified = false
+      // Email is not changed - keep current email
     }
 
     // Update identity in Kratos
@@ -182,12 +141,6 @@ export default defineEventHandler(async (event) => {
         statusMessage: 'Failed to update profile',
       })
     })
-
-    // If email changed, trigger verification flow
-    // Note: Kratos will handle email verification automatically if configured
-    if (isEmailChanging && import.meta.dev) {
-      console.log('[auth/profile.put.ts] Email changed, verification should be triggered by Kratos')
-    }
 
     if (import.meta.dev) {
       console.log('[auth/profile.put.ts] Profile updated successfully')
