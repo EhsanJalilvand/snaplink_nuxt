@@ -16,7 +16,7 @@ const VALIDATION_TEXT = {
   EMAIL_INVALID: 'Invalid email address',
 }
 
-// This is the Zod schema for the form input
+// This is the Zod schema for the form input (only firstName and lastName)
 const zodSchema = z.object({
   firstName: z.string()
     .min(1, VALIDATION_TEXT.FIRSTNAME_REQUIRED)
@@ -25,9 +25,6 @@ const zodSchema = z.object({
     .max(100, VALIDATION_TEXT.LASTNAME_TOO_LONG)
     .optional()
     .transform((val) => val || ''),
-  email: z.string()
-    .min(1, VALIDATION_TEXT.EMAIL_REQUIRED)
-    .email(VALIDATION_TEXT.EMAIL_INVALID),
 })
 
 type FormInput = z.infer<typeof zodSchema>
@@ -50,7 +47,6 @@ const {
   initialValues: {
     firstName: '',
     lastName: '',
-    email: '',
   },
 })
 
@@ -177,47 +173,17 @@ const deleteAvatar = async () => {
   }
 }
 
-// Email verification states
-const showEmailVerificationModal = ref(false)
-const isEmailVerificationSending = ref(false)
-const emailVerificationCode = ref('')
-const originalEmail = ref('')
+// Email change wizard states
+const showEmailChangeWizard = ref(false)
+const emailChangeWizardStep = ref(0) // 0: new email, 1: 2FA (if needed), 2: verify code
 const newEmailValue = ref('')
-const timeRemaining = ref(0)
-const timerInterval = ref<NodeJS.Timeout | null>(null)
-
-// Timer functions
-const startTimer = () => {
-  timeRemaining.value = 15 * 60 // 15 minutes in seconds
-  
-  if (timerInterval.value) {
-    clearInterval(timerInterval.value)
-  }
-  
-  timerInterval.value = setInterval(() => {
-    if (timeRemaining.value > 0) {
-      timeRemaining.value--
-    } else {
-      clearInterval(timerInterval.value!)
-      timerInterval.value = null
-    }
-  }, 1000)
-}
-
-const formatTime = computed(() => {
-  const minutes = Math.floor(timeRemaining.value / 60)
-  const seconds = timeRemaining.value % 60
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`
-})
-
-const isTimerExpired = computed(() => timeRemaining.value === 0)
-
-// Cleanup on unmount
-onUnmounted(() => {
-  if (timerInterval.value) {
-    clearInterval(timerInterval.value)
-  }
-})
+const emailChange2FAFlowId = ref('')
+const emailChangeVerificationFlowId = ref('')
+const emailChange2FACode = ref('')
+const emailChangeVerificationCode = ref('')
+const emailChangeLoading = ref(false)
+const emailChangeErrors = ref<Record<string, string>>({})
+const resendCooldown = ref(0)
 
 // Watch for user data changes to update form - only on client side
 watch(sharedUser, (newUser) => {
@@ -225,8 +191,6 @@ watch(sharedUser, (newUser) => {
     nextTick(() => {
       setFieldValue('firstName', newUser.firstName || '')
       setFieldValue('lastName', newUser.lastName || '')
-      setFieldValue('email', newUser.email || '')
-      originalEmail.value = newUser.email || ''
     })
   }
 }, { immediate: true })
@@ -237,47 +201,54 @@ onMounted(() => {
     if (sharedUser.value) {
       setFieldValue('firstName', sharedUser.value.firstName || '')
       setFieldValue('lastName', sharedUser.value.lastName || '')
-      setFieldValue('email', sharedUser.value.email || '')
-      originalEmail.value = sharedUser.value.email || ''
     }
   })
 })
 
-// Handle verify email button click
-const handleVerifyEmail = async () => {
-  if (!sharedUser.value?.email) {
-    toaster.add({
-      title: 'Error',
-      description: 'No email address found',
-      icon: 'lucide:alert-triangle',
-      color: 'danger',
-      progress: true,
-    })
+// Start email change wizard
+const startEmailChangeWizard = () => {
+  showEmailChangeWizard.value = true
+  emailChangeWizardStep.value = 0
+  newEmailValue.value = ''
+  emailChange2FAFlowId.value = ''
+  emailChangeVerificationFlowId.value = ''
+  emailChange2FACode.value = ''
+  emailChangeVerificationCode.value = ''
+  emailChangeErrors.value = {}
+  emailChangeLoading.value = false
+  resendCooldown.value = 0
+}
+
+// Cancel email change wizard
+const cancelEmailChangeWizard = () => {
+  showEmailChangeWizard.value = false
+  emailChangeWizardStep.value = 0
+  newEmailValue.value = ''
+  emailChange2FAFlowId.value = ''
+  emailChangeVerificationFlowId.value = ''
+  emailChange2FACode.value = ''
+  emailChangeVerificationCode.value = ''
+  emailChangeErrors.value = {}
+  emailChangeLoading.value = false
+}
+
+// Step 1: Submit new email
+const submitNewEmail = async () => {
+  if (!newEmailValue.value) {
+    emailChangeErrors.value.newEmail = 'Please enter a new email address'
     return
   }
 
-  newEmailValue.value = sharedUser.value.email
-  const codeSent = await sendEmailVerificationCode()
-  if (codeSent) {
-    startTimer()
-  }
-}
-
-// Send email verification code
-const sendEmailVerificationCode = async () => {
-  if (!newEmailValue.value) {
-    toaster.add({
-      title: 'Error',
-      description: 'Please enter an email address',
-      icon: 'lucide:alert-triangle',
-      color: 'danger',
-      progress: true,
-    })
-    return false
+  // Validate email format
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!emailRegex.test(newEmailValue.value)) {
+    emailChangeErrors.value.newEmail = 'Please enter a valid email address'
+    return
   }
 
-  isEmailVerificationSending.value = true
-  
+  emailChangeLoading.value = true
+  emailChangeErrors.value = {}
+
   try {
     const response = await $fetch('/api/auth/send-email-verification', {
       method: 'POST',
@@ -287,44 +258,308 @@ const sendEmailVerificationCode = async () => {
     })
 
     if (response.success) {
-      toaster.add({
-        title: 'Success',
-        description: response.message || 'Verification code sent to your email',
-        icon: 'ph:check',
-        progress: true,
-      })
-
-      // In development, show the code
-      if (process.env.NODE_ENV === 'development' && response.code) {
-        console.log('Verification code:', response.code)
+      // Check if 2FA is required
+      if (response.requires2FA) {
+        // Create AAL2 login flow from frontend
+        const config = useRuntimeConfig()
+        try {
+          const aal2Flow = await $fetch(`${config.public.kratosPublicUrl}/self-service/login/browser?aal=aal2&return_to=${encodeURIComponent(`${config.public.siteUrl}/auth/verify-email-change?email=${encodeURIComponent(newEmailValue.value)}`)}&refresh=true`, {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+              'Accept': 'application/json',
+            },
+          })
+          
+          if (aal2Flow?.id) {
+            emailChange2FAFlowId.value = aal2Flow.id
+            emailChangeWizardStep.value = 1 // Go to 2FA step
+          } else {
+            emailChangeErrors.value.newEmail = 'Failed to create 2FA flow. Please try again.'
+          }
+        } catch (flowError: any) {
+          if (import.meta.dev) {
+            console.error('[profile.vue] Failed to create AAL2 flow:', flowError)
+          }
+          emailChangeErrors.value.newEmail = 'Failed to create 2FA flow. Please try again.'
+        }
+      } else if (response.requiresVerificationFlow) {
+        // Email was updated, now create verification flow from frontend
+        const config = useRuntimeConfig()
+        try {
+          const verificationFlow = await $fetch(`${config.public.kratosPublicUrl}/self-service/verification/browser?return_to=${encodeURIComponent(`${config.public.siteUrl}/auth/verify-email-change?email=${encodeURIComponent(newEmailValue.value)}`)}`, {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+              'Accept': 'application/json',
+            },
+          })
+          
+          if (verificationFlow?.id) {
+            // Get CSRF token
+            const csrfToken = verificationFlow.ui?.nodes?.find(
+              (node: any) => node.attributes?.name === 'csrf_token'
+            )?.attributes?.value
+            
+            if (!csrfToken) {
+              emailChangeErrors.value.newEmail = 'Failed to get CSRF token. Please try again.'
+              return
+            }
+            
+            // Submit verification request to send code to new email
+            await $fetch(`${config.public.kratosPublicUrl}/self-service/verification?flow=${verificationFlow.id}`, {
+              method: 'POST',
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              body: {
+                email: newEmailValue.value,
+                method: 'code',
+                csrf_token: csrfToken,
+              },
+            })
+            
+            emailChangeVerificationFlowId.value = verificationFlow.id
+            emailChangeWizardStep.value = 2 // Go directly to verification step
+          } else {
+            emailChangeErrors.value.newEmail = 'Failed to create verification flow. Please try again.'
+          }
+        } catch (flowError: any) {
+          if (import.meta.dev) {
+            console.error('[profile.vue] Failed to create verification flow:', flowError)
+          }
+          emailChangeErrors.value.newEmail = 'Failed to create verification flow. Please try again.'
+        }
+      } else if (response.verificationFlowId) {
+        emailChangeVerificationFlowId.value = response.verificationFlowId
+        emailChangeWizardStep.value = 2 // Go directly to verification step
+      } else {
+        emailChangeErrors.value.newEmail = 'Failed to initiate email change. Please try again.'
       }
-
-      showEmailVerificationModal.value = true
-      return true
+    } else {
+      emailChangeErrors.value.newEmail = response.message || 'Failed to send verification code'
     }
-    
-    return false
   } catch (error: any) {
     if (error.statusCode === 409) {
-      toaster.add({
-        title: 'Error',
-        description: 'Email is already registered',
-        icon: 'lucide:alert-triangle',
-        color: 'danger',
-        progress: true,
-      })
+      emailChangeErrors.value.newEmail = 'Email is already registered'
+    } else if (error.statusCode === 400) {
+      emailChangeErrors.value.newEmail = error.statusMessage || error.message || 'Invalid email address'
     } else {
+      emailChangeErrors.value.newEmail = error.message || 'Failed to send verification code'
+    }
+  } finally {
+    emailChangeLoading.value = false
+  }
+}
+
+// Step 2: Verify 2FA code
+const verify2FACode = async () => {
+  if (!emailChange2FACode.value || emailChange2FACode.value.length !== 6) {
+    emailChangeErrors.value.twoFA = 'Please enter a valid 6-digit code'
+    return
+  }
+
+  emailChangeLoading.value = true
+  emailChangeErrors.value = {}
+
+  try {
+    const config = useRuntimeConfig()
+    
+    // Get CSRF token from flow
+    const flowResponse = await $fetch(`${config.public.kratosPublicUrl}/self-service/login/browser?flow=${emailChange2FAFlowId.value}`, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        'Accept': 'application/json',
+      },
+    })
+
+    const csrfToken = flowResponse?.ui?.nodes?.find(
+      (node: any) => node.attributes?.name === 'csrf_token'
+    )?.attributes?.value
+
+    if (!csrfToken) {
+      emailChangeErrors.value.twoFA = 'Failed to get CSRF token. Please try again.'
+      emailChangeLoading.value = false
+      return
+    }
+
+    // Verify TOTP code
+    const response = await $fetch(`${config.public.kratosPublicUrl}/self-service/login?flow=${emailChange2FAFlowId.value}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: {
+        method: 'totp',
+        totp_code: emailChange2FACode.value,
+        csrf_token: csrfToken,
+      },
+    })
+
+    if (response?.session) {
+      // 2FA verified successfully, now send verification code
+      const verifyResponse = await $fetch('/api/auth/send-email-verification', {
+        method: 'POST',
+        body: {
+          newEmail: newEmailValue.value,
+        },
+      })
+
+      if (verifyResponse.success && verifyResponse.verificationFlowId) {
+        emailChangeVerificationFlowId.value = verifyResponse.verificationFlowId
+        emailChangeWizardStep.value = 2 // Go to verification step
+      } else {
+        emailChangeErrors.value.twoFA = 'Failed to send verification code. Please try again.'
+      }
+    } else {
+      emailChangeErrors.value.twoFA = 'Invalid 2FA code. Please try again.'
+    }
+  } catch (error: any) {
+    if (error.response?.data?.ui?.messages) {
+      const errorMessage = error.response.data.ui.messages.find((m: any) => m.type === 'error')?.text
+      emailChangeErrors.value.twoFA = errorMessage || 'Invalid 2FA code. Please try again.'
+    } else {
+      emailChangeErrors.value.twoFA = error.message || 'Failed to verify 2FA code. Please try again.'
+    }
+  } finally {
+    emailChangeLoading.value = false
+  }
+}
+
+// Step 3: Verify email code
+const verifyEmailCode = async () => {
+  if (!emailChangeVerificationCode.value || emailChangeVerificationCode.value.length !== 6) {
+    emailChangeErrors.value.verification = 'Please enter a valid 6-digit code'
+    return
+  }
+
+  if (!emailChangeVerificationFlowId.value) {
+    emailChangeErrors.value.verification = 'Verification flow not found. Please start over.'
+    return
+  }
+
+  emailChangeLoading.value = true
+  emailChangeErrors.value = {}
+
+  try {
+    const response = await $fetch('/api/auth/verify-email-change', {
+      method: 'POST',
+      body: {
+        code: emailChangeVerificationCode.value,
+        flow: emailChangeVerificationFlowId.value,
+      },
+      credentials: 'include',
+    })
+
+    if (response.success) {
       toaster.add({
-        title: 'Error',
-        description: error.message || 'Failed to send verification code',
-        icon: 'lucide:alert-triangle',
-        color: 'danger',
+        title: 'Success',
+        description: 'Email changed successfully!',
+        icon: 'ph:check-circle-fill',
+        color: 'success',
         progress: true,
       })
+
+      // Refresh user data
+      await refreshUser()
+
+      // Close wizard
+      cancelEmailChangeWizard()
+    } else {
+      emailChangeErrors.value.verification = response.error || 'Verification failed. Please try again.'
     }
-    return false
+  } catch (error: any) {
+    if (error.statusCode === 400) {
+      emailChangeErrors.value.verification = error.data?.message || error.statusMessage || 'Invalid verification code. Please try again.'
+    } else {
+      emailChangeErrors.value.verification = error.message || 'Failed to verify email. Please try again.'
+    }
   } finally {
-    isEmailVerificationSending.value = false
+    emailChangeLoading.value = false
+  }
+}
+
+// Resend verification code
+const resendVerificationCode = async () => {
+  if (resendCooldown.value > 0) {
+    return
+  }
+
+  emailChangeLoading.value = true
+  emailChangeErrors.value = {}
+
+  try {
+    const response = await $fetch('/api/auth/send-email-verification', {
+      method: 'POST',
+      body: {
+        newEmail: newEmailValue.value,
+      },
+    })
+
+    if (response.success) {
+      if (response.requires2FA) {
+        // If 2FA is required, go back to 2FA step
+        const config = useRuntimeConfig()
+        try {
+          const aal2Flow = await $fetch(`${config.public.kratosPublicUrl}/self-service/login/browser?aal=aal2&return_to=${encodeURIComponent(`${config.public.siteUrl}/auth/verify-email-change?email=${encodeURIComponent(newEmailValue.value)}`)}&refresh=true`, {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+              'Accept': 'application/json',
+            },
+          })
+          
+          if (aal2Flow?.id) {
+            emailChange2FAFlowId.value = aal2Flow.id
+            emailChangeWizardStep.value = 1
+          }
+        } catch (flowError: any) {
+          emailChangeErrors.value.verification = 'Failed to create 2FA flow. Please try again.'
+        }
+      } else if (response.settingsFlowId) {
+        // Settings flow was created and updated, email should be sent
+        emailChangeVerificationFlowId.value = response.settingsFlowId
+        toaster.add({
+          title: 'Code Sent',
+          description: 'A new verification code has been sent to your email.',
+          icon: 'ph:envelope',
+          progress: true,
+        })
+        resendCooldown.value = 60
+        const interval = setInterval(() => {
+          if (resendCooldown.value > 0) {
+            resendCooldown.value--
+          } else {
+            clearInterval(interval)
+          }
+        }, 1000)
+      } else if (response.verificationFlowId) {
+        emailChangeVerificationFlowId.value = response.verificationFlowId
+        toaster.add({
+          title: 'Code Sent',
+          description: 'A new verification code has been sent to your email.',
+          icon: 'ph:envelope',
+          progress: true,
+        })
+        resendCooldown.value = 60
+        const interval = setInterval(() => {
+          if (resendCooldown.value > 0) {
+            resendCooldown.value--
+          } else {
+            clearInterval(interval)
+          }
+        }, 1000)
+      }
+    }
+  } catch (error: any) {
+    emailChangeErrors.value.verification = error.message || 'Failed to resend code. Please try again.'
+  } finally {
+    emailChangeLoading.value = false
   }
 }
 
@@ -332,21 +567,17 @@ const onSubmit = handleSubmit(async (values) => {
   success.value = false
 
   try {
-    // Call update profile API
+    // Call update profile API (only firstName and lastName, no email)
     const response = await $fetch('/api/auth/profile', {
       method: 'PUT',
       body: {
         firstName: values.firstName,
         lastName: values.lastName || undefined,
-        email: values.email,
+        email: sharedUser.value?.email, // Keep current email unchanged
       },
     })
 
     if (response.success) {
-      // Clear verification code and close modal
-      emailVerificationCode.value = ''
-      showEmailVerificationModal.value = false
-
       // Refresh all user data from server (shared cache)
       await refreshUser()
       
@@ -379,11 +610,24 @@ const onSubmit = handleSubmit(async (values) => {
       })
     }
     else if (error.statusCode === 409) {
-      // Email already exists
-      setFieldError('email', 'Email is already registered')
+      // Handle conflict errors
+      const errorMessage = error.statusMessage || error.message || 'Failed to update profile'
+      toaster.add({
+        title: 'Error',
+        description: errorMessage,
+        icon: 'lucide:alert-triangle',
+        color: 'danger',
+        progress: true,
+      })
     }
     else {
-      setFieldError('email', error.message || 'Failed to update profile')
+      toaster.add({
+        title: 'Error',
+        description: error.message || 'Failed to update profile',
+        icon: 'lucide:alert-triangle',
+        color: 'danger',
+        progress: true,
+      })
     }
 
     toaster.add({
@@ -396,78 +640,6 @@ const onSubmit = handleSubmit(async (values) => {
   }
 })
 
-// Verify code and submit form
-const verifyAndSubmit = async () => {
-  if (!emailVerificationCode.value || emailVerificationCode.value.length !== 6) {
-    toaster.add({
-      title: 'Error',
-      description: 'Please enter a 6-digit verification code',
-      icon: 'lucide:alert-triangle',
-      color: 'danger',
-      progress: true,
-    })
-    return
-  }
-
-  try {
-    const response = await $fetch('/api/auth/verify-email-change', {
-      method: 'POST',
-      body: {
-        code: emailVerificationCode.value,
-      },
-    })
-
-    if (response.success) {
-      // Clear verification code and close modal
-      emailVerificationCode.value = ''
-      showEmailVerificationModal.value = false
-
-      // Refresh all user data from server (shared cache)
-      await refreshUser()
-      
-      // Also refresh auth state to update layout
-      const { checkAuth: refreshAuth } = useAuth()
-      await refreshAuth()
-
-      toaster.add({
-        title: 'Success',
-        description: 'Email verified and updated successfully!',
-        icon: 'ph:check',
-        progress: true,
-      })
-    }
-  } catch (error: any) {
-    if (error.statusCode === 400) {
-      toaster.add({
-        title: 'Error',
-        description: error.message || 'Invalid verification code',
-        icon: 'lucide:alert-triangle',
-        color: 'danger',
-        progress: true,
-      })
-    } else {
-      toaster.add({
-        title: 'Error',
-        description: error.message || 'Failed to verify email',
-        icon: 'lucide:alert-triangle',
-        color: 'danger',
-        progress: true,
-      })
-    }
-  }
-}
-
-// Close modal and reset
-const cancelEmailChange = () => {
-  showEmailVerificationModal.value = false
-  emailVerificationCode.value = ''
-  newEmailValue.value = ''
-  if (timerInterval.value) {
-    clearInterval(timerInterval.value)
-    timerInterval.value = null
-  }
-  timeRemaining.value = 0
-}
 </script>
 
 <template>
@@ -666,145 +838,284 @@ const cancelEmailChange = () => {
               </BaseField>
             </Field>
 
-            <Field
-              v-slot="{ field, errorMessage, handleChange, handleBlur }"
-              name="email"
-            >
-              <div class="col-span-12 space-y-4">
+            <!-- Email Address (Read-only) -->
+            <div class="col-span-12 space-y-4">
               <BaseField
-                v-slot="{ inputAttrs, inputRef }"
                 label="Email Address"
-                :error="errorMessage"
-                :disabled="isSubmitting"
-                required
               >
-                <TairoInput
-                  :ref="inputRef"
-                  v-bind="inputAttrs"
-                  :model-value="field.value"
-                  type="email"
-                  :aria-invalid="errorMessage ? 'true' : undefined"
-                  icon="solar:mention-circle-linear"
-                  placeholder="Email address"
-                  autocomplete="email"
-                  rounded="lg"
-                  @update:model-value="handleChange"
-                  @blur="handleBlur"
-                />
+                <div class="flex items-center gap-3">
+                  <TairoInput
+                    :model-value="sharedUser?.email || ''"
+                    type="email"
+                    icon="solar:mention-circle-linear"
+                    placeholder="Email address"
+                    rounded="lg"
+                    disabled
+                    class="flex-1"
+                  />
+                  <BaseButton
+                    size="sm"
+                    variant="primary"
+                    @click="startEmailChangeWizard"
+                  >
+                    <Icon name="ph:pencil-simple" class="size-4" />
+                    <span>Change Email</span>
+                  </BaseButton>
+                </div>
               </BaseField>
                 
-                <!-- Email Verification Status -->
-                <div class="flex items-center gap-3">
-                  <div v-if="sharedUser?.emailVerified" class="flex items-center gap-2 text-success-600 dark:text-success-500">
-                    <Icon name="ph:check-circle-fill" class="size-5" />
-                    <span class="text-sm font-medium">Email verified</span>
-                  </div>
-                  <div v-else class="flex items-center gap-3">
-                    <div class="flex items-center gap-2 text-muted-500 dark:text-muted-400">
-                      <Icon name="ph:warning-circle" class="size-5" />
-                      <span class="text-sm">Email not verified</span>
-                    </div>
-                    <BaseButton
-                      size="sm"
-                      variant="muted"
-                      :loading="isEmailVerificationSending"
-                      @click="handleVerifyEmail"
-                    >
-                      <Icon name="ph:envelope-simple" class="size-4" />
-                      <span>Verify Email</span>
-                    </BaseButton>
-                  </div>
+              <!-- Email Verification Status -->
+              <div class="flex items-center gap-3">
+                <div v-if="sharedUser?.emailVerified" class="flex items-center gap-2 text-success-600 dark:text-success-500">
+                  <Icon name="ph:check-circle-fill" class="size-5" />
+                  <span class="text-sm font-medium">Email verified</span>
+                </div>
+                <div v-else class="flex items-center gap-2 text-muted-500 dark:text-muted-400">
+                  <Icon name="ph:warning-circle" class="size-5" />
+                  <span class="text-sm">Email not verified</span>
                 </div>
               </div>
-            </Field>
+            </div>
           </div>
         </TairoFormGroup>
       </div>
     </div>
   </form>
 
-  <!-- Email Verification Modal -->
-  <DialogRoot v-model:open="showEmailVerificationModal">
-    <DialogPortal>
-      <DialogOverlay class="bg-muted-800/70 dark:bg-muted-900/80 fixed inset-0 z-50" />
-      <DialogContent
-        class="fixed starting:opacity-0 starting:top-[8%] top-[10%] start-[50%] max-h-[85vh] w-[90vw] max-w-[32rem] translate-x-[-50%] text-sm rounded-lg overflow-hidden border border-white dark:border-muted-700 bg-white dark:bg-muted-800 focus:outline-none z-[100] transition-discrete transition-all duration-200 ease-out flex flex-col"
-      >
-        <div class="flex w-full items-center justify-between p-4 md:p-6 border-b border-muted-200 dark:border-muted-700">
-          <DialogTitle class="font-heading text-muted-900 text-lg font-medium leading-6 dark:text-white">
-            Verify Your Email
-          </DialogTitle>
-          <BaseButton class="icon-md" @click="showEmailVerificationModal = false">
-            <Icon name="lucide:x" class="size-4" />
-          </BaseButton>
-        </div>
-        <div class="overflow-y-auto">
-    <div class="space-y-6 p-6">
-      <div class="text-center space-y-3">
-        <div class="mx-auto w-16 h-16 bg-primary-100 dark:bg-primary-900/20 rounded-full flex items-center justify-center">
-          <Icon name="ph:envelope-simple-duotone" class="size-8 text-primary-600 dark:text-primary-400" />
-        </div>
+  <!-- Email Change Wizard (Inline) -->
+  <Transition
+    enter-active-class="transition-all duration-300 ease-out"
+    enter-from-class="opacity-0 max-h-0"
+    enter-to-class="opacity-100 max-h-[1000px]"
+    leave-active-class="transition-all duration-200 ease-in"
+    leave-from-class="opacity-100 max-h-[1000px]"
+    leave-to-class="opacity-0 max-h-0"
+  >
+    <div v-if="showEmailChangeWizard" class="mt-6 rounded-lg border border-muted-200 dark:border-muted-700 bg-muted-50 dark:bg-muted-800/50 p-6 space-y-6">
+      <!-- Wizard Header -->
+      <div class="flex items-center justify-between border-b border-muted-200 dark:border-muted-700 pb-4">
         <div>
-          <BaseHeading size="lg" class="mb-2">Check your email</BaseHeading>
-          <BaseParagraph class="text-muted-600 dark:text-muted-400">
-            We've sent a 6-digit verification code to:
-          </BaseParagraph>
-          <BaseParagraph class="font-semibold text-muted-900 dark:text-muted-100 mt-1">
-            {{ newEmailValue }}
+          <BaseHeading size="lg" weight="medium" class="mb-1">
+            Change Email Address
+          </BaseHeading>
+          <BaseParagraph size="sm" class="text-muted-500">
+            Step {{ emailChangeWizardStep + 1 }} of {{ emailChange2FAFlowId ? 3 : 2 }}
           </BaseParagraph>
         </div>
+        <BaseButton
+          variant="ghost"
+          size="sm"
+          @click="cancelEmailChangeWizard"
+        >
+          <Icon name="lucide:x" class="size-4" />
+        </BaseButton>
       </div>
 
-      <div class="space-y-4">
-        <BaseField label="Verification Code" required>
-          <TairoInput
-            v-model="emailVerificationCode"
-            type="text"
-            placeholder="000000"
-            maxlength="6"
-            icon="ph:key-duotone"
-            rounded="lg"
-            :disabled="isTimerExpired"
+      <!-- Progress Steps -->
+      <div class="flex items-center gap-2">
+        <div
+          v-for="(step, index) in (emailChange2FAFlowId ? 3 : 2)"
+          :key="index"
+          class="flex items-center"
+        >
+          <div
+            class="flex size-8 items-center justify-center rounded-full border-2 transition-colors"
+            :class="index <= emailChangeWizardStep
+              ? 'border-primary-500 bg-primary-500 text-white'
+              : 'border-muted-300 text-muted-400 dark:border-muted-700'"
+          >
+            <Icon
+              v-if="index < emailChangeWizardStep"
+              name="ph:check"
+              class="size-4"
+            />
+            <span v-else class="text-sm font-medium">{{ index + 1 }}</span>
+          </div>
+          <div
+            v-if="index < (emailChange2FAFlowId ? 2 : 1)"
+            class="h-0.5 w-8 transition-colors"
+            :class="index < emailChangeWizardStep
+              ? 'bg-primary-500'
+              : 'bg-muted-300 dark:bg-muted-700'"
           />
-        </BaseField>
-
-        <!-- Timer -->
-        <div v-if="timeRemaining > 0" class="flex items-center justify-center gap-2 text-sm">
-          <Icon name="ph:clock-countdown-duotone" class="size-5 text-muted-500" />
-          <span class="text-muted-600 dark:text-muted-400">Code expires in</span>
-          <span class="font-semibold text-danger-600 dark:text-danger-400">{{ formatTime }}</span>
-        </div>
-        <div v-else class="flex items-center justify-center gap-2 text-sm text-danger-600 dark:text-danger-500">
-          <Icon name="ph:warning-circle" class="size-5" />
-          <span>Verification code expired</span>
-        </div>
-
-        <div class="flex items-center gap-2 pt-2">
-          <BaseButton
-            type="button"
-            variant="muted"
-            :disabled="isSubmitting"
-            class="flex-1"
-            @click="cancelEmailChange"
-          >
-            Cancel
-          </BaseButton>
-          <BaseButton
-            type="button"
-            variant="primary"
-            :disabled="isSubmitting || emailVerificationCode.length !== 6 || isTimerExpired"
-            :loading="isSubmitting"
-            class="flex-1"
-            @click="verifyAndSubmit"
-          >
-            Verify Email
-          </BaseButton>
         </div>
       </div>
-    </div>
+
+      <!-- Step 1: New Email -->
+      <Transition
+        enter-active-class="transition-all duration-300 ease-out"
+        enter-from-class="opacity-0 translate-y-4"
+        enter-to-class="opacity-100 translate-y-0"
+        leave-active-class="transition-all duration-200 ease-in"
+        leave-from-class="opacity-100 translate-y-0"
+        leave-to-class="opacity-0 -translate-y-4"
+      >
+        <div v-if="emailChangeWizardStep === 0" class="space-y-4">
+          <BaseField
+            label="New Email Address"
+            :error="emailChangeErrors.newEmail"
+            required
+          >
+            <TairoInput
+              v-model="newEmailValue"
+              type="email"
+              placeholder="Enter your new email address"
+              icon="solar:mention-circle-linear"
+              rounded="lg"
+              :disabled="emailChangeLoading"
+              @keyup.enter="submitNewEmail"
+            />
+          </BaseField>
+          <div class="flex items-center gap-3">
+            <BaseButton
+              variant="muted"
+              :disabled="emailChangeLoading"
+              @click="cancelEmailChangeWizard"
+            >
+              Cancel
+            </BaseButton>
+            <BaseButton
+              variant="primary"
+              :loading="emailChangeLoading"
+              :disabled="!newEmailValue || emailChangeLoading"
+              @click="submitNewEmail"
+            >
+              Continue
+              <Icon name="ph:arrow-right" class="size-4" />
+            </BaseButton>
+          </div>
         </div>
-      </DialogContent>
-    </DialogPortal>
-  </DialogRoot>
+      </Transition>
+
+      <!-- Step 2: 2FA Verification (if needed) -->
+      <Transition
+        enter-active-class="transition-all duration-300 ease-out"
+        enter-from-class="opacity-0 translate-y-4"
+        enter-to-class="opacity-100 translate-y-0"
+        leave-active-class="transition-all duration-200 ease-in"
+        leave-from-class="opacity-100 translate-y-0"
+        leave-to-class="opacity-0 -translate-y-4"
+      >
+        <div v-if="emailChangeWizardStep === 1 && emailChange2FAFlowId" class="space-y-4">
+          <div class="text-center space-y-2">
+            <BaseHeading size="md" weight="medium">
+              Verify Two-Factor Authentication
+            </BaseHeading>
+            <BaseParagraph size="sm" class="text-muted-500">
+              Enter the 6-digit code from your authenticator app
+            </BaseParagraph>
+          </div>
+          <BaseField
+            label="2FA Code"
+            :error="emailChangeErrors.twoFA"
+            required
+          >
+            <TairoInput
+              v-model="emailChange2FACode"
+              type="text"
+              placeholder="000000"
+              maxlength="6"
+              pattern="[0-9]{6}"
+              icon="ph:shield-check"
+              rounded="lg"
+              class="text-center text-2xl font-mono tracking-widest"
+              :disabled="emailChangeLoading"
+              @keyup.enter="verify2FACode"
+            />
+          </BaseField>
+          <div class="flex items-center gap-3">
+            <BaseButton
+              variant="muted"
+              :disabled="emailChangeLoading"
+              @click="emailChangeWizardStep = 0"
+            >
+              <Icon name="ph:arrow-left" class="size-4" />
+              Back
+            </BaseButton>
+            <BaseButton
+              variant="primary"
+              :loading="emailChangeLoading"
+              :disabled="!emailChange2FACode || emailChange2FACode.length !== 6 || emailChangeLoading"
+              @click="verify2FACode"
+            >
+              Verify
+              <Icon name="ph:check" class="size-4" />
+            </BaseButton>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- Step 3: Email Verification Code -->
+      <Transition
+        enter-active-class="transition-all duration-300 ease-out"
+        enter-from-class="opacity-0 translate-y-4"
+        enter-to-class="opacity-100 translate-y-0"
+        leave-active-class="transition-all duration-200 ease-in"
+        leave-from-class="opacity-100 translate-y-0"
+        leave-to-class="opacity-0 -translate-y-4"
+      >
+        <div v-if="emailChangeWizardStep === 2" class="space-y-4">
+          <div class="text-center space-y-2">
+            <BaseHeading size="md" weight="medium">
+              Verify Your New Email
+            </BaseHeading>
+            <BaseParagraph size="sm" class="text-muted-500">
+              We've sent a 6-digit verification code to:
+            </BaseParagraph>
+            <BaseParagraph size="sm" class="font-semibold text-muted-900 dark:text-muted-100">
+              {{ newEmailValue }}
+            </BaseParagraph>
+          </div>
+          <BaseField
+            label="Verification Code"
+            :error="emailChangeErrors.verification"
+            required
+          >
+            <TairoInput
+              v-model="emailChangeVerificationCode"
+              type="text"
+              placeholder="000000"
+              maxlength="6"
+              pattern="[0-9]{6}"
+              icon="ph:key"
+              rounded="lg"
+              class="text-center text-2xl font-mono tracking-widest"
+              :disabled="emailChangeLoading"
+              @keyup.enter="verifyEmailCode"
+            />
+          </BaseField>
+          <div class="text-center">
+            <BaseButton
+              variant="link"
+              size="sm"
+              :disabled="resendCooldown > 0 || emailChangeLoading"
+              @click="resendVerificationCode"
+            >
+              {{ resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend Code' }}
+            </BaseButton>
+          </div>
+          <div class="flex items-center gap-3">
+            <BaseButton
+              variant="muted"
+              :disabled="emailChangeLoading"
+              @click="emailChangeWizardStep = emailChange2FAFlowId ? 1 : 0"
+            >
+              <Icon name="ph:arrow-left" class="size-4" />
+              Back
+            </BaseButton>
+            <BaseButton
+              variant="primary"
+              :loading="emailChangeLoading"
+              :disabled="!emailChangeVerificationCode || emailChangeVerificationCode.length !== 6 || emailChangeLoading"
+              @click="verifyEmailCode"
+            >
+              Verify Email
+              <Icon name="ph:check" class="size-4" />
+            </BaseButton>
+          </div>
+        </div>
+      </Transition>
+    </div>
+  </Transition>
 </template>
 

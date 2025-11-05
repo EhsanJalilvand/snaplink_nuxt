@@ -1,5 +1,7 @@
 import { z } from 'zod'
 import { checkRateLimit, getClientIP } from '../../utils/rateLimit.js'
+import { Configuration, FrontendApi } from '@ory/client'
+import { getHeader } from 'h3'
 
 const sendEmailVerificationSchema = z.object({
   newEmail: z.string()
@@ -44,80 +46,59 @@ export default defineEventHandler(async (event) => {
 
   const { newEmail } = validation.data
 
-  // Get access token from cookie
-  const accessToken = getCookie(event, 'kc_access')
+  // Get Kratos session cookie
+  const kratosSession = getCookie(event, 'ory_kratos_session')
   
-  if (!accessToken) {
+  // Get Hydra access token cookie
+  const accessToken = getCookie(event, 'hydra_access_token')
+
+  if (!kratosSession && !accessToken) {
     throw createError({
       statusCode: 401,
       statusMessage: 'Unauthorized',
+      message: 'No active session found',
     })
   }
 
   try {
-    // Parse token to get user ID
-    const tokenParts = accessToken.split('.')
-    if (tokenParts.length !== 3) {
+    const kratosConfig = new Configuration({
+      basePath: config.kratosPublicUrl,
+    })
+    const frontendApi = new FrontendApi(kratosConfig)
+    
+    const requestCookies = getHeader(event, 'cookie') || ''
+    
+    // Get current user session
+    let currentIdentity: any = null
+    try {
+      const sessionResponse = await frontendApi.toSession(undefined, {
+        headers: requestCookies ? { Cookie: requestCookies } : undefined,
+      })
+      
+      if (sessionResponse.data?.identity) {
+        currentIdentity = sessionResponse.data.identity
+      }
+    } catch (sessionError: any) {
+      if (import.meta.dev) {
+        console.error('[auth/send-email-verification.post.ts] Failed to get session:', sessionError)
+      }
       throw createError({
         statusCode: 401,
-        statusMessage: 'Invalid token',
+        statusMessage: 'Invalid session',
       })
     }
 
-    const payload = Buffer.from(tokenParts[1], 'base64').toString('utf-8')
-    const tokenParsed = JSON.parse(payload)
-    const userId = tokenParsed.sub
-
-    if (!userId) {
+    if (!currentIdentity) {
       throw createError({
         statusCode: 401,
-        statusMessage: 'Invalid token',
-      })
-    }
-
-    // Get admin token
-    const adminTokenUrl = `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/token`
-    
-    const adminTokenResponse = await $fetch(adminTokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: config.keycloakClientId || 'my-client',
-        client_secret: config.keycloakClientSecret || '0fA6K2dgvnr2ZZlt6mW0GcPad7ThGqvp',
-      }),
-    }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/send-email-verification.post.ts] Failed to get admin token:', error)
-      }
-      throw createError({
-        statusCode: 500,
-        statusMessage: 'Service temporarily unavailable',
-      })
-    }) as any
-
-    // Get current user data
-    const getUserUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users/${userId}`
-    
-    const currentUser = await $fetch(getUserUrl, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${adminTokenResponse.access_token}`,
-      },
-    }).catch((error: any) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[auth/send-email-verification.post.ts] Failed to get user:', error)
-      }
-      throw createError({
-        statusCode: 404,
         statusMessage: 'User not found',
       })
-    }) as any
+    }
+
+    const currentEmail = currentIdentity.traits?.email || currentIdentity.traits?.email_address
 
     // Check if new email is different from current email
-    if (newEmail.toLowerCase().trim() === currentUser.email?.toLowerCase().trim()) {
+    if (newEmail.toLowerCase().trim() === currentEmail?.toLowerCase().trim()) {
       throw createError({
         statusCode: 400,
         statusMessage: 'New email must be different from current email',
@@ -125,74 +106,146 @@ export default defineEventHandler(async (event) => {
     }
 
     // Check if new email is already taken
-    const searchUsersUrl = `${config.keycloakUrl}/admin/realms/${config.keycloakRealm}/users`
+    const kratosAdminConfig = new Configuration({
+      basePath: config.kratosAdminUrl,
+    })
+    const { IdentityApi } = await import('@ory/client')
+    const identityApi = new IdentityApi(kratosAdminConfig)
     
-    const existingUsers = await $fetch(searchUsersUrl, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${adminTokenResponse.access_token}`,
-      },
-      query: {
-        email: newEmail.toLowerCase().trim(),
-        exact: true,
-      },
-    }).catch(() => []) as any[]
+    try {
+      const { data: allIdentities } = await identityApi.listIdentities()
+      
+      const emailExists = allIdentities?.some((identity: any) => {
+        return identity.id !== currentIdentity.id && 
+               (identity.traits?.email?.toLowerCase() === newEmail.toLowerCase().trim() ||
+                identity.traits?.email_address?.toLowerCase() === newEmail.toLowerCase().trim())
+      })
 
-    if (existingUsers && existingUsers.length > 0) {
+      if (emailExists) {
+        throw createError({
+          statusCode: 409,
+          statusMessage: 'Email is already registered',
+        })
+      }
+    } catch (error: any) {
+      if (error.statusCode === 409) {
+        throw error
+      }
+      // Log but continue if listing fails
+      if (import.meta.dev) {
+        console.error('[auth/send-email-verification.post.ts] Failed to check email uniqueness:', error)
+      }
+    }
+
+    // Check if user has 2FA enabled by checking session credentials
+    let has2FA = false
+    try {
+      // Get session to check for TOTP credentials
+      const sessionResponse = await frontendApi.toSession(undefined, {
+        headers: requestCookies ? { Cookie: requestCookies } : undefined,
+      })
+      
+      if (sessionResponse.data?.identity?.id) {
+        // Check if identity has TOTP credentials
+        const credentials = sessionResponse.data.identity.credentials || {}
+        has2FA = credentials.totp !== undefined
+        
+        if (import.meta.dev) {
+          console.log('[auth/send-email-verification.post.ts] Checking 2FA status from session')
+          console.log('[auth/send-email-verification.post.ts] Identity ID:', sessionResponse.data.identity.id)
+          console.log('[auth/send-email-verification.post.ts] Credentials keys:', Object.keys(credentials))
+          console.log('[auth/send-email-verification.post.ts] TOTP configured:', has2FA)
+        }
+      }
+    } catch (error: any) {
+      if (import.meta.dev) {
+        console.warn('[auth/send-email-verification.post.ts] Failed to check 2FA status from session:', error)
+      }
+    }
+
+    // If 2FA is enabled, return indication that 2FA is required
+    // Frontend will create the AAL2 login flow itself
+    if (has2FA) {
+      return {
+        success: true,
+        requires2FA: true,
+        message: 'Please verify your 2FA code first',
+      }
+    }
+
+    // If 2FA is not enabled, change email using Admin API
+    // Frontend will create verification flow and send code
+    try {
+      // Step 1: Update identity email to new email (unverified) using Admin API
+      // This is necessary before we can send verification code to the new address
+      const kratosAdminConfig = new Configuration({
+        basePath: config.kratosAdminUrl,
+      })
+      const { IdentityApi } = await import('@ory/client')
+      const identityApi = new IdentityApi(kratosAdminConfig)
+
+      // Get current identity data
+      const { data: currentIdentityData } = await identityApi.getIdentity({
+        id: currentIdentity.id,
+      })
+
+      // Update identity with new email (unverified)
+      await identityApi.updateIdentity({
+        id: currentIdentity.id,
+        updateIdentityBody: {
+          schema_id: currentIdentityData.schema_id,
+          traits: {
+            ...currentIdentityData.traits,
+            email: newEmail,
+            email_verified: false, // Mark as unverified
+          },
+        },
+      })
+
+      if (import.meta.dev) {
+        console.log('[auth/send-email-verification.post.ts] Identity email updated to:', newEmail)
+      }
+
+      // Return success - frontend will create verification flow and send code
+      return {
+        success: true,
+        message: 'Email updated. Please create verification flow in frontend.',
+        email: newEmail,
+        requiresVerificationFlow: true,
+      }
+    } catch (updateError: any) {
+      if (import.meta.dev) {
+        console.error('[auth/send-email-verification.post.ts] Failed to change email:', updateError)
+        console.error('[auth/send-email-verification.post.ts] Error details:', updateError.response?.data || updateError.data)
+      }
+
+      // Check if it's a validation error (email already taken, etc.)
+      if (updateError.response?.data?.ui?.messages) {
+        const messages = updateError.response.data.ui.messages
+        const errorMessage = messages.find((m: any) => m.type === 'error')?.text
+        if (errorMessage) {
+          throw createError({
+            statusCode: 400,
+            statusMessage: errorMessage,
+          })
+        }
+      }
+
+      // Re-throw if it's already a createError
+      if (updateError.statusCode) {
+        throw updateError
+      }
+
       throw createError({
-        statusCode: 409,
-        statusMessage: 'Email is already registered',
+        statusCode: 500,
+        statusMessage: 'Failed to send verification code',
+        message: updateError.message || 'Failed to send verification code',
       })
     }
-
-    // Generate 6-digit verification code
-    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString()
-
-    // Store verification code in a temporary cookie (valid for 15 minutes)
-    const expirationTime = Date.now() + (15 * 60 * 1000) // 15 minutes
-    setCookie(event, 'email_change_code', verificationCode, {
-      maxAge: 15 * 60, // 15 minutes in seconds
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-    })
-
-    // Store new email in cookie as well
-    setCookie(event, 'email_change_new_email', newEmail.toLowerCase().trim(), {
-      maxAge: 15 * 60, // 15 minutes
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-    })
-
-    // Store expiration time for timer in frontend
-    setCookie(event, 'email_change_expires_at', expirationTime.toString(), {
-      maxAge: 15 * 60,
-      httpOnly: false, // Frontend needs this
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-    })
-
-    // TODO: Send verification code via email using Keycloak email service
-    // For now, in development, we'll log it
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[auth/send-email-verification.post.ts] Email verification code:', verificationCode)
-      console.log('[auth/send-email-verification.post.ts] New email:', newEmail)
-      console.log('[auth/send-email-verification.post.ts] Email sent to:', currentUser.email)
-    }
-
-    return {
-      success: true,
-      message: 'Verification code sent to your current email',
-      expiresIn: 15 * 60, // 15 minutes in seconds
-      // In development, send code back for testing
-      ...(process.env.NODE_ENV === 'development' && {
-        code: verificationCode,
-      }),
-    }
   } catch (error: any) {
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.dev) {
       console.error('[auth/send-email-verification.post.ts] Error:', error.statusCode || error.status)
+      console.error('[auth/send-email-verification.post.ts] Error details:', error.response?.data || error.data || error.message)
     }
     
     if (error.statusCode) {
@@ -202,6 +255,7 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 500,
       statusMessage: 'Failed to send verification code',
+      message: error.message || 'Failed to send verification code',
     })
   }
 })

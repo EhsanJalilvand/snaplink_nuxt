@@ -188,7 +188,14 @@ const onSubmit = handleSubmit(async (formValues) => {
       const { refreshUser } = useUserData()
       await refreshUser()
       
-      // Redirect to OAuth2 authorize endpoint
+      // Check if return_to is for email verification (starts with /auth/verify-email-change)
+      if (returnTo.value.startsWith('/auth/verify-email-change')) {
+        // Redirect directly to email verification page
+        window.location.href = returnTo.value
+        return
+      }
+      
+      // Otherwise, redirect to OAuth2 authorize endpoint
       window.location.href = `/api/auth/oauth/authorize?return_to=${encodeURIComponent(returnTo.value)}`
     } else if (response?.redirect_browser_to) {
       // Check if redirect is for AAL2 (still need 2FA)
