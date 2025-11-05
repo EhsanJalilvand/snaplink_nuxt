@@ -116,7 +116,19 @@ function getRouteSidebarId() {
             </TairoSidebarLink>
           </BaseTooltip>
           <BaseTooltip
-            content="Settings"
+            content="Preferences"
+            variant="dark"
+            :bindings="{
+              content: { side: 'left' },
+              portal: { disabled: true },
+            }"
+          >
+            <TairoSidebarLink to="/dashboard/preferences">
+              <Icon name="solar:settings-linear" class="size-5" />
+            </TairoSidebarLink>
+          </BaseTooltip>
+          <BaseTooltip
+            content="Account Settings"
             variant="dark"
             :bindings="{
               content: { side: 'left' },
@@ -124,7 +136,7 @@ function getRouteSidebarId() {
             }"
           >
             <TairoSidebarLink to="/dashboard/settings">
-              <Icon name="solar:settings-linear" class="size-5" />
+              <Icon name="solar:user-id-linear" class="size-5" />
             </TairoSidebarLink>
           </BaseTooltip>
         </TairoSidebarLinks>
