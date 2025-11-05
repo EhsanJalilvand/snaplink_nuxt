@@ -95,8 +95,24 @@ onMounted(() => {
               >
                 <Icon name="ph:user-duotone" class="size-10 text-muted-400" />
               </div>
+              
+              <!-- Edit button - positioned absolutely on the avatar -->
+              <NuxtLink
+                to="/dashboard/settings/profile"
+                class="absolute bottom-0 end-0 z-20"
+              >
+                <BaseTooltip content="Edit profile picture">
+                  <BaseButton
+                    size="icon-sm"
+                    rounded="full"
+                    variant="primary"
+                  >
+                    <Icon name="solar:pen-2-linear" class="size-4" />
+                  </BaseButton>
+                </BaseTooltip>
+              </NuxtLink>
             </div>
-            <div>
+            <div class="flex-1">
               <BaseParagraph size="sm" class="text-muted-600 dark:text-muted-400">
                 Your profile picture
               </BaseParagraph>
@@ -176,9 +192,8 @@ onMounted(() => {
               <BaseText
                 size="xs"
                 weight="semibold"
-                :class="user?.emailVerified 
-                  ? 'text-muted-400 opacity-50' 
-                  : 'text-primary-500 opacity-0 transition-opacity duration-300 group-hover:opacity-100'"
+                class="invisible opacity-0"
+                style="visibility: hidden !important; opacity: 0 !important;"
               >
                 Edit
               </BaseText>
