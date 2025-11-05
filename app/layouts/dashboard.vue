@@ -9,6 +9,40 @@ const { open } = usePanels()
 // Ory Kratos authentication
 const { user, isAuthenticated, logout, checkAuth } = useAuth()
 
+// Workspace selector
+const currentWorkspaceId = ref<string | undefined>(undefined)
+
+const handleCustomizeClick = async () => {
+  try {
+    const WorkspaceSelectorPanel = (await import('~/components/WorkspaceSelectorPanel.vue')).default
+    
+    const [selectedWorkspace] = await open(
+      WorkspaceSelectorPanel,
+      {
+        currentWorkspaceId: currentWorkspaceId.value,
+      },
+      {
+        position: 'right',
+        size: 'md',
+        overlay: true,
+      }
+    )
+    
+    if (selectedWorkspace) {
+      // TODO: Update current workspace via API
+      currentWorkspaceId.value = selectedWorkspace.id
+      
+      if (import.meta.dev) {
+        console.log('[dashboard.vue] Workspace selected:', selectedWorkspace)
+      }
+    }
+  } catch (error) {
+    if (import.meta.dev) {
+      console.error('[dashboard.vue] Failed to open workspace selector:', error)
+    }
+  }
+}
+
 // Use shared user data composable for consistent state across all components
 const { user: sharedUser, userDisplayName, refreshUser } = useUserData()
 
@@ -104,14 +138,14 @@ function getRouteSidebarId() {
 
         <TairoSidebarLinks class="shrink-0 mt-auto">
           <BaseTooltip
-            content="Customize"
+            content="Select Workspace"
             variant="dark"
             :bindings="{
               content: { side: 'left' },
               portal: { disabled: true },
             }"
           >
-            <TairoSidebarLink tabindex="0">
+            <TairoSidebarLink tabindex="0" @click="handleCustomizeClick">
               <Icon name="solar:palette-round-linear" class="size-5" />
             </TairoSidebarLink>
           </BaseTooltip>
