@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import CreateLinkWizard from '~/components/url-shortener/CreateLinkWizard.vue'
+
 definePageMeta({
   title: 'Links',
   layout: 'dashboard',
@@ -22,6 +24,7 @@ const page = computed({
 
 const searchQuery = ref('')
 const perPage = ref(10)
+const selectedLinks = ref<string[]>([])
 
 watch([searchQuery, perPage], () => {
   router.push({
@@ -159,14 +162,26 @@ const getStatusConfig = (status: string) => {
   }
 }
 
+const showCreateLinkWizard = ref(false)
+
 const handleCreateLink = () => {
-  // TODO: Open create link modal/page
-  toaster.add({
-    title: 'Create Link',
-    description: 'Link creation feature will be available soon',
-    icon: 'ph:info',
-    color: 'info',
-    progress: true,
+  showCreateLinkWizard.value = true
+}
+
+const handleLinkCreated = (link: any) => {
+  // TODO: Add link to list or refresh
+  const collectionName = link.collection 
+    ? ['Marketing Campaigns', 'Product Launch', 'Social Media'].find((_, i) => i === Number.parseInt(link.collection) - 1)
+    : null
+    
+  links.value.unshift({
+    id: link.id,
+    shortUrl: link.shortUrl.replace('https://', ''),
+    originalUrl: link.originalUrl,
+    clicks: 0,
+    createdAt: new Date().toISOString().split('T')[0],
+    status: 'active',
+    collection: collectionName,
   })
 }
 
@@ -183,12 +198,40 @@ const handleCopyLink = (shortUrl: string) => {
 const handleDeleteLink = (linkId: string) => {
   // TODO: API call to delete link
   links.value = links.value.filter(link => link.id !== linkId)
+  const index = selectedLinks.value.indexOf(linkId)
+  if (index > -1) {
+    selectedLinks.value.splice(index, 1)
+  }
   toaster.add({
     title: 'Link Deleted',
     description: 'Link has been deleted successfully',
     icon: 'ph:check',
     progress: true,
   })
+}
+
+const handleViewReport = () => {
+  // Use selected links or default test IDs for demo
+  const linkIds = selectedLinks.value.length > 0 
+    ? selectedLinks.value.join(',')
+    : links.value.slice(0, 3).map(l => l.id).join(',')
+  
+  router.push({
+    path: '/dashboard/url-shortener/reports',
+    query: {
+      type: 'links',
+      ids: linkIds,
+    },
+  })
+}
+
+const toggleSelectLink = (linkId: string) => {
+  const index = selectedLinks.value.indexOf(linkId)
+  if (index > -1) {
+    selectedLinks.value.splice(index, 1)
+  } else {
+    selectedLinks.value.push(linkId)
+  }
 }
 </script>
 
@@ -209,13 +252,49 @@ const handleDeleteLink = (linkId: string) => {
           Manage and track your shortened links
         </BaseParagraph>
       </div>
-      <BaseButton
-        variant="primary"
-        @click="handleCreateLink"
-      >
-        <Icon name="ph:plus" class="size-4" />
-        <span>Create Link</span>
-      </BaseButton>
+      <div class="flex items-center gap-2">
+        <BaseButton
+          variant="outline"
+          @click="handleViewReport"
+        >
+          <Icon name="ph:chart-line" class="size-4" />
+          <span>Generate Bulk Report</span>
+        </BaseButton>
+        <BaseButton
+          variant="primary"
+          @click="handleCreateLink"
+        >
+          <Icon name="ph:plus" class="size-4" />
+          <span>Create Link</span>
+        </BaseButton>
+      </div>
+    </div>
+
+    <!-- Bulk Actions Bar -->
+    <div
+      v-if="selectedLinks.length > 0"
+      class="flex items-center justify-between p-4 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-lg"
+    >
+      <BaseText size="sm" weight="medium" class="text-primary-900 dark:text-primary-100">
+        {{ selectedLinks.length }} link(s) selected
+      </BaseText>
+      <div class="flex items-center gap-2">
+        <BaseButton
+          size="sm"
+          variant="outline"
+          @click="selectedLinks = []"
+        >
+          Clear Selection
+        </BaseButton>
+        <BaseButton
+          size="sm"
+          variant="primary"
+          @click="handleViewReport"
+        >
+          <Icon name="ph:chart-line" class="size-4" />
+          <span>Generate Bulk Report</span>
+        </BaseButton>
+      </div>
     </div>
 
     <!-- Search and Filters -->
@@ -265,6 +344,30 @@ const handleDeleteLink = (linkId: string) => {
         <div v-else class="space-y-2">
           <TairoFlexTable>
             <template #header>
+              <TairoFlexTableHeading type="shrink">
+                <BaseCheckbox
+                  :checked="paginatedLinks.length > 0 && paginatedLinks.every(l => selectedLinks.includes(l.id))"
+                  :indeterminate="selectedLinks.length > 0 && !paginatedLinks.every(l => selectedLinks.includes(l.id))"
+                  rounded="sm"
+                  color="primary"
+                  @update:checked="(checked) => {
+                    if (checked) {
+                      paginatedLinks.forEach(l => {
+                        if (!selectedLinks.includes(l.id)) {
+                          selectedLinks.push(l.id)
+                        }
+                      })
+                    } else {
+                      paginatedLinks.forEach(l => {
+                        const index = selectedLinks.indexOf(l.id)
+                        if (index > -1) {
+                          selectedLinks.splice(index, 1)
+                        }
+                      })
+                    }
+                  }"
+                />
+              </TairoFlexTableHeading>
               <TairoFlexTableHeading type="grow">
                 Link
               </TairoFlexTableHeading>
@@ -290,6 +393,14 @@ const handleDeleteLink = (linkId: string) => {
               :key="link.id"
               rounded="md"
             >
+              <TairoFlexTableCell type="shrink" data-content="Selection">
+                <BaseCheckbox
+                  :checked="selectedLinks.includes(link.id)"
+                  rounded="sm"
+                  color="primary"
+                  @update:checked="toggleSelectLink(link.id)"
+                />
+              </TairoFlexTableCell>
               <TairoFlexTableCell type="grow" data-content="Link">
                 <div class="space-y-1">
                   <div class="flex items-center gap-2">
@@ -405,6 +516,12 @@ const handleDeleteLink = (linkId: string) => {
         </div>
       </div>
     </TairoContentWrapper>
+
+    <!-- Create Link Wizard -->
+    <CreateLinkWizard
+      v-model:open="showCreateLinkWizard"
+      @created="handleLinkCreated"
+    />
   </div>
 </template>
 

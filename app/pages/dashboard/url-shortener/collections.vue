@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import CreateCollectionWizard from '~/components/url-shortener/CreateCollectionWizard.vue'
+
 definePageMeta({
   title: 'Collections',
   layout: 'dashboard',
@@ -23,6 +25,7 @@ const page = computed({
 const searchQuery = ref('')
 const perPage = ref(10)
 const selectedCollections = ref<string[]>([])
+const showCreateWizard = ref(false)
 
 watch([searchQuery, perPage], () => {
   router.push({
@@ -139,34 +142,41 @@ const toggleSelect = (collectionId: string) => {
 }
 
 const handleCreateCollection = () => {
-  // TODO: Open create collection modal/page
+  showCreateWizard.value = true
+}
+
+const handleCollectionCreated = (collection: any) => {
+  // Add new collection to the list
+  collections.value.unshift({
+    id: collection.id,
+    name: collection.name,
+    description: collection.description || '',
+    linkCount: collection.linkCount,
+    totalClicks: collection.links?.reduce((sum: number, link: any) => sum + link.clicks, 0) || 0,
+    createdAt: collection.createdAt,
+    color: collection.color,
+  })
+  
   toaster.add({
-    title: 'Create Collection',
-    description: 'Collection creation feature will be available soon',
-    icon: 'ph:info',
-    color: 'info',
+    title: 'Collection Created',
+    description: `Collection "${collection.name}" has been created successfully`,
+    icon: 'ph:check',
     progress: true,
   })
 }
 
 const handleBulkReport = () => {
-  if (selectedCollections.value.length === 0) {
-    toaster.add({
-      title: 'No Selection',
-      description: 'Please select at least one collection',
-      icon: 'lucide:alert-triangle',
-      color: 'warning',
-      progress: true,
-    })
-    return
-  }
+  // Use selected collections or default test IDs for demo
+  const collectionIds = selectedCollections.value.length > 0
+    ? selectedCollections.value.join(',')
+    : collections.value.slice(0, 2).map(c => c.id).join(',')
   
-  // TODO: Generate bulk report
-  toaster.add({
-    title: 'Generating Report',
-    description: `Generating report for ${selectedCollections.value.length} collection(s)...`,
-    icon: 'ph:file-pdf',
-    progress: true,
+  router.push({
+    path: '/dashboard/url-shortener/reports',
+    query: {
+      type: 'collections',
+      ids: collectionIds,
+    },
   })
 }
 
@@ -203,13 +213,22 @@ const handleDeleteCollection = (collectionId: string) => {
           Organize your links into collections
         </BaseParagraph>
       </div>
-      <BaseButton
-        variant="primary"
-        @click="handleCreateCollection"
-      >
-        <Icon name="ph:plus" class="size-4" />
-        <span>Create Collection</span>
-      </BaseButton>
+      <div class="flex items-center gap-2">
+        <BaseButton
+          variant="outline"
+          @click="handleBulkReport"
+        >
+          <Icon name="ph:chart-line" class="size-4" />
+          <span>Generate Bulk Report</span>
+        </BaseButton>
+        <BaseButton
+          variant="primary"
+          @click="handleCreateCollection"
+        >
+          <Icon name="ph:plus" class="size-4" />
+          <span>Create Collection</span>
+        </BaseButton>
+      </div>
     </div>
 
     <!-- Bulk Actions Bar -->
@@ -233,7 +252,7 @@ const handleDeleteCollection = (collectionId: string) => {
           variant="primary"
           @click="handleBulkReport"
         >
-          <Icon name="ph:file-pdf" class="size-4" />
+          <Icon name="ph:chart-line" class="size-4" />
           <span>Generate Bulk Report</span>
         </BaseButton>
       </div>
@@ -442,6 +461,12 @@ const handleDeleteCollection = (collectionId: string) => {
         </div>
       </div>
     </TairoContentWrapper>
+
+    <!-- Create Collection Wizard -->
+    <CreateCollectionWizard
+      v-model:open="showCreateWizard"
+      @created="handleCollectionCreated"
+    />
   </div>
 </template>
 
