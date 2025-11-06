@@ -69,6 +69,32 @@ const handleLogout = async () => {
 
 const menu = [
   {
+    label: 'URL Shortener',
+    icon: 'solar:link-linear',
+    links: [
+      {
+        label: 'Overview',
+        icon: 'solar:chart-2-linear',
+        to: '/dashboard/url-shortener/overview',
+      },
+      {
+        label: 'Links',
+        icon: 'solar:link-round-linear',
+        to: '/dashboard/url-shortener/links',
+      },
+      {
+        label: 'Collections',
+        icon: 'solar:folder-linear',
+        to: '/dashboard/url-shortener/collections',
+      },
+      {
+        label: 'Notifications',
+        icon: 'solar:bell-linear',
+        to: '/dashboard/url-shortener/notifications',
+      },
+    ],
+  },
+  {
     label: 'Dashboard',
     icon: 'solar:sidebar-minimalistic-linear',
     links: [
