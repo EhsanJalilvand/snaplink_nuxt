@@ -95,6 +95,50 @@ const menu = [
     ],
   },
   {
+    label: 'Survey Link',
+    icon: 'solar:clipboard-list-linear',
+    links: [
+      {
+        label: 'Overview',
+        icon: 'solar:chart-2-linear',
+        to: '/dashboard/survey-link/overview',
+      },
+    ],
+  },
+  {
+    label: 'BioLink',
+    icon: 'solar:user-id-linear',
+    links: [
+      {
+        label: 'Overview',
+        icon: 'solar:chart-2-linear',
+        to: '/dashboard/biolink/overview',
+      },
+    ],
+  },
+  {
+    label: 'PaymentLink',
+    icon: 'solar:wallet-linear',
+    links: [
+      {
+        label: 'Overview',
+        icon: 'solar:chart-2-linear',
+        to: '/dashboard/payment-link/overview',
+      },
+    ],
+  },
+  {
+    label: 'Quiz Link',
+    icon: 'solar:document-text-linear',
+    links: [
+      {
+        label: 'Overview',
+        icon: 'solar:chart-2-linear',
+        to: '/dashboard/quiz-link/overview',
+      },
+    ],
+  },
+  {
     label: 'Dashboard',
     icon: 'solar:sidebar-minimalistic-linear',
     links: [
