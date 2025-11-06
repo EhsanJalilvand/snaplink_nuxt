@@ -370,7 +370,7 @@ const onSubmit = handleSubmit(async (values) => {
           })
         } else {
           // Invalid flow - try to follow redirect
-          if (redirectUrl.startsWith('http://localhost:3000') || redirectUrl.startsWith('/')) {
+      if (redirectUrl.startsWith('http://localhost:3000') || redirectUrl.startsWith('/')) {
             window.location.href = redirectUrl
           } else {
             setFieldError('password', '2FA verification required. Please try again.')

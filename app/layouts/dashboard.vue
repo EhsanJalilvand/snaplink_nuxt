@@ -43,6 +43,26 @@ const handleCustomizeClick = async () => {
   }
 }
 
+const handleActivityClick = async () => {
+  try {
+    const ActivityPanel = (await import('~/components/ActivityPanel.vue')).default
+    
+    await open(
+      ActivityPanel,
+      {},
+      {
+        position: 'right',
+        size: 'sm',
+        overlay: true,
+      }
+    )
+  } catch (error) {
+    if (import.meta.dev) {
+      console.error('[dashboard.vue] Failed to open activity panel:', error)
+    }
+  }
+}
+
 // Use shared user data composable for consistent state across all components
 const { user: sharedUser, userDisplayName, refreshUser } = useUserData()
 
@@ -139,17 +159,6 @@ const menu = [
     ],
   },
   {
-    label: 'Dashboard',
-    icon: 'solar:sidebar-minimalistic-linear',
-    links: [
-      {
-        label: 'Overview',
-        icon: 'solar:chart-linear',
-        to: '/dashboard',
-      },
-    ],
-  },
-  {
     label: 'Billing',
     icon: 'solar:card-linear',
     links: [
@@ -195,7 +204,7 @@ function getRouteSidebarId() {
     }
   }
 
-  return 'Dashboard'
+  return menu[0]?.label || 'URL Shortener'
 }
 </script>
 
@@ -206,12 +215,9 @@ function getRouteSidebarId() {
   >
     <TairoSidebarNav>
       <TairoSidebar>
-        <NuxtLink to="/" class="flex items-center justify-center size-14 shrink-0">
-          <div class="flex items-center space-x-2">
-            <div class="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-              <Icon name="solar:link-linear" class="w-5 h-5 text-white" />
-            </div>
-            <span class="text-xl font-bold text-primary-600 dark:text-primary-400">SnapLink</span>
+        <NuxtLink to="/dashboard" class="flex items-center justify-center size-14 shrink-0">
+          <div class="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl flex items-center justify-center shadow-lg shadow-primary-500/50">
+            <Icon name="solar:infinity-linear" class="w-6 h-6 text-white" />
           </div>
         </NuxtLink>
 
@@ -232,7 +238,7 @@ function getRouteSidebarId() {
           </BaseTooltip>
         </TairoSidebarLinks>
 
-        <TairoSidebarLinks class="shrink-0 mt-auto">
+        <TairoSidebarLinks class="shrink-0 mt-auto border-t border-muted-200 dark:border-muted-800 pt-2">
           <BaseTooltip
             content="Select Workspace"
             variant="dark"
@@ -319,7 +325,7 @@ function getRouteSidebarId() {
               SnapLink Dashboard
             </h1>
             <p class="text-sm text-muted-500 dark:text-muted-400">
-              Professional URL Shortener & Analytics
+              All-in-One Link Management Platform
             </p>
           </div>
         </div>
@@ -341,6 +347,19 @@ function getRouteSidebarId() {
 
           <!-- Dark Mode Toggle -->
           <BaseThemeToggle aria-label="Toggle darkmode" />
+
+          <!-- Activity Button -->
+          <button
+            type="button"
+            class="border-muted-200 hover:ring-muted-200 dark:hover:ring-muted-700 dark:border-muted-700 dark:bg-muted-800 dark:ring-offset-muted-900 flex size-10 items-center justify-center rounded-full border bg-white ring-1 ring-transparent transition-all duration-300 hover:ring-offset-4 relative"
+            @click="handleActivityClick"
+          >
+            <Icon name="solar:history-linear" class="size-5" />
+            <span class="absolute top-0 end-0 flex size-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full size-2 bg-primary-500"></span>
+            </span>
+          </button>
 
           <!-- User Menu -->
           <BaseDropdown
@@ -384,12 +403,6 @@ function getRouteSidebarId() {
               <span>Logout</span>
             </BaseDropdownItem>
           </BaseDropdown>
-
-          <!-- Create Link Button -->
-          <BaseButton size="sm" variant="primary">
-            <Icon name="solar:add-circle-linear" class="size-4" />
-            <span class="hidden md:inline">Create Link</span>
-          </BaseButton>
         </div>
       </div>
 
