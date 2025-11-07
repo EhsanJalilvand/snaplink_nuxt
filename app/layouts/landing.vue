@@ -37,6 +37,42 @@ const handleLogout = async () => {
   await refreshUser()
 }
 
+const landingQuickLinks = [
+  {
+    label: 'Profile',
+    description: 'View and edit your account details',
+    icon: 'solar:user-linear',
+    to: '/dashboard/settings',
+  },
+  {
+    label: 'Dashboard',
+    description: 'Jump into your personalized workspace',
+    icon: 'solar:home-2-linear',
+    to: '/dashboard',
+  },
+]
+
+const landingSupportLinks = [
+  {
+    label: 'Documentation',
+    icon: 'solar:book-2-linear',
+    href: 'https://docs.snaplink.app',
+  },
+  {
+    label: 'Changelog',
+    icon: 'solar:history-2-linear',
+    href: 'https://snaplink.app/changelog',
+  },
+  {
+    label: 'Contact support',
+    icon: 'solar:lifebuoy-linear',
+    to: '/dashboard/preferences',
+    query: { tab: 'support' },
+  },
+]
+
+const userEmail = computed(() => sharedUser.value?.email ?? user.value?.email ?? '')
+
 const menu = computed(() => [
   { label: t.value.menu.about, to: '/about' },
   { label: t.value.menu.activity, to: '/activity' },
@@ -110,6 +146,7 @@ const menu = computed(() => [
               content: {
                 align: 'end',
                 sideOffset: 10,
+                class: 'max-w-[320px] p-0 z-[70] drop-shadow-xl'
               },
             }"
           >
@@ -126,18 +163,66 @@ const menu = computed(() => [
                 </span>
               </button>
             </template>
-            <BaseDropdownItem to="/dashboard">
-              <Icon name="solar:user-linear" class="size-4" />
-              <span>Dashboard</span>
-            </BaseDropdownItem>
-            <BaseDropdownItem to="/dashboard/settings">
-              <Icon name="solar:settings-linear" class="size-4" />
-              <span>Account Settings</span>
-            </BaseDropdownItem>
+       
+
+            <div class="px-4 py-3">
+              <p class="text-xs font-medium uppercase tracking-wide text-muted-500 dark:text-muted-400">
+                Quick links
+              </p>
+              <div class="mt-2 space-y-2">
+                <NuxtLink
+                  v-for="link in landingQuickLinks"
+                  :key="link.label"
+                  :to="link.to"
+                  class="group flex items-start gap-3 rounded-xl border border-transparent px-3 py-2.5 transition hover:border-primary-500/40 hover:bg-primary-500/5 dark:hover:border-primary-500/30"
+                >
+                  <div class="flex size-9 items-center justify-center rounded-lg bg-muted-100 text-muted-600 transition group-hover:bg-primary-500 group-hover:text-white dark:bg-muted-900 dark:text-muted-300">
+                    <Icon :name="link.icon" class="size-4" />
+                  </div>
+                  <div>
+                    <p class="text-sm font-semibold text-muted-900 transition group-hover:text-primary-600 dark:text-white dark:group-hover:text-primary-300">
+                      {{ link.label }}
+                    </p>
+                    <p class="text-xs text-muted-500 dark:text-muted-400">
+                      {{ link.description }}
+                    </p>
+                  </div>
+                </NuxtLink>
+              </div>
+            </div>
+
             <BaseDropdownSeparator />
-            <BaseDropdownItem @click="handleLogout">
-              <Icon name="ph:sign-out" class="size-4" />
-              <span>Logout</span>
+
+            <div class="px-4 py-3">
+              <p class="text-xs font-medium uppercase tracking-wide text-muted-500 dark:text-muted-400">
+                Resources
+              </p>
+              <div class="mt-2 space-y-2">
+                <NuxtLink
+                  v-for="resource in landingSupportLinks"
+                  :key="resource.label"
+                  :to="resource.to ? { path: resource.to, query: resource.query } : undefined"
+                  :href="resource.href"
+                  class="flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-muted-600 transition hover:bg-muted-100 hover:text-primary-600 dark:text-muted-400 dark:hover:bg-muted-900 dark:hover:text-primary-300"
+                  :target="resource.href ? '_blank' : undefined"
+                  rel="noopener"
+                >
+                  <Icon :name="resource.icon" class="size-4" />
+                  <span>{{ resource.label }}</span>
+                  <Icon
+                    v-if="resource.href"
+                    name="solar:export-outline"
+                    class="ms-auto size-3 text-muted-400"
+                  />
+                </NuxtLink>
+              </div>
+            </div>
+
+            <BaseDropdownSeparator />
+
+            <BaseDropdownItem class="group" @click="handleLogout">
+              <Icon name="ph:sign-out" class="size-4 text-muted-500 transition group-hover:text-destructive-500" />
+              <span class="group-hover:text-destructive-500">Logout</span>
             </BaseDropdownItem>
           </BaseDropdown>
 
