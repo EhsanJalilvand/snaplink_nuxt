@@ -51,7 +51,7 @@ const menu = computed(() => [
     <header class="fixed inset-x-0 top-0 z-50 mx-auto max-w-[calc(100%_-_40px)] mt-4 lg:max-w-7xl">
       <div class="flex items-center justify-between rounded-2xl border border-transparent bg-white/95 p-4 shadow-xl backdrop-blur-md dark:bg-muted-950/95 dark:border-muted-700">
         <!-- Logo -->
-        <div class="flex w-1/2 items-center gap-2 md:w-1/5">
+        <div class="flex items-center gap-2">
           <NuxtLink to="/" class="ms-2 inline-flex items-center gap-3" aria-label="Go to SnapLink homepage">
             <BrandLogoMark size="md" />
             <span class="text-lg font-semibold text-primary-600 dark:text-primary-300">SnapLink</span>
@@ -74,11 +74,11 @@ const menu = computed(() => [
         </div>
 
         <!-- Right side actions -->
-        <div class="flex w-1/2 items-center justify-end gap-2 md:w-1/5">
+        <div class="flex items-center justify-end gap-2">
           <!-- Language Selector -->
           <button
             type="button"
-            class="border-muted-200 hover:ring-muted-200 dark:hover:ring-muted-700 dark:border-muted-700 dark:bg-muted-800 dark:ring-offset-muted-900 flex size-10 items-center justify-center rounded-full border bg-white ring-1 ring-transparent transition-all duration-300 hover:ring-offset-4"
+            class="border-muted-200 hover:ring-muted-200 dark:hover:ring-muted-700 dark:border-muted-700 dark:bg-muted-800 dark:ring-offset-muted-900 flex size-10 items-center justify-center rounded-full border bg-white ring-1 ring-transparent transition-all duration-300 hover:ring-offset-4 shrink-0"
             @click="open(SnapLinkPanelLanguage)"
           >
             <img
@@ -102,16 +102,44 @@ const menu = computed(() => [
           </div>
 
           <!-- User Menu (if logged in) -->
-          <div v-else class="hidden sm:flex items-center gap-2">
-            <NuxtLink to="/dashboard" class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-600 dark:text-muted-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
-              <BaseAvatar size="xs" :src="userAvatar" />
-              <span class="hidden md:inline">{{ userDisplayName }}</span>
-            </NuxtLink>
-            <BaseButton size="sm" variant="ghost" @click="handleLogout">
+          <BaseDropdown
+            v-else
+            class="hidden sm:flex"
+            variant="default"
+            :bindings="{
+              content: {
+                align: 'end',
+                sideOffset: 10,
+              },
+            }"
+          >
+            <template #button>
+              <button
+                type="button"
+                class="flex items-center gap-2 rounded-full p-1 hover:bg-muted-100 dark:hover:bg-muted-800 transition-colors"
+              >
+                <BaseChip size="sm" color="custom" :offset="3" class="text-success-500">
+                  <BaseAvatar size="xs" :src="userAvatar" />
+                </BaseChip>
+                <span class="hidden lg:inline text-sm font-medium text-muted-700 dark:text-muted-300">
+                  {{ userDisplayName }}
+                </span>
+              </button>
+            </template>
+            <BaseDropdownItem to="/dashboard">
+              <Icon name="solar:user-linear" class="size-4" />
+              <span>Dashboard</span>
+            </BaseDropdownItem>
+            <BaseDropdownItem to="/dashboard/settings">
+              <Icon name="solar:settings-linear" class="size-4" />
+              <span>Account Settings</span>
+            </BaseDropdownItem>
+            <BaseDropdownSeparator />
+            <BaseDropdownItem @click="handleLogout">
               <Icon name="ph:sign-out" class="size-4" />
-              <span class="hidden lg:inline">Logout</span>
-            </BaseButton>
-          </div>
+              <span>Logout</span>
+            </BaseDropdownItem>
+          </BaseDropdown>
 
           <!-- Mobile menu button -->
           <button
