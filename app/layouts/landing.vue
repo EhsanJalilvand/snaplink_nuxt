@@ -52,13 +52,9 @@ const menu = computed(() => [
       <div class="flex items-center justify-between rounded-2xl border border-transparent bg-white/95 p-4 shadow-xl backdrop-blur-md dark:bg-muted-950/95 dark:border-muted-700">
         <!-- Logo -->
         <div class="flex w-1/2 items-center gap-2 md:w-1/5">
-          <NuxtLink to="/" class="ms-2 inline-flex" aria-label="Go to SnapLink homepage">
-            <div class="flex items-center space-x-2">
-              <div class="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-                <Icon name="solar:link-linear" class="w-5 h-5 text-white" />
-              </div>
-              <span class="text-xl font-bold text-primary-600 dark:text-primary-400">SnapLink</span>
-            </div>
+          <NuxtLink to="/" class="ms-2 inline-flex items-center gap-3" aria-label="Go to SnapLink homepage">
+            <BrandLogoMark size="md" />
+            <span class="text-lg font-semibold text-primary-600 dark:text-primary-300">SnapLink</span>
           </NuxtLink>
         </div>
 

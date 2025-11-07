@@ -237,8 +237,8 @@ const handleLinkCreated = (link: any) => {
     <!-- Hero Section -->
     <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary-500 via-primary-600 to-primary-700 p-8 text-white shadow-xl">
       <div class="relative z-10">
-        <div class="flex items-center justify-between">
-          <div>
+      <div class="flex items-center justify-between">
+        <div>
             <BaseHeading
               as="h1"
               size="2xl"
@@ -328,7 +328,7 @@ const handleLinkCreated = (link: any) => {
             </div>
           </div>
           <BaseText size="sm" weight="medium" class="text-muted-500 dark:text-muted-400 mb-1">
-            {{ stat.title }}
+              {{ stat.title }}
           </BaseText>
           <BaseHeading
             as="h3"
@@ -336,7 +336,7 @@ const handleLinkCreated = (link: any) => {
             weight="bold"
             class="text-muted-900 dark:text-muted-100 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors"
           >
-            {{ stat.value }}
+              {{ stat.value }}
           </BaseHeading>
         </BaseCard>
       </NuxtLink>
@@ -466,10 +466,10 @@ const handleLinkCreated = (link: any) => {
               size="sm"
               variant="ghost"
             >
-              View All
+            View All
               <Icon name="lucide:chevron-right" class="size-4" />
-            </BaseButton>
-          </div>
+          </BaseButton>
+        </div>
           <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
             <NuxtLink
               v-for="service in services"
@@ -549,12 +549,12 @@ const handleLinkCreated = (link: any) => {
               <Icon name="lucide:chevron-right" class="size-4" />
             </BaseButton>
           </div>
-          <div class="space-y-4">
-            <div
+        <div class="space-y-4">
+          <div
               v-for="activity in recentActivity"
               :key="activity.id"
               class="flex items-start gap-3 p-3 rounded-lg hover:bg-muted-50 dark:hover:bg-muted-800/50 transition-colors"
-            >
+          >
               <div
                 class="flex size-10 items-center justify-center rounded-lg shrink-0"
                 :class="{
@@ -631,8 +631,8 @@ const handleLinkCreated = (link: any) => {
               >
                 <Icon name="solar:arrow-up-linear" class="size-3" />
                 <span>{{ link.change }}</span>
-              </div>
-            </div>
+          </div>
+        </div>
             <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400 line-clamp-1">
               {{ link.originalUrl }}
             </BaseParagraph>

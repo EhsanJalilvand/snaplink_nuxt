@@ -216,9 +216,7 @@ function getRouteSidebarId() {
     <TairoSidebarNav>
       <TairoSidebar>
         <NuxtLink to="/dashboard" class="flex items-center justify-center size-14 shrink-0">
-          <div class="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl flex items-center justify-center shadow-lg shadow-primary-500/50">
-            <Icon name="solar:infinity-linear" class="w-6 h-6 text-white" />
-          </div>
+          <BrandLogoMark size="md" />
         </NuxtLink>
 
         <TairoSidebarLinks class="overflow-y-auto nui-slimscroll">

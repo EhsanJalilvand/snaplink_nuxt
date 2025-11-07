@@ -175,6 +175,20 @@ const createLink = async () => {
   }
 }
 
+const setOriginalUrl = (url: string) => {
+  formData.value.originalUrl = url
+  if (errors.value.originalUrl) {
+    delete errors.value.originalUrl
+  }
+  if (currentStep.value !== 1) {
+    currentStep.value = 1
+  }
+}
+
+defineExpose({
+  setOriginalUrl,
+})
+
 const copyLink = () => {
   navigator.clipboard.writeText(shortLink.value)
   toaster.add({
