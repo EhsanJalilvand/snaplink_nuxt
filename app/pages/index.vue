@@ -1,8 +1,14 @@
 <script setup lang="ts">
 import { nextTick, ref } from 'vue'
+import { definePageMeta, navigateTo, useAuth, useNuiToasts } from '#imports'
 import CreateLinkWizard from '~/components/url-shortener/CreateLinkWizard.vue'
 import LandingHeroIntro from '~/components/landing/HeroIntro.vue'
 import LandingHeroQuickCreateCard from '~/components/landing/HeroQuickCreateCard.vue'
+import LandingModulesShowcase from '~/components/landing/ModulesShowcase.vue'
+import LandingCapabilitiesGrid from '~/components/landing/CapabilitiesGrid.vue'
+import LandingPricingShowcase from '~/components/landing/PricingShowcase.vue'
+import LandingApiSample from '~/components/landing/ApiSample.vue'
+import LandingEarlyAccessCta from '~/components/landing/EarlyAccessCta.vue'
 
 definePageMeta({
   title: 'SnapLink',
@@ -81,7 +87,7 @@ const handleWizardCreated = () => {
 </script>
 
 <template>
-  <div class="pb-24">
+  <div class="pb-24 space-y-24">
     <section class="relative overflow-hidden bg-muted-50 dark:bg-muted-950">
       <div class="absolute inset-0 pointer-events-none">
         <div class="absolute -top-24 -start-28 h-80 w-80 rounded-full bg-primary-200/35 blur-3xl dark:bg-primary-900/20" />
@@ -98,6 +104,16 @@ const handleWizardCreated = () => {
         </div>
       </div>
     </section>
+
+    <LandingModulesShowcase />
+
+    <LandingCapabilitiesGrid />
+
+    <LandingPricingShowcase />
+
+    <LandingApiSample />
+
+    <LandingEarlyAccessCta />
 
     <CreateLinkWizard
       ref="createLinkWizardRef"
