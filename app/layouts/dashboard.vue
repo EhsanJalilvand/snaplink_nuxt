@@ -87,6 +87,19 @@ const handleLogout = async () => {
   await refreshUser()
 }
 
+type MenuLink = {
+  label: string
+  icon: string
+  to?: string
+  children?: MenuLink[]
+}
+
+interface MenuItem {
+  label: string
+  icon: string
+  links: MenuLink[]
+}
+
 const quickLinks = [
   {
     label: 'Profile',
@@ -121,7 +134,7 @@ const supportActions = [
   },
 ]
 
-const menu = [
+const menu: MenuItem[] = [
   {
     label: 'URL Shortener',
     icon: 'solar:link-linear',
@@ -221,6 +234,7 @@ const menu = [
 ]
 
 const route = useRoute()
+const router = useRouter()
 const sidebarId = ref(getRouteSidebarId())
 
 watch(() => route.path, () => {
@@ -239,6 +253,32 @@ function getRouteSidebarId() {
   }
 
   return menu[0]?.label || 'URL Shortener'
+}
+
+function handlePrimaryNavClick(item: MenuItem) {
+  const flatLinks = item.links ?? []
+
+  const overviewLink = flatLinks.find(link => link.label === 'Overview')
+
+  const firstLink = overviewLink ?? flatLinks[0]
+
+  if (!firstLink) {
+    return
+  }
+
+  if (firstLink.to) {
+    router.push(firstLink.to)
+    return
+  }
+
+  if (firstLink.children?.length) {
+    const childOverview = firstLink.children.find(child => child.label === 'Overview')
+    const childTarget = childOverview ?? firstLink.children[0]
+
+    if (childTarget?.to) {
+      router.push(childTarget.to)
+    }
+  }
 }
 </script>
 
@@ -264,7 +304,7 @@ function getRouteSidebarId() {
               portal: { disabled: true },
             }"
           >
-            <TairoSidebarTrigger :value="item.label">
+            <TairoSidebarTrigger :value="item.label" @click="handlePrimaryNavClick(item)">
               <Icon :name="item.icon" class="size-5" />
             </TairoSidebarTrigger>
           </BaseTooltip>
