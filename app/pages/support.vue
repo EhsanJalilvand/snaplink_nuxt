@@ -124,24 +124,6 @@ const priorityColor: Record<Ticket['priority'], string> = {
 }
 
 const showNewTicket = ref(false)
-const activeTicketForDetails = ref<Ticket | null>(null)
-const activeTicketForReply = ref<Ticket | null>(null)
-
-const detailsOpen = ref(false)
-const replyOpen = ref(false)
-
-watch(detailsOpen, (value) => {
-  if (!value) {
-    activeTicketForDetails.value = null
-  }
-})
-
-watch(replyOpen, (value) => {
-  if (!value) {
-    activeTicketForReply.value = null
-    replyDraft.value = ''
-  }
-})
 
 const newTicketForm = reactive({
   requesterName: '',
@@ -186,43 +168,6 @@ const handleCreateTicket = () => {
   resetNewTicket()
   showNewTicket.value = false
 }
-
-const openDetails = (ticket: Ticket) => {
-  activeTicketForDetails.value = ticket
-  detailsOpen.value = true
-}
-
-const openReply = (ticket: Ticket) => {
-  activeTicketForReply.value = ticket
-  replyDraft.value = `Hi ${ticket.requester},\n\n`
-  replyOpen.value = true
-}
-
-const replyDraft = ref('')
-
-const handleSendReply = () => {
-  if (!replyDraft.value.trim()) {
-    toaster.add({
-      title: 'Reply is empty',
-      description: 'Please include a short message before sending.',
-      icon: 'ph:warning',
-      color: 'warning',
-      progress: true,
-    })
-    return
-  }
-
-  toaster.add({
-    title: 'Reply sent',
-    description: 'Customer notified via preferred channel.',
-    icon: 'ph:check',
-    color: 'success',
-    progress: true,
-  })
-
-  replyOpen.value = false
-  replyDraft.value = ''
-}
 </script>
 
 <template>
@@ -241,7 +186,7 @@ const handleSendReply = () => {
           Track conversations, hit SLAs, and keep merchants confident.
         </BaseParagraph>
       </div>
-      <BaseButton variant="primary" type="button" @click="showNewTicket = true">
+      <BaseButton variant="primary" @click="showNewTicket = true">
         <Icon name="ph:plus" class="size-4" />
         New ticket
       </BaseButton>
@@ -340,10 +285,10 @@ const handleSendReply = () => {
             </div>
           </div>
           <div class="flex flex-wrap items-center gap-2 text-xs text-muted-500 dark:text-muted-400">
-            <BaseButton size="sm" variant="ghost" type="button" @click="openDetails(ticket)">
+            <BaseButton size="sm" variant="ghost">
               View details
             </BaseButton>
-            <BaseButton size="sm" variant="ghost" type="button" @click="openReply(ticket)">
+            <BaseButton size="sm" variant="ghost">
               Reply
             </BaseButton>
           </div>
@@ -436,96 +381,6 @@ const handleSendReply = () => {
             </BaseButton>
             <BaseButton variant="primary" @click="handleCreateTicket">
               Submit ticket
-            </BaseButton>
-          </div>
-        </DialogContent>
-      </DialogPortal>
-    </DialogRoot>
-
-    <DialogRoot v-model:open="detailsOpen">
-      <DialogPortal>
-        <DialogOverlay class="bg-muted-900/70 fixed inset-0 z-50 backdrop-blur-sm" />
-        <DialogContent
-          class="fixed top-[6%] start-1/2 z-[100] w-[min(92vw,680px)] -translate-x-1/2 rounded-2xl border border-muted-200 bg-white shadow-xl focus:outline-none dark:border-muted-700 dark:bg-muted-900"
-        >
-          <div class="flex items-center justify-between border-b border-muted-200 px-6 py-4 dark:border-muted-700">
-            <div>
-              <DialogTitle class="text-lg font-semibold text-muted-900 dark:text-white">
-                Ticket details
-              </DialogTitle>
-              <DialogDescription v-if="activeTicketForDetails" class="text-sm text-muted-500 dark:text-muted-400">
-                {{ activeTicketForDetails.subject }} • {{ activeTicketForDetails.requester }}
-              </DialogDescription>
-            </div>
-            <BaseButton size="sm" variant="ghost" icon class="rounded-full" @click="detailsOpen = false">
-              <Icon name="lucide:x" class="size-4" />
-            </BaseButton>
-          </div>
-
-          <div v-if="activeTicketForDetails" class="space-y-4 px-6 py-5 text-sm text-muted-600 dark:text-muted-300">
-            <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
-              Summary
-            </BaseText>
-            <BaseParagraph size="sm" class="text-muted-600 dark:text-muted-300">
-              {{ activeTicketForDetails.summary }}
-            </BaseParagraph>
-            <div class="flex flex-wrap items-center gap-2 text-xs text-muted-500 dark:text-muted-400">
-              <BaseChip :color="statusColor[activeTicketForDetails.status]" size="xs">
-                {{ activeTicketForDetails.status }}
-              </BaseChip>
-              <BaseChip :color="priorityColor[activeTicketForDetails.priority]" size="xs">
-                {{ priorityLabel[activeTicketForDetails.priority] }} priority
-              </BaseChip>
-              <span>#{{ activeTicketForDetails.id }}</span>
-              <span>•</span>
-              <span>{{ activeTicketForDetails.updatedAt }}</span>
-            </div>
-          </div>
-        </DialogContent>
-      </DialogPortal>
-    </DialogRoot>
-
-    <DialogRoot v-model:open="replyOpen">
-      <DialogPortal>
-        <DialogOverlay class="bg-muted-900/70 fixed inset-0 z-50 backdrop-blur-sm" />
-        <DialogContent
-          class="fixed top-[8%] start-1/2 z-[100] w-[min(92vw,620px)] -translate-x-1/2 rounded-2xl border border-muted-200 bg-white shadow-xl focus:outline-none dark:border-muted-700 dark:bg-muted-900"
-        >
-          <div class="flex items-center justify-between border-b border-muted-200 px-6 py-4 dark:border-muted-700">
-            <div>
-              <DialogTitle class="text-lg font-semibold text-muted-900 dark:text-white">
-                Reply to ticket
-              </DialogTitle>
-              <DialogDescription v-if="activeTicketForReply" class="text-sm text-muted-500 dark:text-muted-400">
-                {{ activeTicketForReply.subject }}
-              </DialogDescription>
-            </div>
-            <BaseButton size="sm" variant="ghost" icon class="rounded-full" @click="replyOpen = false">
-              <Icon name="lucide:x" class="size-4" />
-            </BaseButton>
-          </div>
-
-          <div v-if="activeTicketForReply" class="space-y-4 px-6 py-5">
-            <TairoInput
-              :model-value="activeTicketForReply.email"
-              icon="solar:mail-linear"
-              disabled
-              rounded="lg"
-            />
-            <textarea
-              v-model="replyDraft"
-              rows="7"
-              placeholder="Write your reply"
-              class="w-full rounded-xl border border-muted-200 bg-white px-4 py-3 text-sm text-muted-800 placeholder:text-muted-400 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-muted-700 dark:bg-muted-900 dark:text-muted-100 dark:placeholder:text-muted-500"
-            />
-          </div>
-
-          <div class="flex items-center justify-end gap-2 border-t border-muted-200 px-6 py-4 dark:border-muted-700">
-            <BaseButton variant="ghost" @click="replyOpen = false">
-              Cancel
-            </BaseButton>
-            <BaseButton variant="primary" @click="handleSendReply">
-              Send reply
             </BaseButton>
           </div>
         </DialogContent>

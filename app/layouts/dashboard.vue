@@ -10,7 +10,43 @@ const { open } = usePanels()
 const { user, isAuthenticated, logout, checkAuth } = useAuth()
 
 // Workspace selector
-const currentWorkspaceId = ref<string | undefined>(undefined)
+const currentWorkspaceId = useState<string | undefined>('currentWorkspaceId', () => undefined)
+const currentWorkspace = useState<{ id: string; name: string } | null>('currentWorkspace', () => null)
+const currentWorkspaceLabel = computed(() => currentWorkspace.value?.name ?? 'Select a workspace')
+
+onMounted(() => {
+  if (!process.client) {
+    return
+  }
+
+  const storedWorkspace = localStorage.getItem('snaplink-current-workspace')
+
+  if (!storedWorkspace) {
+    return
+  }
+
+  try {
+    const parsed = JSON.parse(storedWorkspace) as { id: string; name: string }
+    currentWorkspaceId.value = parsed.id
+    currentWorkspace.value = parsed
+  } catch (error) {
+    if (import.meta.dev) {
+      console.warn('[dashboard.vue] Failed to parse stored workspace', error)
+    }
+  }
+})
+
+watch(currentWorkspace, (workspace) => {
+  if (!process.client) {
+    return
+  }
+
+  if (workspace) {
+    localStorage.setItem('snaplink-current-workspace', JSON.stringify(workspace))
+  } else {
+    localStorage.removeItem('snaplink-current-workspace')
+  }
+})
 
 const handleCustomizeClick = async () => {
   try {
@@ -31,6 +67,10 @@ const handleCustomizeClick = async () => {
     if (selectedWorkspace) {
       // TODO: Update current workspace via API
       currentWorkspaceId.value = selectedWorkspace.id
+      currentWorkspace.value = {
+        id: selectedWorkspace.id,
+        name: selectedWorkspace.name,
+      }
       
       if (import.meta.dev) {
         console.log('[dashboard.vue] Workspace selected:', selectedWorkspace)
@@ -386,7 +426,7 @@ function handlePrimaryNavClick(item: MenuItem) {
 
     <TairoSidebarContent class="min-h-screen">
       <!-- Top Navbar -->
-      <div class="border-muted-200 dark:border-muted-800 sticky top-0 z-40 flex h-16 w-full items-center justify-between border-b bg-white/95 px-4 backdrop-blur-md dark:bg-muted-950/95 md:px-6 lg:px-8">
+      <div class="border-muted-200 dark:border-muted-800 sticky top-0 z-40 flex h-16 w-full items-center justify-between border-b bg-white/95 px-4 backdrop-blur-md dark:bg-muted-950/95 md:px-6 lg:px-8 relative">
         <!-- Left side - Logo and Title -->
         <div class="flex items-center gap-4">
           <BaseButton
@@ -407,6 +447,15 @@ function handlePrimaryNavClick(item: MenuItem) {
           </div>
         </div>
 
+        <div class="pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 md:flex">
+          <div
+            class="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-primary-100 bg-primary-50/80 px-4 py-1.5 text-sm font-medium text-primary-700 shadow-sm dark:border-primary-500/30 dark:bg-primary-500/10 dark:text-primary-200"
+          >
+            <Icon name="solar:layers-linear" class="size-4" />
+            <span>{{ currentWorkspaceLabel }}</span>
+          </div>
+        </div>
+ 
         <!-- Right side - Language, Theme, User -->
         <div class="flex items-center gap-2">
           <!-- Language Selector -->
