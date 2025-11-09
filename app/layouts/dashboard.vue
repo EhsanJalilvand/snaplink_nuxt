@@ -162,6 +162,32 @@ const menu: MenuItem[] = [
     ],
   },
   {
+    label: 'Payment',
+    icon: 'solar:wallet-bold-duotone',
+    links: [
+      {
+        label: 'Overview',
+        icon: 'solar:chart-linear',
+        to: '/dashboard/payment/overview',
+      },
+      {
+        label: 'Payment Links',
+        icon: 'solar:link-circle-linear',
+        to: '/dashboard/payment/links',
+      },
+      {
+        label: 'Merchant Gateway',
+        icon: 'solar:shop-linear',
+        to: '/dashboard/payment/gateway',
+      },
+      {
+        label: 'Notification Settings',
+        icon: 'solar:bell-bing-linear',
+        to: '/dashboard/payment/notifications',
+      },
+    ],
+  },
+  {
     label: 'Survey Link',
     icon: 'solar:clipboard-list-linear',
     links: [
@@ -180,17 +206,6 @@ const menu: MenuItem[] = [
         label: 'Overview',
         icon: 'solar:chart-2-linear',
         to: '/dashboard/biolink/overview',
-      },
-    ],
-  },
-  {
-    label: 'PaymentLink',
-    icon: 'solar:wallet-linear',
-    links: [
-      {
-        label: 'Overview',
-        icon: 'solar:chart-2-linear',
-        to: '/dashboard/payment-link/overview',
       },
     ],
   },

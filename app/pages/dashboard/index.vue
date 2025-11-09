@@ -123,12 +123,12 @@ const services = ref([
     comingSoon: true,
   },
   {
-    name: 'PaymentLink',
-    icon: 'solar:wallet-linear',
+    name: 'Payment',
+    icon: 'solar:wallet-bold-duotone',
     count: 0,
     color: 'warning',
-    link: '/dashboard/payment-link/overview',
-    comingSoon: true,
+    link: '/dashboard/payment/overview',
+    comingSoon: false,
   },
   {
     name: 'Quiz Link',
