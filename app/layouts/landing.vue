@@ -54,19 +54,9 @@ const landingQuickLinks = [
 
 const landingSupportLinks = [
   {
-    label: 'Documentation',
-    icon: 'solar:book-2-linear',
-    href: 'https://docs.snaplink.app',
-  },
-  {
-    label: 'Changelog',
-    icon: 'solar:history-2-linear',
-    href: 'https://snaplink.app/changelog',
-  },
-  {
     label: 'Contact support',
     icon: 'solar:lifebuoy-linear',
-    to: '/dashboard/preferences',
+    to: '/support',
     query: { tab: 'support' },
   },
 ]
@@ -195,7 +185,7 @@ const menu = computed(() => [
 
             <div class="px-4 py-3">
               <p class="text-xs font-medium uppercase tracking-wide text-muted-500 dark:text-muted-400">
-                Resources
+                Support
               </p>
               <div class="mt-2 space-y-2">
                 <NuxtLink

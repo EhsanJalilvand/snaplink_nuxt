@@ -117,19 +117,9 @@ const quickLinks = [
 
 const supportActions = [
   {
-    label: 'Knowledge base',
-    icon: 'solar:book-2-linear',
-    href: 'https://docs.snaplink.app',
-  },
-  {
-    label: 'Status page',
-    icon: 'solar:antenna-2-bold-duotone',
-    href: 'https://status.snaplink.app',
-  },
-  {
     label: 'Contact support',
     icon: 'solar:lifebuoy-linear',
-    to: '/dashboard/preferences',
+    to: '/support',
     query: { tab: 'support' },
   },
 ]
