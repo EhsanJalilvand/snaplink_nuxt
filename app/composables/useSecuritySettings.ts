@@ -163,7 +163,7 @@ export const useSecuritySettings = () => {
     twoFactorLoading.value = true
     try {
       const response = await api.get<TwoFactorStatusResponse>('/auth/two-factor/status', {
-        base: 'gateway',
+        base: 'internal',
         requiresAuth: true,
         quiet: true,
         timeout: 7000,
@@ -208,7 +208,7 @@ export const useSecuritySettings = () => {
 
     try {
       const response = await api.put<SecurityPasswordResponse, SecurityPasswordFormValues>('/auth/change-password', values, {
-        base: 'gateway',
+        base: 'internal',
         requiresAuth: true,
         quiet: true,
         timeout: 7000,
@@ -266,7 +266,7 @@ export const useSecuritySettings = () => {
 
     try {
       const response = await api.post<TwoFactorSetupResponse>('/auth/two-factor/setup', {}, {
-        base: 'gateway',
+        base: 'internal',
         requiresAuth: true,
         quiet: true,
         timeout: 7000,
@@ -324,7 +324,7 @@ export const useSecuritySettings = () => {
         code: wizard.data.verifyCode,
         csrf_token: wizard.data.csrfToken,
       }, {
-        base: 'gateway',
+        base: 'internal',
         requiresAuth: true,
         quiet: true,
         timeout: 7000,
@@ -369,7 +369,7 @@ export const useSecuritySettings = () => {
       twoFactorLoading.value = true
       try {
         const response = await api.put('/auth/two-factor', { enabled: false }, {
-          base: 'gateway',
+          base: 'internal',
           requiresAuth: true,
           quiet: true,
           timeout: 7000,

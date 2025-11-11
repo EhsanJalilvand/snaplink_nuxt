@@ -68,7 +68,7 @@ export const useProfileForm = () => {
       }
 
       const response = await api.put<ProfileUpdateResponse, ProfileFormValues>('/auth/profile', payload, {
-        base: 'gateway',
+        base: 'internal',
         requiresAuth: true,
         quiet: true,
         timeout: 7000,

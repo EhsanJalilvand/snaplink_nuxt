@@ -35,7 +35,7 @@ export const useProfileSettings = () => {
 
     try {
       await api.put('/auth/profile', values, {
-        base: 'gateway',
+        base: 'internal',
         requiresAuth: true,
         quiet: true,
         retry: 0,

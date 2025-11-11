@@ -110,7 +110,7 @@ export const useSecurityPassword = () => {
       }
 
       const response = await api.put<PasswordChangeResponse, PasswordChangePayload>('/auth/change-password', requestBody, {
-        base: 'gateway',
+        base: 'internal',
         requiresAuth: true,
         quiet: true,
       })

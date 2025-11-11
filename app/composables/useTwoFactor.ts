@@ -72,7 +72,7 @@ export const useTwoFactor = () => {
     try {
       const response = await api.get<TwoFactorStatusResponse>('/auth/two-factor/status', {
         path: '/auth/two-factor/status',
-        base: 'gateway',
+        base: 'internal',
         requiresAuth: true,
         quiet: true,
         retry: 0,
@@ -105,7 +105,7 @@ export const useTwoFactor = () => {
     try {
       const response = await api.post<TwoFactorSetupResponse>('/auth/two-factor/setup', {}, {
         path: '/auth/two-factor/setup',
-        base: 'gateway',
+        base: 'internal',
         requiresAuth: true,
         quiet: true,
         timeout: 7000,
@@ -168,7 +168,7 @@ export const useTwoFactor = () => {
 
       const response = await api.post<TwoFactorVerifyResponse, TwoFactorVerifyPayload>('/auth/two-factor/verify', payload, {
         path: '/auth/two-factor/verify',
-        base: 'gateway',
+        base: 'internal',
         requiresAuth: true,
         quiet: true,
         timeout: 7000,
@@ -210,7 +210,7 @@ export const useTwoFactor = () => {
       const payload: TwoFactorTogglePayload = { enabled: false }
       const response = await api.put<TwoFactorToggleResponse, TwoFactorTogglePayload>('/auth/two-factor', payload, {
         path: '/auth/two-factor',
-        base: 'gateway',
+        base: 'internal',
         requiresAuth: true,
         quiet: true,
         timeout: 7000,

@@ -69,7 +69,8 @@ export const useAccountSettings = () => {
       const response = await api.get<{ success?: boolean; enabled?: boolean; updated_at?: string }>(
         '/auth/two-factor/status',
         {
-          base: 'gateway',
+          path: '/auth/two-factor/status',
+          base: 'internal',
           requiresAuth: true,
           quiet: true,
           retry: 0,
