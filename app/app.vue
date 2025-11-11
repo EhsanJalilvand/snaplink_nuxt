@@ -1,6 +1,9 @@
+<script setup lang="ts">
+import GlobalLoadingOverlay from '@/components/common/GlobalLoadingOverlay.vue'
+</script>
+
 <template>
   <BaseProviders class="bg-muted-100 dark:bg-muted-900">
-    <NuxtLoadingIndicator color="#6366f1" :height="3" />
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>
