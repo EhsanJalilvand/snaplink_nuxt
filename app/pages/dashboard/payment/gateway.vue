@@ -1,98 +1,58 @@
 <script setup lang="ts">
+import { callOnce, computed } from '#imports'
+
 definePageMeta({
   title: 'Merchant Gateway',
   layout: 'dashboard',
 })
 
-const gateways = ref([
-  {
-    id: 'gw-1',
-    name: 'Stripe US',
-    status: 'active',
-    mode: 'Live',
-    volumeShare: 45,
-    lastSync: '3 mins ago',
-    latency: '184 ms',
-  },
-  {
-    id: 'gw-2',
-    name: 'Adyen EU',
-    status: 'active',
-    mode: 'Live',
-    volumeShare: 28,
-    lastSync: '12 mins ago',
-    latency: '212 ms',
-  },
-  {
-    id: 'gw-3',
-    name: 'Circle USDC',
-    status: 'standby',
-    mode: 'Sandbox',
-    volumeShare: 17,
-    lastSync: '58 mins ago',
-    latency: '164 ms',
-  },
-])
+const {
+  connections,
+  webhook,
+  compliance,
+  report,
+  events,
+  isLoading,
+  error,
+  fetchGateway,
+  toggleConnection,
+  copyWebhookSecret,
+  validateAndSetWebhookUrl,
+  toggleWebhookEvent,
+  setWebhookRetries,
+  removeAllowedCurrency,
+  setRiskProfile,
+  setComplianceValue,
+} = usePaymentGateway()
 
-const webhook = ref({
-  url: 'https://api.snaplink.app/webhooks/payment',
-  secret: 'whsec_live_4f98d1f0c1',
-  retries: 3,
-  events: ['payment.success', 'payment.failed', 'payment.refunded'],
+await callOnce(() => fetchGateway())
+
+const webhookUrl = computed({
+  get: () => webhook.value.url,
+  set: (value: string) => validateAndSetWebhookUrl(value),
 })
 
-const compliance = ref({
-  maxTransaction: 25000,
-  dailyVolume: 250000,
-  allowedCurrencies: ['USD', 'EUR', 'USDC'],
-  riskProfile: 'Adaptive',
+const webhookRetries = computed({
+  get: () => webhook.value.retries,
+  set: (value: number) => setWebhookRetries(Number.isNaN(value) ? 0 : value),
 })
 
-const report = ref([
-  {
-    id: '#TX-8453',
-    gateway: 'Stripe US',
-    method: 'Card • Visa',
-    amount: 480.65,
-    currency: 'USD',
-    status: 'Captured',
-    createdAt: '2024-02-14T12:42:00Z',
-  },
-  {
-    id: '#TX-8452',
-    gateway: 'Adyen EU',
-    method: 'iDEAL',
-    amount: 189.0,
-    currency: 'EUR',
-    status: 'Settled',
-    createdAt: '2024-02-14T12:05:00Z',
-  },
-  {
-    id: '#TX-8451',
-    gateway: 'Circle USDC',
-    method: 'Crypto • USDC',
-    amount: 5600.0,
-    currency: 'USDC',
-    status: 'Pending',
-    createdAt: '2024-02-14T11:20:00Z',
-  },
-])
+const maxTransaction = computed({
+  get: () => compliance.value.maxTransaction,
+  set: (value: number) => setComplianceValue('maxTransaction', Number.isNaN(value) ? 0 : value),
+})
 
-const availableEvents = [
-  { label: 'Payment successful', value: 'payment.success' },
-  { label: 'Payment failed', value: 'payment.failed' },
-  { label: 'Payment pending', value: 'payment.pending' },
-  { label: 'Refund requested', value: 'payment.refund.requested' },
-  { label: 'Refund processed', value: 'payment.refunded' },
-  { label: 'Dispute opened', value: 'payment.dispute.opened' },
-]
+const dailyVolume = computed({
+  get: () => compliance.value.dailyVolume,
+  set: (value: number) => setComplianceValue('dailyVolume', Number.isNaN(value) ? 0 : value),
+})
 
-const toggleGateway = (gatewayId: string) => {
-  const target = gateways.value.find((gateway) => gateway.id === gatewayId)
-  if (target) {
-    target.status = target.status === 'active' ? 'standby' : 'active'
-  }
-}
+const riskProfile = computed({
+  get: () => compliance.value.riskProfile,
+  set: (profile: string) => setRiskProfile(profile),
+})
+
+const availableEvents = computed(() => events.value)
 </script>
 
 <template>
@@ -127,6 +87,20 @@ const toggleGateway = (gatewayId: string) => {
       </div>
     </div>
 
+    <BaseAlert
+      v-if="error"
+      color="warning"
+      variant="pastel"
+      class="rounded-2xl"
+    >
+      <template #title>
+        Using cached gateway configuration
+      </template>
+      <p class="text-sm text-muted-600 dark:text-muted-300">
+        {{ error }}
+      </p>
+    </BaseAlert>
+
     <div class="grid grid-cols-1 gap-6 xl:grid-cols-5">
       <!-- Manage gateways -->
       <BaseCard class="xl:col-span-3 p-6">
@@ -146,41 +120,53 @@ const toggleGateway = (gatewayId: string) => {
         </div>
 
         <div class="mt-6 space-y-4">
-          <BaseCard
-            v-for="gateway in gateways"
-            :key="gateway.id"
-            class="border border-muted-200/80 bg-white/80 p-4 dark:border-muted-700/60 dark:bg-muted-900/40"
+          <div
+            v-if="isLoading"
+            class="space-y-3"
           >
-            <div class="flex flex-wrap items-start justify-between gap-3">
-              <div class="space-y-1">
-                <BaseHeading as="h4" size="sm" weight="semibold" class="text-muted-900 dark:text-white">
-                  {{ gateway.name }}
-                </BaseHeading>
-                <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
-                  {{ gateway.mode }} mode • Last synced {{ gateway.lastSync }} • Latency {{ gateway.latency }}
-                </BaseText>
-              </div>
-
-              <div class="flex items-center gap-3">
-                <div class="text-right">
-                  <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
-                    Volume share
-                  </BaseText>
-                  <BaseHeading as="span" size="md" weight="bold" class="text-primary-500">
-                    {{ gateway.volumeShare }}%
+            <div
+              v-for="index in 3"
+              :key="`gateway-skeleton-${index}`"
+              class="h-24 rounded-xl border border-muted-200/70 bg-white/70 shadow-sm animate-pulse dark:border-muted-700/60 dark:bg-muted-900/40"
+            />
+          </div>
+          <template v-else>
+            <BaseCard
+              v-for="gateway in connections"
+              :key="gateway.id"
+              class="border border-muted-200/80 bg-white/80 p-4 dark:border-muted-700/60 dark:bg-muted-900/40"
+            >
+              <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="space-y-1">
+                  <BaseHeading as="h4" size="sm" weight="semibold" class="text-muted-900 dark:text-white">
+                    {{ gateway.name }}
                   </BaseHeading>
+                  <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
+                    {{ gateway.mode }} mode • Last synced {{ gateway.lastSync }} • Latency {{ gateway.latency }}
+                  </BaseText>
                 </div>
-                <BaseChip :color="gateway.status === 'active' ? 'success' : 'warning'" size="sm">
-                  {{ gateway.status }}
-                </BaseChip>
-                <BaseSwitchBall
-                  :model-value="gateway.status === 'active'"
-                  variant="primary"
-                  @update:modelValue="toggleGateway(gateway.id)"
-                />
+
+                <div class="flex items-center gap-3">
+                  <div class="text-right">
+                    <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
+                      Volume share
+                    </BaseText>
+                    <BaseHeading as="span" size="md" weight="bold" class="text-primary-500">
+                      {{ gateway.volumeShare }}%
+                    </BaseHeading>
+                  </div>
+                  <BaseChip :color="gateway.status === 'active' ? 'success' : 'warning'" size="sm">
+                    {{ gateway.status }}
+                  </BaseChip>
+                  <BaseSwitchBall
+                    :model-value="gateway.status === 'active'"
+                    variant="primary"
+                    @update:modelValue="toggleConnection(gateway.id)"
+                  />
+                </div>
               </div>
-            </div>
-          </BaseCard>
+            </BaseCard>
+          </template>
         </div>
       </BaseCard>
 
@@ -202,7 +188,7 @@ const toggleGateway = (gatewayId: string) => {
 
         <TairoFormGroup label="Callback URL">
           <TairoInput
-            v-model="webhook.url"
+            v-model="webhookUrl"
             type="url"
             icon="solar:globe-bold-duotone"
             rounded="lg"
@@ -212,7 +198,7 @@ const toggleGateway = (gatewayId: string) => {
         <TairoFormGroup label="Signing secret">
           <div class="flex items-center gap-2 rounded-xl border border-muted-200 bg-muted-50 px-4 py-3 font-mono text-xs text-muted-700 dark:border-muted-700 dark:bg-muted-800 dark:text-muted-200">
             <span>{{ webhook.secret }}</span>
-            <BaseButton size="sm" variant="ghost" icon class="rounded-full" @click="navigator.clipboard.writeText(webhook.secret)">
+            <BaseButton size="sm" variant="ghost" icon class="rounded-full" @click="copyWebhookSecret">
               <Icon name="ph:copy" class="size-4" />
             </BaseButton>
           </div>
@@ -220,7 +206,7 @@ const toggleGateway = (gatewayId: string) => {
 
         <TairoFormGroup label="Retry attempts">
           <TairoInput
-            v-model.number="webhook.retries"
+            v-model.number="webhookRetries"
             type="number"
             min="0"
             max="10"
@@ -241,13 +227,7 @@ const toggleGateway = (gatewayId: string) => {
                 :model-value="webhook.events.includes(event.value)"
                 variant="primary"
                 size="sm"
-                @update:modelValue="(checked) => {
-                  if (checked && !webhook.events.includes(event.value)) {
-                    webhook.events.push(event.value)
-                  } else if (!checked) {
-                    webhook.events = webhook.events.filter(item => item !== event.value)
-                  }
-                }"
+                @update:modelValue="(checked) => toggleWebhookEvent(event.value, checked)"
               />
             </label>
           </div>
@@ -268,7 +248,7 @@ const toggleGateway = (gatewayId: string) => {
 
         <TairoFormGroup label="Max transaction value">
           <TairoInput
-            v-model.number="compliance.maxTransaction"
+            v-model.number="maxTransaction"
             type="number"
             min="100"
             icon="solar:shield-check-linear"
@@ -278,7 +258,7 @@ const toggleGateway = (gatewayId: string) => {
 
         <TairoFormGroup label="Daily volume ceiling">
           <TairoInput
-            v-model.number="compliance.dailyVolume"
+            v-model.number="dailyVolume"
             type="number"
             min="1000"
             icon="solar:graph-linear"
@@ -298,7 +278,7 @@ const toggleGateway = (gatewayId: string) => {
               <button
                 type="button"
                 class="ml-1 text-muted-500 transition hover:text-danger-500"
-                @click="compliance.allowedCurrencies = compliance.allowedCurrencies.filter((item) => item !== currency)"
+                @click="removeAllowedCurrency(currency)"
               >
                 ×
               </button>
@@ -307,7 +287,7 @@ const toggleGateway = (gatewayId: string) => {
         </TairoFormGroup>
 
         <TairoFormGroup label="Risk management profile">
-          <TairoSelect v-model="compliance.riskProfile" icon="solar:aim-bold-duotone" rounded="lg">
+          <TairoSelect v-model="riskProfile" icon="solar:aim-bold-duotone" rounded="lg">
             <BaseSelectItem value="Adaptive">Adaptive (AI-driven)</BaseSelectItem>
             <BaseSelectItem value="Strict">Strict (manual escalation)</BaseSelectItem>
             <BaseSelectItem value="Custom">Custom (rule builder)</BaseSelectItem>

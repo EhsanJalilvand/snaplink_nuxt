@@ -1,83 +1,62 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useNuiToasts } from '#imports'
+import { callOnce } from '#imports'
 
-const toaster = useNuiToasts()
+import { usePreferencesAppearance } from '~/composables/usePreferencesAppearance'
 
-// Appearance settings state
-const settings = ref({
-  primaryColor: '#6366f1',
-  theme: 'light',
-  fontFamily: 'Inter',
-  borderRadius: 'md',
-  animationSpeed: 'normal',
-})
+const {
+  settings,
+  isLoading,
+  isSaving,
+  error,
+  colorPresets,
+  themeOptions,
+  fontOptions,
+  radiusOptions,
+  animationOptions,
+  fetchSettings,
+  saveSettings,
+  updateSetting,
+} = usePreferencesAppearance()
 
-const colorPresets = [
-  { name: 'Primary', value: '#6366f1' },
-  { name: 'Blue', value: '#3b82f6' },
-  { name: 'Purple', value: '#8b5cf6' },
-  { name: 'Pink', value: '#ec4899' },
-  { name: 'Green', value: '#10b981' },
-  { name: 'Orange', value: '#f59e0b' },
-]
+await callOnce(() => fetchSettings())
 
-const themeOptions = [
-  { label: 'Light', value: 'light' },
-  { label: 'Dark', value: 'dark' },
-  { label: 'Auto', value: 'auto' },
-]
+const handlePresetClick = (value: string) => {
+  updateSetting('primaryColor', value)
+}
 
-const fontFamilyOptions = [
-  { label: 'Inter', value: 'Inter' },
-  { label: 'Roboto', value: 'Roboto' },
-  { label: 'Poppins', value: 'Poppins' },
-  { label: 'Open Sans', value: 'Open Sans' },
-]
+const handleThemeSelect = (value: string) => {
+  updateSetting('theme', value as typeof settings.value.theme)
+}
 
-const borderRadiusOptions = [
-  { label: 'None', value: 'none' },
-  { label: 'Small', value: 'sm' },
-  { label: 'Medium', value: 'md' },
-  { label: 'Large', value: 'lg' },
-]
+const handleBorderRadius = (value: string) => {
+  updateSetting('borderRadius', value as typeof settings.value.borderRadius)
+}
 
-const animationSpeedOptions = [
-  { label: 'Fast', value: 'fast' },
-  { label: 'Normal', value: 'normal' },
-  { label: 'Slow', value: 'slow' },
-]
-
-const isSaving = ref(false)
+const handleAnimationSpeed = (value: string) => {
+  updateSetting('animationSpeed', value as typeof settings.value.animationSpeed)
+}
 
 const handleSave = async () => {
-  isSaving.value = true
-  try {
-    // TODO: API call to save appearance settings
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    toaster.add({
-      title: 'Success',
-      description: 'Appearance settings saved successfully!',
-      icon: 'ph:check',
-      progress: true,
-    })
-  } catch (error: any) {
-    toaster.add({
-      title: 'Error',
-      description: error.message || 'Failed to save appearance settings',
-      icon: 'lucide:alert-triangle',
-      color: 'danger',
-      progress: true,
-    })
-  } finally {
-    isSaving.value = false
-  }
+  await saveSettings()
 }
 </script>
 
 <template>
   <div class="space-y-6">
+    <BaseAlert
+      v-if="error"
+      color="warning"
+      variant="pastel"
+      class="rounded-2xl"
+    >
+      <template #title>
+        Using cached appearance presets
+      </template>
+      <p class="text-sm text-muted-600 dark:text-muted-300">
+        {{ error }}
+      </p>
+    </BaseAlert>
+
     <!-- Color Settings -->
     <div class="bg-white dark:bg-muted-800 rounded-lg border border-muted-200 dark:border-muted-700 p-6">
       <div class="mb-6">
@@ -114,7 +93,7 @@ const handleSave = async () => {
                       : 'border-muted-300 dark:border-muted-600 hover:scale-105'
                   "
                   :style="{ backgroundColor: preset.value }"
-                  @click="settings.primaryColor = preset.value"
+                  @click="handlePresetClick(preset.value)"
                 >
                   <span class="sr-only">{{ preset.name }}</span>
                 </button>
@@ -125,6 +104,7 @@ const handleSave = async () => {
                 v-model="settings.primaryColor"
                 type="color"
                 class="size-10 rounded-lg border border-muted-300 dark:border-muted-600 cursor-pointer"
+                :disabled="isLoading"
               >
               <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
                 {{ settings.primaryColor }}
@@ -149,7 +129,8 @@ const handleSave = async () => {
                   ? 'border-primary-600 dark:border-primary-400 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
                   : 'border-muted-300 dark:border-muted-600 text-muted-600 dark:text-muted-400 hover:bg-muted-50 dark:hover:bg-muted-700'
               "
-              @click="settings.theme = option.value"
+              :disabled="isLoading"
+              @click="handleThemeSelect(option.value)"
             >
               {{ option.label }}
             </button>
@@ -186,7 +167,7 @@ const handleSave = async () => {
             rounded="lg"
           >
             <BaseSelectItem
-              v-for="option in fontFamilyOptions"
+              v-for="option in fontOptions"
               :key="option.value"
               :value="option.value"
             >
@@ -202,7 +183,7 @@ const handleSave = async () => {
         >
           <div class="flex gap-2">
             <button
-              v-for="option in borderRadiusOptions"
+              v-for="option in radiusOptions"
               :key="option.value"
               type="button"
               class="px-4 py-2 rounded-lg border transition-all text-sm font-medium"
@@ -211,7 +192,8 @@ const handleSave = async () => {
                   ? 'border-primary-600 dark:border-primary-400 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
                   : 'border-muted-300 dark:border-muted-600 text-muted-600 dark:text-muted-400 hover:bg-muted-50 dark:hover:bg-muted-700'
               "
-              @click="settings.borderRadius = option.value"
+              :disabled="isLoading"
+              @click="handleBorderRadius(option.value)"
             >
               {{ option.label }}
             </button>
@@ -225,7 +207,7 @@ const handleSave = async () => {
         >
           <div class="flex gap-2">
             <button
-              v-for="option in animationSpeedOptions"
+              v-for="option in animationOptions"
               :key="option.value"
               type="button"
               class="px-4 py-2 rounded-lg border transition-all text-sm font-medium"
@@ -234,7 +216,8 @@ const handleSave = async () => {
                   ? 'border-primary-600 dark:border-primary-400 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
                   : 'border-muted-300 dark:border-muted-600 text-muted-600 dark:text-muted-400 hover:bg-muted-50 dark:hover:bg-muted-700'
               "
-              @click="settings.animationSpeed = option.value"
+              :disabled="isLoading"
+              @click="handleAnimationSpeed(option.value)"
             >
               {{ option.label }}
             </button>
@@ -248,7 +231,7 @@ const handleSave = async () => {
       <BaseButton
         variant="primary"
         :loading="isSaving"
-        :disabled="isSaving"
+        :disabled="isSaving || isLoading"
         @click="handleSave"
       >
         <Icon name="ph:check" class="size-4" />

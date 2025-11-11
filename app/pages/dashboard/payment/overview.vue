@@ -1,27 +1,45 @@
 <script setup lang="ts">
+import { callOnce, computed } from '#imports'
+
 definePageMeta({
   title: 'Payment Overview',
   layout: 'dashboard',
 })
 
 const router = useRouter()
+const {
+  overview,
+  isLoadingOverview,
+  overviewError,
+  revenueByPeriod,
+  statusTotal,
+  fetchOverview,
+} = usePayments()
+
+callOnce(() => fetchOverview())
 
 const handleAction = (action: 'create-link' | 'open-gateway' | 'open-payouts') => {
   switch (action) {
     case 'create-link':
-      router.push({
+      return router.push({
         path: '/dashboard/payment/links',
         query: { wizard: 'create' },
       })
-      break
     case 'open-gateway':
-      router.push('/dashboard/payment/gateway')
-      break
+      return router.push('/dashboard/payment/gateway')
     case 'open-payouts':
-      router.push('/dashboard/payment/overview#payouts')
-      break
+      return router.push('/dashboard/payment/overview#payouts')
+    default:
+      return
   }
 }
+
+const transactionInsights = computed(() => overview.value.insights ?? [])
+const quickActions = computed(() => overview.value.quickActions ?? [])
+const recentActivity = computed(() => overview.value.activities ?? [])
+const paymentAlerts = computed(() => overview.value.alerts ?? [])
+const conversionMetrics = computed(() => overview.value.conversions ?? [])
+const hasOverviewError = computed(() => Boolean(overviewError.value))
 </script>
 
 <template>
@@ -59,27 +77,69 @@ const handleAction = (action: 'create-link' | 'open-gateway' | 'open-payouts') =
       </div>
     </div>
 
-    <PaymentSummaryCards />
+    <BaseAlert
+      v-if="hasOverviewError"
+      color="warning"
+      variant="pastel"
+      class="rounded-2xl"
+    >
+      <template #title>
+        Using cached payment telemetry
+      </template>
+      <p class="text-sm text-muted-600 dark:text-muted-300">
+        {{ overviewError }}
+      </p>
+    </BaseAlert>
+
+    <PaymentSummaryCards
+      :summary="overview.summary"
+      :trends="overview.trends"
+      :is-loading="isLoadingOverview"
+    />
 
     <div class="space-y-6">
-      <PaymentTransactionStatus />
-      <PaymentRevenueChart />
+      <PaymentTransactionStatus
+        :status="overview.status"
+        :insights="transactionInsights"
+        :total="statusTotal"
+        :is-loading="isLoadingOverview"
+      />
+      <PaymentRevenueChart
+        :datasets="revenueByPeriod"
+        :metrics="overview.revenueMetrics"
+        :is-loading="isLoadingOverview"
+      />
     </div>
 
     <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
-      <PaymentTopPerformance class="xl:col-span-2" />
+      <PaymentTopPerformance
+        class="xl:col-span-2"
+        :items="overview.performance"
+        :is-loading="isLoadingOverview"
+      />
       <div class="space-y-6 xl:col-span-1">
         <PaymentQuickActions
+          :actions="quickActions"
+          :is-loading="isLoadingOverview"
           @create-link="handleAction('create-link')"
           @open-gateway="handleAction('open-gateway')"
           @open-payouts="handleAction('open-payouts')"
         />
-        <PaymentRecentActivity />
-        <PaymentAlertsSummary />
+        <PaymentRecentActivity
+          :activities="recentActivity"
+          :is-loading="isLoadingOverview"
+        />
+        <PaymentAlertsSummary
+          :alerts="paymentAlerts"
+          :is-loading="isLoadingOverview"
+        />
       </div>
     </div>
 
-    <PaymentConversionMetrics />
+    <PaymentConversionMetrics
+      :metrics="conversionMetrics"
+      :is-loading="isLoadingOverview"
+    />
   </div>
 </template>
 

@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { nextTick, ref } from 'vue'
-import { definePageMeta, navigateTo, useAuth, useNuiToasts } from '#imports'
+import { definePageMeta } from '#imports'
 import CreateLinkWizard from '~/components/url-shortener/CreateLinkWizard.vue'
 import LandingHeroIntro from '~/components/landing/HeroIntro.vue'
 import LandingHeroQuickCreateCard from '~/components/landing/HeroQuickCreateCard.vue'
@@ -9,81 +8,21 @@ import LandingCapabilitiesGrid from '~/components/landing/CapabilitiesGrid.vue'
 import LandingPricingShowcase from '~/components/landing/PricingShowcase.vue'
 import LandingApiSample from '~/components/landing/ApiSample.vue'
 import LandingEarlyAccessCta from '~/components/landing/EarlyAccessCta.vue'
+import { useLandingHome } from '~/composables/useLandingHome'
 
 definePageMeta({
   title: 'SnapLink',
   layout: 'landing',
 })
 
-const { isAuthenticated } = useAuth()
-const toaster = useNuiToasts()
-
-const quickLinkUrl = ref('')
-const showCreateLinkWizard = ref(false)
-const createLinkWizardRef = ref<InstanceType<typeof CreateLinkWizard> | null>(null)
-
-const toasterMessages = {
-  enterUrl: {
-    title: 'Enter a URL',
-    description: 'Paste a link to launch the creation wizard.',
-    icon: 'solar:link-broken-linear',
-    color: 'warning',
-  },
-  invalidUrl: {
-    title: 'Invalid URL',
-    description: 'Please enter a valid address (https://example.com).',
-    icon: 'solar:danger-triangle-linear',
-    color: 'danger',
-  },
-  authRequired: {
-    title: 'Sign in to continue',
-    description: 'Create an account or log in to generate short links instantly.',
-    icon: 'solar:lock-keyhole-linear',
-  },
-}
-
-const handleQuickCreate = async () => {
-  const trimmed = quickLinkUrl.value.trim()
-
-  if (!trimmed) {
-    toaster.add({
-      ...toasterMessages.enterUrl,
-      progress: true,
-    })
-    return
-  }
-
-  try {
-    new URL(trimmed)
-  } catch (error) {
-    toaster.add({
-      ...toasterMessages.invalidUrl,
-      progress: true,
-    })
-    return
-  }
-
-  if (!isAuthenticated.value) {
-    toaster.add({
-      ...toasterMessages.authRequired,
-      progress: true,
-    })
-    await navigateTo('/auth/login?returnTo=/dashboard/url-shortener/links')
-    return
-  }
-
-  showCreateLinkWizard.value = true
-  await nextTick()
-  createLinkWizardRef.value?.setOriginalUrl(trimmed)
-}
-
-const handleWizardClose = () => {
-  showCreateLinkWizard.value = false
-}
-
-const handleWizardCreated = () => {
-  quickLinkUrl.value = ''
-}
+const {
+  quickLinkUrl,
+  showCreateWizard,
+  createLinkWizardRef,
+  handleQuickCreate,
+  handleWizardClose,
+  handleWizardCreated,
+} = useLandingHome()
 </script>
 
 <template>
@@ -117,7 +56,7 @@ const handleWizardCreated = () => {
 
     <CreateLinkWizard
       ref="createLinkWizardRef"
-      v-model:open="showCreateLinkWizard"
+      v-model:open="showCreateWizard"
       @close="handleWizardClose"
       @created="handleWizardCreated"
     />

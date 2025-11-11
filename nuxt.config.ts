@@ -74,6 +74,9 @@ export default defineNuxtConfig({
     // Avatar Storage
     avatarStoragePath: process.env.AVATAR_STORAGE_PATH || 'avatars',
     avatarBaseUrl: process.env.AVATAR_BASE_URL || '/uploads/avatars',
+    // API Endpoints
+    apiGatewayBaseUrl: process.env.API_GATEWAY_BASE_URL || process.env.NUXT_API_GATEWAY_BASE_URL || 'https://api.snaplink.local',
+    apiInternalBaseUrl: process.env.API_INTERNAL_BASE_URL || process.env.NUXT_API_INTERNAL_BASE_URL || '/api',
     
     // Public keys (exposed to client-side)
     public: {
@@ -86,6 +89,8 @@ export default defineNuxtConfig({
       // OAuth2
       oauth2ClientId: process.env.OAUTH2_CLIENT_ID || 'snapplink-frontend',
       oauth2RedirectUri: process.env.OAUTH2_REDIRECT_URI || 'http://localhost:3000/auth/callback',
+      apiGatewayBaseUrl: process.env.NUXT_PUBLIC_API_GATEWAY_BASE_URL || process.env.API_GATEWAY_BASE_URL || 'https://api.snaplink.local',
+      apiInternalBaseUrl: process.env.NUXT_PUBLIC_API_INTERNAL_BASE_URL || process.env.API_INTERNAL_BASE_URL || '/api',
     },
   },
 

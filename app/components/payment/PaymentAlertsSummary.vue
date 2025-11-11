@@ -1,45 +1,33 @@
 <script setup lang="ts">
-const alerts = ref([
-  {
-    id: 'alert-1',
-    title: 'Gateway failover engaged',
-    description: 'Stripe latency exceeded 2.4s. Switched to Adyen backup route.',
-    severity: 'warning',
-    time: '3 mins ago',
-  },
-  {
-    id: 'alert-2',
-    title: 'Unusual refund burst detected',
-    description: '7 refunds triggered within 15 minutes on SnapLink Pro links.',
-    severity: 'danger',
-    time: '18 mins ago',
-  },
-  {
-    id: 'alert-3',
-    title: 'Webhook retries occurring',
-    description: '3 webhooks failed delivery to https://api.merchant.app/webhooks.',
-    severity: 'info',
-    time: '25 mins ago',
-  },
-])
+import type { PaymentAlertItem } from '~/types/payments'
 
-const severityConfig: Record<string, { icon: string; badge: string; chip: string }> = {
+interface PaymentAlertsSummaryProps {
+  alerts?: PaymentAlertItem[]
+  isLoading?: boolean
+}
+
+const props = withDefaults(defineProps<PaymentAlertsSummaryProps>(), {
+  alerts: () => [],
+  isLoading: false,
+})
+
+const severityConfig: Record<PaymentAlertItem['severity'], { badge: string; chip: string }> = {
   info: {
-    icon: 'solar:info-circle-bold-duotone',
     badge: 'bg-info-100 text-info-600 dark:bg-info-900/30 dark:text-info-300',
     chip: 'info',
   },
   warning: {
-    icon: 'solar:warning-triangle-bold-duotone',
     badge: 'bg-warning-100 text-warning-600 dark:bg-warning-900/30 dark:text-warning-300',
     chip: 'warning',
   },
   danger: {
-    icon: 'solar:danger-circle-bold-duotone',
     badge: 'bg-danger-100 text-danger-600 dark:bg-danger-900/30 dark:text-danger-300',
     chip: 'danger',
   },
 }
+
+const badgeClass = (severity: PaymentAlertItem['severity']) => severityConfig[severity]?.badge ?? severityConfig.info.badge
+const chipColor = (severity: PaymentAlertItem['severity']) => severityConfig[severity]?.chip ?? 'info'
 </script>
 
 <template>
@@ -70,14 +58,14 @@ const severityConfig: Record<string, { icon: string; badge: string; chip: string
 
     <div class="mt-6 space-y-4">
       <BaseCard
-        v-for="alert in alerts"
+        v-for="alert in props.alerts"
         :key="alert.id"
         class="border border-muted-200 bg-muted-50/70 p-4 dark:border-muted-700/60 dark:bg-muted-900/40"
       >
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div class="flex items-start gap-3">
-            <div :class="['flex size-10 items-center justify-center rounded-xl', severityConfig[alert.severity].badge]">
-              <Icon :name="severityConfig[alert.severity].icon" class="size-5" />
+            <div :class="['flex size-10 items-center justify-center rounded-xl', badgeClass(alert.severity)]">
+              <Icon :name="alert.icon" class="size-5" />
             </div>
             <div>
               <BaseHeading
@@ -86,17 +74,26 @@ const severityConfig: Record<string, { icon: string; badge: string; chip: string
                 weight="semibold"
                 class="text-muted-900 dark:text-white"
               >
-                {{ alert.title }}
+                <span v-if="isLoading" class="block h-5 w-48 animate-pulse rounded bg-muted-200/60 dark:bg-muted-800/60" />
+                <template v-else>
+                  {{ alert.title }}
+                </template>
               </BaseHeading>
               <BaseParagraph size="xs" class="mt-1 text-muted-500 dark:text-muted-400">
-                {{ alert.description }}
+                <span v-if="isLoading" class="block h-4 w-full animate-pulse rounded bg-muted-200/40 dark:bg-muted-800/40" />
+                <template v-else>
+                  {{ alert.description }}
+                </template>
               </BaseParagraph>
               <div class="mt-3 flex items-center gap-2">
-                <BaseChip :color="severityConfig[alert.severity].chip" size="xs">
+                <BaseChip :color="chipColor(alert.severity)" size="xs">
                   {{ alert.severity }}
                 </BaseChip>
                 <BaseText size="xs" class="text-muted-400">
-                  {{ alert.time }}
+                  <span v-if="isLoading" class="block h-4 w-20 animate-pulse rounded bg-muted-200/40 dark:bg-muted-800/40" />
+                  <template v-else>
+                    {{ alert.timestamp }}
+                  </template>
                 </BaseText>
               </div>
             </div>

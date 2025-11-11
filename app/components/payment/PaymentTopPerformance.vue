@@ -1,59 +1,23 @@
 <script setup lang="ts">
+import { computed, ref } from '#imports'
+import type { PaymentPerformanceItem } from '~/types/payments'
+
 const activeTab = ref<'links' | 'products'>('links')
 
-const topLinks = ref([
-  {
-    id: 'link-1',
-    label: 'snap.link/pay/launch',
-    revenue: 12840.54,
-    conversion: 68.2,
-    payments: 324,
-    status: 'Live',
-  },
-  {
-    id: 'link-2',
-    label: 'snap.link/pay/pro',
-    revenue: 9720.12,
-    conversion: 62.4,
-    payments: 281,
-    status: 'Live',
-  },
-  {
-    id: 'link-3',
-    label: 'snap.link/pay/preorder',
-    revenue: 6840.33,
-    conversion: 55.9,
-    payments: 198,
-    status: 'Paused',
-  },
-])
+interface PaymentTopPerformanceProps {
+  items?: PaymentPerformanceItem[]
+  isLoading?: boolean
+}
 
-const topProducts = ref([
-  {
-    id: 'prod-1',
-    name: 'Starter Subscription',
-    sku: 'SUB-STARTER',
-    revenue: 18240.12,
-    recurring: true,
-    churn: 1.8,
-  },
-  {
-    id: 'prod-2',
-    name: 'Grow Bundle',
-    sku: 'BNDL-GROW',
-    revenue: 14820.44,
-    recurring: false,
-    churn: 3.2,
-  },
-  {
-    id: 'prod-3',
-    name: 'Enterprise Escrow',
-    sku: 'ESCROW-ENT',
-    revenue: 11240.88,
-    recurring: false,
-    churn: 0.6,
-  },
-])
+const props = withDefaults(defineProps<PaymentTopPerformanceProps>(), {
+  items: () => [],
+  isLoading: false,
+})
+
+const topLinks = computed(() => props.items.filter((item) => item.type === 'link'))
+const topProducts = computed(() => props.items.filter((item) => item.type === 'product'))
+
+const formatCurrency = (value: number) => value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 </script>
 
 <template>
@@ -114,10 +78,16 @@ const topProducts = ref([
                 weight="semibold"
                 class="text-muted-900 dark:text-white"
               >
-                {{ link.label }}
+                <span v-if="isLoading" class="block h-5 w-44 animate-pulse rounded bg-muted-200/60 dark:bg-muted-800/60" />
+                <template v-else>
+                  {{ link.name }}
+                </template>
               </BaseHeading>
               <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
-                {{ link.payments.toLocaleString() }} payments • {{ link.conversion }}% conversion
+                <span v-if="isLoading" class="block h-4 w-40 animate-pulse rounded bg-muted-200/50 dark:bg-muted-800/50" />
+                <template v-else>
+                  {{ link.payments?.toLocaleString() ?? '—' }} payments • {{ link.conversionRate }}% conversion
+                </template>
               </BaseText>
             </div>
           </div>
@@ -132,14 +102,14 @@ const topProducts = ref([
                 weight="bold"
                 class="text-muted-900 dark:text-white"
               >
-                {{ link.revenue.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) }}
+                <span v-if="isLoading" class="block h-6 w-20 animate-pulse rounded bg-muted-200/70 dark:bg-muted-800/60" />
+                <template v-else>
+                  {{ formatCurrency(link.revenue) }}
+                </template>
               </BaseHeading>
             </div>
-            <BaseChip
-              :color="link.status === 'Live' ? 'success' : 'warning'"
-              size="sm"
-            >
-              {{ link.status }}
+            <BaseChip :color="link.status === 'Live' ? 'success' : 'warning'" size="sm">
+              {{ link.status ?? 'Active' }}
             </BaseChip>
             <div class="flex items-center gap-2">
               <BaseButton size="sm" variant="ghost" icon class="rounded-full" to="/dashboard/payment/links">
@@ -172,10 +142,16 @@ const topProducts = ref([
                 weight="semibold"
                 class="text-muted-900 dark:text-white"
               >
-                {{ product.name }}
+                <span v-if="isLoading" class="block h-5 w-44 animate-pulse rounded bg-muted-200/60 dark:bg-muted-800/60" />
+                <template v-else>
+                  {{ product.name }}
+                </template>
               </BaseHeading>
               <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
-                SKU: {{ product.sku }}
+                <span v-if="isLoading" class="block h-4 w-32 animate-pulse rounded bg-muted-200/50 dark:bg-muted-800/50" />
+                <template v-else>
+                  SKU: {{ product.sku ?? 'N/A' }}
+                </template>
               </BaseText>
             </div>
           </div>
@@ -190,15 +166,15 @@ const topProducts = ref([
                 weight="bold"
                 class="text-muted-900 dark:text-white"
               >
-                {{ product.revenue.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) }}
+                <span v-if="isLoading" class="block h-6 w-20 animate-pulse rounded bg-muted-200/70 dark:bg-muted-800/60" />
+                <template v-else>
+                  {{ formatCurrency(product.revenue) }}
+                </template>
               </BaseHeading>
             </div>
-            <BaseChip :color="product.recurring ? 'primary' : 'muted'" size="sm">
-              {{ product.recurring ? 'Recurring' : 'One-time' }}
+            <BaseChip :color="product.trend?.includes('-') ? 'danger' : 'primary'" size="sm">
+              {{ product.trend }}
             </BaseChip>
-            <BaseText size="xs" class="text-danger-500">
-              {{ product.churn }}% churn
-            </BaseText>
           </div>
         </div>
       </BaseCard>

@@ -1,56 +1,53 @@
 <script setup lang="ts">
+import { callOnce, definePageMeta } from '#imports'
+import { usePaymentNotifications } from '~/composables/usePaymentNotifications'
+
 definePageMeta({
   title: 'Payment Notifications',
   layout: 'dashboard',
 })
 
-const channels = ref({
-  email: true,
-  push: true,
-  sms: false,
-  webhook: true,
-})
+const {
+  channels,
+  events,
+  templates,
+  previewSuccess,
+  previewFailed,
+  isLoading,
+  error,
+  fetchNotifications,
+  setChannel,
+  setEvent,
+  updateTemplate,
+  saveConfiguration,
+} = usePaymentNotifications()
 
-const events = ref({
-  success: true,
-  failed: true,
-  refund: true,
-  dispute: false,
-})
+await callOnce(() => fetchNotifications())
 
-const templates = ref({
-  success: `Hi {{customer.name}},
+const templateTokens = ['{{customer.name}}', '{{payment.id}}', '{{payment.amount}}', '{{payment.currency}}']
 
-Payment {{payment.id}} for {{payment.amount}} {{payment.currency}} is complete.
+function handleChannelChange(channel: keyof typeof channels.value, value: boolean) {
+  setChannel(channel, value)
+}
 
-Thanks for trusting SnapLink.`,
-  failed: `Heads up team,
+function handleEventChange(eventKey: keyof typeof events.value, value: boolean) {
+  setEvent(eventKey, value)
+}
 
-Payment {{payment.id}} for {{payment.amount}} {{payment.currency}} failed due to {{payment.error}}.
+function handleTemplateInput(key: keyof typeof templates.value, event: Event) {
+  const target = event.target as HTMLTextAreaElement | null
+  if (!target) {
+    return
+  }
+  updateTemplate(key, target.value)
+}
 
-Review in the payment console.`,
-})
+const channelUpdater = (channel: keyof typeof channels.value) => (value: boolean) => {
+  handleChannelChange(channel, value)
+}
 
-const previewContext = computed(() => ({
-  customer: {
-    name: 'Ava Stone',
-    email: 'ava@snaplink.app',
-  },
-  payment: {
-    id: 'TX-8453',
-    amount: '420.00',
-    currency: 'USD',
-    error: 'Insufficient funds',
-  },
-}))
-
-const formatPreview = (template: string) => {
-  return template
-    .replace(/{{customer.name}}/g, previewContext.value.customer.name)
-    .replace(/{{payment.id}}/g, previewContext.value.payment.id)
-    .replace(/{{payment.amount}}/g, previewContext.value.payment.amount)
-    .replace(/{{payment.currency}}/g, previewContext.value.payment.currency)
-    .replace(/{{payment.error}}/g, previewContext.value.payment.error)
+const eventUpdater = (eventKey: keyof typeof events.value) => (value: boolean) => {
+  handleEventChange(eventKey, value)
 }
 </script>
 
@@ -75,12 +72,26 @@ const formatPreview = (template: string) => {
           <Icon name="ph:share-network" class="size-4" />
           Sync to Slack
         </BaseButton>
-        <BaseButton size="sm" variant="primary">
+        <BaseButton size="sm" variant="primary" :loading="isLoading" @click="saveConfiguration">
           <Icon name="ph:floppy-disk" class="size-4" />
           Save configuration
         </BaseButton>
       </div>
     </div>
+
+    <BaseAlert
+      v-if="error"
+      color="warning"
+      variant="pastel"
+      class="rounded-2xl"
+    >
+      <template #title>
+        Using cached notification settings
+      </template>
+      <p class="text-sm text-muted-600 dark:text-muted-300">
+        {{ error }}
+      </p>
+    </BaseAlert>
 
     <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
       <BaseCard class="xl:col-span-1 flex flex-col gap-4 p-6">
@@ -100,7 +111,7 @@ const formatPreview = (template: string) => {
               Deliver to finance@snaplink.app
             </BaseParagraph>
           </div>
-          <BaseSwitchBall v-model="channels.email" variant="primary" />
+          <BaseSwitchBall :model-value="channels.email" variant="primary" @update:model-value="channelUpdater('email')" />
         </label>
 
         <label class="flex items-center justify-between rounded-xl border border-muted-200 bg-muted-50 px-4 py-3 text-sm font-medium dark:border-muted-700 dark:bg-muted-800">
@@ -110,7 +121,7 @@ const formatPreview = (template: string) => {
               iOS / Android admin console
             </BaseParagraph>
           </div>
-          <BaseSwitchBall v-model="channels.push" variant="primary" />
+          <BaseSwitchBall :model-value="channels.push" variant="primary" @update:model-value="channelUpdater('push')" />
         </label>
 
         <label class="flex items-center justify-between rounded-xl border border-muted-200 bg-muted-50 px-4 py-3 text-sm font-medium dark:border-muted-700 dark:bg-muted-800">
@@ -120,7 +131,7 @@ const formatPreview = (template: string) => {
               High priority escalations only
             </BaseParagraph>
           </div>
-          <BaseSwitchBall v-model="channels.sms" variant="primary" />
+          <BaseSwitchBall :model-value="channels.sms" variant="primary" @update:model-value="channelUpdater('sms')" />
         </label>
 
         <label class="flex items-center justify-between rounded-xl border border-muted-200 bg-muted-50 px-4 py-3 text-sm font-medium dark:border-muted-700 dark:bg-muted-800">
@@ -130,7 +141,7 @@ const formatPreview = (template: string) => {
               POST to https://api.snaplink.app/hooks
             </BaseParagraph>
           </div>
-          <BaseSwitchBall v-model="channels.webhook" variant="primary" />
+          <BaseSwitchBall :model-value="channels.webhook" variant="primary" @update:model-value="channelUpdater('webhook')" />
         </label>
       </BaseCard>
 
@@ -147,19 +158,19 @@ const formatPreview = (template: string) => {
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
           <label class="flex items-center justify-between rounded-xl border border-success-200 bg-success-50 px-4 py-3 text-sm font-medium dark:border-success-900/40 dark:bg-success-900/20">
             <span>Payment successful</span>
-            <BaseSwitchBall v-model="events.success" variant="primary" />
+            <BaseSwitchBall :model-value="events.success" variant="primary" @update:model-value="eventUpdater('success')" />
           </label>
           <label class="flex items-center justify-between rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm font-medium dark:border-danger-900/40 dark:bg-danger-900/20">
             <span>Payment failed</span>
-            <BaseSwitchBall v-model="events.failed" variant="primary" />
+            <BaseSwitchBall :model-value="events.failed" variant="primary" @update:model-value="eventUpdater('failed')" />
           </label>
           <label class="flex items-center justify-between rounded-xl border border-info-200 bg-info-50 px-4 py-3 text-sm font-medium dark:border-info-900/40 dark:bg-info-900/20">
             <span>Refund issued</span>
-            <BaseSwitchBall v-model="events.refund" variant="primary" />
+            <BaseSwitchBall :model-value="events.refund" variant="primary" @update:model-value="eventUpdater('refund')" />
           </label>
           <label class="flex items-center justify-between rounded-xl border border-warning-200 bg-warning-50 px-4 py-3 text-sm font-medium dark:border-warning-900/30 dark:bg-warning-900/20">
             <span>Dispute opened</span>
-            <BaseSwitchBall v-model="events.dispute" variant="primary" />
+            <BaseSwitchBall :model-value="events.dispute" variant="primary" @update:model-value="eventUpdater('dispute')" />
           </label>
         </div>
 
@@ -169,16 +180,17 @@ const formatPreview = (template: string) => {
               Success template (Email / Push)
             </BaseHeading>
             <textarea
-              v-model="templates.success"
+              :value="templates.success"
               rows="8"
               class="w-full rounded-xl border border-muted-200 bg-white px-4 py-3 font-mono text-xs text-muted-800 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:border-muted-700 dark:bg-muted-900 dark:text-muted-100"
+              @input="handleTemplateInput.bind(null, 'success')"
             />
             <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400">
               Available tokens:
-              {{ '{' }}{{ '{' }}customer.name{{ '}' }}{{ '}' }},
-              {{ '{' }}{{ '{' }}payment.id{{ '}' }}{{ '}' }},
-              {{ '{' }}{{ '{' }}payment.amount{{ '}' }}{{ '}' }},
-              {{ '{' }}{{ '{' }}payment.currency{{ '}' }}{{ '}' }}.
+              <span v-for="(token, index) in templateTokens" :key="token">
+                <code class="rounded bg-muted-100 px-1 py-0.5 text-[11px] font-mono text-muted-600 dark:bg-muted-800 dark:text-muted-300">{{ token }}</code>
+                <span v-if="index < templateTokens.length - 1">, </span>
+              </span>
             </BaseParagraph>
           </div>
           <div class="flex flex-col gap-3">
@@ -186,9 +198,10 @@ const formatPreview = (template: string) => {
               Failure template
             </BaseHeading>
             <textarea
-              v-model="templates.failed"
+              :value="templates.failed"
               rows="8"
               class="w-full rounded-xl border border-muted-200 bg-white px-4 py-3 font-mono text-xs text-muted-800 focus:outline-none focus:ring-2 focus:ring-danger-500 dark:border-muted-700 dark:bg-muted-900 dark:text-muted-100"
+              @input="handleTemplateInput.bind(null, 'failed')"
             />
             <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400">
               Include escalation details for refund, failed, or dispute events.
@@ -202,14 +215,14 @@ const formatPreview = (template: string) => {
               Success preview
             </BaseText>
             <pre class="mt-2 whitespace-pre-wrap rounded-xl bg-muted-100 p-3 text-xs text-muted-700 dark:bg-muted-800 dark:text-muted-200">
-{{ formatPreview(templates.success) }}</pre>
+{{ previewSuccess }}</pre>
           </BaseCard>
           <BaseCard class="border border-muted-200/80 bg-white/80 p-4 dark:border-muted-700/60 dark:bg-muted-900/30">
             <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
               Failure preview
             </BaseText>
             <pre class="mt-2 whitespace-pre-wrap rounded-xl bg-muted-100 p-3 text-xs text-muted-700 dark:bg-muted-800 dark:text-muted-200">
-{{ formatPreview(templates.failed) }}</pre>
+{{ previewFailed }}</pre>
           </BaseCard>
         </div>
       </BaseCard>

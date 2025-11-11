@@ -1,154 +1,41 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useNuiToasts } from '#imports'
+import { callOnce } from '#imports'
+import { usePreferencesWebhooks } from '~/composables/usePreferencesWebhooks'
 
-const toaster = useNuiToasts()
+const {
+  items,
+  isLoading,
+  isSaving,
+  error,
+  createModalOpen,
+  draft,
+  eventOptions,
+  fetchWebhooks,
+  openCreateModal,
+  closeCreateModal,
+  updateDraft,
+  toggleDraftEvent,
+  createWebhook,
+  removeWebhook,
+  toggleWebhookStatus,
+} = usePreferencesWebhooks()
 
-// Webhooks state
-const webhooks = ref([
-  {
-    id: '1',
-    name: 'Link Created',
-    url: 'https://api.example.com/webhooks/link-created',
-    events: ['link.created'],
-    status: 'active',
-    secret: 'whsec_***',
-    createdAt: '2024-01-15',
-  },
-  {
-    id: '2',
-    name: 'Link Clicked',
-    url: 'https://api.example.com/webhooks/link-clicked',
-    events: ['link.clicked'],
-    status: 'active',
-    secret: 'whsec_***',
-    createdAt: '2024-01-10',
-  },
-])
+await callOnce(() => fetchWebhooks())
 
-const isCreating = ref(false)
-const showCreateModal = ref(false)
-const newWebhook = ref({
-  name: '',
-  url: '',
-  events: [] as string[],
-})
-
-const eventOptions = [
-  { label: 'Link Created', value: 'link.created' },
-  { label: 'Link Updated', value: 'link.updated' },
-  { label: 'Link Deleted', value: 'link.deleted' },
-  { label: 'Link Clicked', value: 'link.clicked' },
-  { label: 'Link Expired', value: 'link.expired' },
-]
-
-const handleCreateWebhook = async () => {
-  if (!newWebhook.value.name || !newWebhook.value.url || newWebhook.value.events.length === 0) {
-    toaster.add({
-      title: 'Error',
-      description: 'Please fill in all required fields',
-      icon: 'lucide:alert-triangle',
-      color: 'danger',
-      progress: true,
-    })
-    return
-  }
-
-  isCreating.value = true
-  try {
-    // TODO: API call to create webhook
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    webhooks.value.push({
-      id: Date.now().toString(),
-      name: newWebhook.value.name,
-      url: newWebhook.value.url,
-      events: newWebhook.value.events,
-      status: 'active',
-      secret: 'whsec_***',
-      createdAt: new Date().toISOString().split('T')[0],
-    })
-
-    newWebhook.value = { name: '', url: '', events: [] }
-    showCreateModal.value = false
-
-    toaster.add({
-      title: 'Success',
-      description: 'Webhook created successfully!',
-      icon: 'ph:check',
-      progress: true,
-    })
-  } catch (error: any) {
-    toaster.add({
-      title: 'Error',
-      description: error.message || 'Failed to create webhook',
-      icon: 'lucide:alert-triangle',
-      color: 'danger',
-      progress: true,
-    })
-  } finally {
-    isCreating.value = false
-  }
+const handleCreate = async () => {
+  await createWebhook()
 }
 
-const handleDeleteWebhook = async (webhookId: string) => {
-  try {
-    // TODO: API call to delete webhook
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    webhooks.value = webhooks.value.filter(w => w.id !== webhookId)
-    
-    toaster.add({
-      title: 'Success',
-      description: 'Webhook deleted successfully!',
-      icon: 'ph:check',
-      progress: true,
-    })
-  } catch (error: any) {
-    toaster.add({
-      title: 'Error',
-      description: error.message || 'Failed to delete webhook',
-      icon: 'lucide:alert-triangle',
-      color: 'danger',
-      progress: true,
-    })
-  }
+const handleToggle = async (id: string) => {
+  await toggleWebhookStatus(id)
 }
 
-const handleToggleWebhook = async (webhookId: string) => {
-  const webhook = webhooks.value.find(w => w.id === webhookId)
-  if (!webhook) return
-
-  try {
-    // TODO: API call to toggle webhook status
-    await new Promise(resolve => setTimeout(resolve, 500))
-    
-    webhook.status = webhook.status === 'active' ? 'inactive' : 'active'
-    
-    toaster.add({
-      title: 'Success',
-      description: `Webhook ${webhook.status === 'active' ? 'activated' : 'deactivated'}`,
-      icon: 'ph:check',
-      progress: true,
-    })
-  } catch (error: any) {
-    toaster.add({
-      title: 'Error',
-      description: error.message || 'Failed to update webhook',
-      icon: 'lucide:alert-triangle',
-      color: 'danger',
-      progress: true,
-    })
-  }
+const handleRemove = async (id: string) => {
+  await removeWebhook(id)
 }
 
-const toggleEvent = (eventValue: string) => {
-  const index = newWebhook.value.events.indexOf(eventValue)
-  if (index > -1) {
-    newWebhook.value.events.splice(index, 1)
-  } else {
-    newWebhook.value.events.push(eventValue)
-  }
+const handleToggleEvent = (value: string) => {
+  toggleDraftEvent(value)
 }
 </script>
 
@@ -158,7 +45,7 @@ const toggleEvent = (eventValue: string) => {
     <div class="flex justify-end">
       <BaseButton
         variant="primary"
-        @click="showCreateModal = true"
+        @click="openCreateModal"
       >
         <Icon name="ph:plus" class="size-4" />
         <span>Create Webhook</span>
@@ -183,7 +70,19 @@ const toggleEvent = (eventValue: string) => {
 
       <div class="space-y-4">
         <div
-          v-for="webhook in webhooks"
+          v-if="isLoading"
+          class="space-y-3"
+        >
+          <BaseCard
+            v-for="index in 3"
+            :key="index"
+            class="h-24 animate-pulse rounded-xl bg-muted-200/80 dark:bg-muted-800/60"
+          />
+        </div>
+
+        <div
+          v-else
+          v-for="webhook in items"
           :key="webhook.id"
           class="p-4 border border-muted-200 dark:border-muted-700 rounded-lg hover:bg-muted-50 dark:hover:bg-muted-700/50 transition-colors"
         >
@@ -224,7 +123,7 @@ const toggleEvent = (eventValue: string) => {
               <BaseButton
                 size="sm"
                 variant="ghost"
-                @click="handleToggleWebhook(webhook.id)"
+                @click="handleToggle(webhook.id)"
               >
                 <Icon
                   :name="webhook.status === 'active' ? 'ph:toggle-right' : 'ph:toggle-left'"
@@ -235,7 +134,7 @@ const toggleEvent = (eventValue: string) => {
                 size="sm"
                 variant="ghost"
                 color="danger"
-                @click="handleDeleteWebhook(webhook.id)"
+                @click="handleRemove(webhook.id)"
               >
                 <Icon name="lucide:trash-2" class="size-4" />
               </BaseButton>
@@ -244,7 +143,7 @@ const toggleEvent = (eventValue: string) => {
         </div>
 
         <div
-          v-if="webhooks.length === 0"
+          v-if="!isLoading && items.length === 0"
           class="text-center py-12"
         >
           <Icon name="solar:api-linear" class="size-12 text-muted-400 mx-auto mb-4" />
@@ -253,7 +152,7 @@ const toggleEvent = (eventValue: string) => {
           </BaseParagraph>
           <BaseButton
             variant="primary"
-            @click="showCreateModal = true"
+            @click="openCreateModal"
           >
             <Icon name="ph:plus" class="size-4" />
             <span>Create Webhook</span>
@@ -263,7 +162,7 @@ const toggleEvent = (eventValue: string) => {
     </div>
 
     <!-- Create Webhook Modal -->
-    <DialogRoot v-model:open="showCreateModal">
+    <DialogRoot v-model:open="createModalOpen">
       <DialogPortal>
         <DialogOverlay class="bg-muted-800/70 dark:bg-muted-900/80 fixed inset-0 z-50" />
         <DialogContent
@@ -284,7 +183,7 @@ const toggleEvent = (eventValue: string) => {
             <BaseButton
               size="sm"
               variant="ghost"
-              @click="showCreateModal = false"
+              @click="closeCreateModal"
             >
               <Icon name="lucide:x" class="size-4" />
             </BaseButton>
@@ -298,10 +197,12 @@ const toggleEvent = (eventValue: string) => {
               required
             >
               <TairoInput
-                v-model="newWebhook.name"
+                :model-value="draft.name"
                 placeholder="e.g., Link Created Webhook"
                 icon="solar:tag-linear"
                 rounded="lg"
+                :disabled="isSaving"
+                @update:model-value="updateDraft({ name: $event })"
               />
             </TairoFormGroup>
 
@@ -311,11 +212,13 @@ const toggleEvent = (eventValue: string) => {
               required
             >
               <TairoInput
-                v-model="newWebhook.url"
+                :model-value="draft.url"
                 type="url"
                 placeholder="https://api.example.com/webhooks"
                 icon="solar:link-linear"
                 rounded="lg"
+                :disabled="isSaving"
+                @update:model-value="updateDraft({ url: $event })"
               />
             </TairoFormGroup>
 
@@ -332,9 +235,10 @@ const toggleEvent = (eventValue: string) => {
                 >
                   <input
                     type="checkbox"
-                    :checked="newWebhook.events.includes(event.value)"
+                    :checked="draft.events.includes(event.value)"
                     class="rounded border-muted-300 dark:border-muted-600 text-primary-600 focus:ring-primary-500"
-                    @change="toggleEvent(event.value)"
+                    :disabled="isSaving"
+                    @change="handleToggleEvent(event.value)"
                   >
                   <BaseText size="sm" class="text-muted-700 dark:text-muted-300">
                     {{ event.label }}
@@ -348,15 +252,15 @@ const toggleEvent = (eventValue: string) => {
           <div class="flex justify-end gap-2 p-6 border-t border-muted-200 dark:border-muted-700">
             <BaseButton
               variant="ghost"
-              @click="showCreateModal = false"
+              @click="closeCreateModal"
             >
               Cancel
             </BaseButton>
             <BaseButton
               variant="primary"
-              :loading="isCreating"
-              :disabled="isCreating || !newWebhook.name || !newWebhook.url || newWebhook.events.length === 0"
-              @click="handleCreateWebhook"
+              :loading="isSaving"
+              :disabled="isSaving || !draft.name || !draft.url || draft.events.length === 0"
+              @click="handleCreate"
             >
               <Icon name="ph:check" class="size-4" />
               <span>Create Webhook</span>

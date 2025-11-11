@@ -1,41 +1,55 @@
 <script setup lang="ts">
-const periods = ['Daily', 'Weekly', 'Monthly'] as const
-type Period = (typeof periods)[number]
+import { computed, ref, watch } from '#imports'
+import type { PaymentRevenueMetrics, PaymentRevenuePoint } from '~/types/payments'
 
-const activePeriod = ref<Period>('Daily')
+interface PaymentRevenueChartProps {
+  datasets?: Record<string, PaymentRevenuePoint[]>
+  metrics?: PaymentRevenueMetrics | null
+  isLoading?: boolean
+}
 
-const revenueData = ref<Record<Period, Array<{ label: string; revenue: number; target: number }>>>({
-  Daily: [
-    { label: 'Mon', revenue: 4820, target: 4500 },
-    { label: 'Tue', revenue: 5120, target: 4600 },
-    { label: 'Wed', revenue: 5640, target: 4750 },
-    { label: 'Thu', revenue: 5980, target: 4900 },
-    { label: 'Fri', revenue: 6320, target: 5050 },
-    { label: 'Sat', revenue: 6840, target: 5200 },
-    { label: 'Sun', revenue: 7120, target: 5300 },
-  ],
-  Weekly: [
-    { label: 'Week 1', revenue: 23840, target: 22000 },
-    { label: 'Week 2', revenue: 25410, target: 22800 },
-    { label: 'Week 3', revenue: 26840, target: 23600 },
-    { label: 'Week 4', revenue: 27920, target: 24400 },
-  ],
-  Monthly: [
-    { label: 'Jan', revenue: 85640, target: 82000 },
-    { label: 'Feb', revenue: 91220, target: 87000 },
-    { label: 'Mar', revenue: 97840, target: 92000 },
-    { label: 'Apr', revenue: 104220, target: 98000 },
-    { label: 'May', revenue: 112430, target: 102000 },
-  ],
+const props = withDefaults(defineProps<PaymentRevenueChartProps>(), {
+  datasets: () => ({}),
+  metrics: null,
+  isLoading: false,
 })
+
+const periodOptions = computed(() => Object.keys(props.datasets).length > 0 ? Object.keys(props.datasets) : ['Daily'])
+const activePeriod = ref(periodOptions.value[0])
+
+watch(periodOptions, (next) => {
+  if (!next.includes(activePeriod.value)) {
+    activePeriod.value = next[0]
+  }
+})
+
+const datasetForActivePeriod = computed(() => props.datasets[activePeriod.value] ?? [])
 
 const maxRevenue = computed(() => {
-  const dataset = revenueData.value[activePeriod.value]
-  return Math.max(...dataset.map(item => Math.max(item.revenue, item.target)))
+  if (datasetForActivePeriod.value.length === 0) {
+    return 0
+  }
+  return Math.max(
+    ...datasetForActivePeriod.value.map(item => Math.max(item.revenue, item.target)),
+  )
 })
 
-const toCurrency = (value: number) =>
-  value.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+const toCurrency = (value: number, currency = 'USD') =>
+  value.toLocaleString('en-US', { style: 'currency', currency, maximumFractionDigits: 0 })
+
+const progressHeight = (value: number) => {
+  if (maxRevenue.value === 0) {
+    return '0%'
+  }
+  return `${(value / maxRevenue.value) * 100}%`
+}
+
+const revenueMetrics = computed(() => props.metrics ?? {
+  mrr: { value: 0, change: '0%' },
+  averageOrderValue: { value: 0, currency: 'USD' },
+  refundRatio: { value: 0, change: '0%' },
+  netRevenuePace: { value: 0, currency: 'USD', timeframe: 'last 24 hours', progress: 0 },
+})
 </script>
 
 <template>
@@ -56,7 +70,7 @@ const toCurrency = (value: number) =>
       </div>
       <div class="flex items-center gap-2 rounded-full border border-muted-200 bg-muted-100/60 p-1 text-xs dark:border-muted-700 dark:bg-muted-900/50">
         <button
-          v-for="period in periods"
+          v-for="period in periodOptions"
           :key="period"
           type="button"
           class="rounded-full px-3 py-1.5 font-medium transition-all"
@@ -76,7 +90,7 @@ const toCurrency = (value: number) =>
       <div class="lg:col-span-4">
         <div class="flex h-64 items-end gap-3">
           <div
-            v-for="item in revenueData[activePeriod]"
+            v-for="item in datasetForActivePeriod"
             :key="item.label"
             class="flex-1"
           >
@@ -84,20 +98,26 @@ const toCurrency = (value: number) =>
               <div class="flex flex-col gap-2">
                 <div class="flex items-baseline justify-between text-xs">
                   <span class="font-medium text-primary-600 dark:text-primary-300">
-                    {{ toCurrency(item.revenue) }}
+                    <span v-if="isLoading" class="block h-4 w-16 animate-pulse rounded bg-primary-500/30" />
+                    <template v-else>
+                      {{ toCurrency(item.revenue) }}
+                    </template>
                   </span>
                   <span class="text-muted-400">
-                    Target {{ toCurrency(item.target) }}
+                    <span v-if="isLoading" class="block h-4 w-16 animate-pulse rounded bg-muted-300/60 dark:bg-muted-700/60" />
+                    <template v-else>
+                      Target {{ toCurrency(item.target) }}
+                    </template>
                   </span>
                 </div>
                 <div class="relative h-32 overflow-hidden rounded-full border border-primary-100/50 dark:border-primary-900/40">
                   <div
                     class="absolute bottom-0 start-0 w-full rounded-full bg-primary-500 transition-all duration-500"
-                    :style="{ height: `${(item.revenue / maxRevenue) * 100}%` }"
+                    :style="{ height: progressHeight(item.revenue) }"
                   />
                   <div
                     class="absolute inset-x-0 bottom-0 m-1 rounded-full border border-dashed border-primary-200 dark:border-primary-800"
-                    :style="{ height: `${(item.target / maxRevenue) * 100}%` }"
+                    :style="{ height: progressHeight(item.target) }"
                   />
                 </div>
               </div>
@@ -130,11 +150,14 @@ const toCurrency = (value: number) =>
             weight="semibold"
             class="mt-1 text-muted-900 dark:text-white"
           >
-            {{ toCurrency(128540) }}
+            <span v-if="isLoading" class="block h-6 w-24 animate-pulse rounded bg-muted-200/80 dark:bg-muted-800/60" />
+            <template v-else>
+              {{ toCurrency(revenueMetrics.mrr.value) }}
+            </template>
           </BaseHeading>
           <BaseChip color="success" size="xs" class="mt-2">
             <Icon name="ph:trend-up" class="size-3" />
-            <span>+8.6%</span>
+            <span>{{ revenueMetrics.mrr.change }}</span>
           </BaseChip>
         </div>
 
@@ -143,7 +166,10 @@ const toCurrency = (value: number) =>
             <div>
               <BaseText size="xs" class="text-success-600 dark:text-success-300">Average order value</BaseText>
               <BaseHeading as="h5" size="md" weight="bold" class="text-success-700 dark:text-success-200">
-                {{ toCurrency(164) }}
+                <span v-if="isLoading" class="block h-6 w-16 animate-pulse rounded bg-success-500/30" />
+                <template v-else>
+                  {{ toCurrency(revenueMetrics.averageOrderValue.value, revenueMetrics.averageOrderValue.currency) }}
+                </template>
               </BaseHeading>
             </div>
             <Icon name="solar:bag-smile-bold-duotone" class="size-8 text-success-500 dark:text-success-300" />
@@ -153,7 +179,10 @@ const toCurrency = (value: number) =>
             <div>
               <BaseText size="xs" class="text-info-600 dark:text-info-300">Refund ratio</BaseText>
               <BaseHeading as="h5" size="md" weight="bold" class="text-info-700 dark:text-info-200">
-                1.8%
+                <span v-if="isLoading" class="block h-6 w-12 animate-pulse rounded bg-info-500/30" />
+                <template v-else>
+                  {{ revenueMetrics.refundRatio.value }}%
+                </template>
               </BaseHeading>
             </div>
             <Icon name="solar:shield-check-bold-duotone" class="size-8 text-info-500 dark:text-info-300" />
@@ -165,14 +194,20 @@ const toCurrency = (value: number) =>
             </BaseText>
             <div class="mt-2 flex items-end gap-2">
               <BaseHeading as="h5" size="lg" weight="bold" class="text-muted-900 dark:text-white">
-                {{ toCurrency(4250) }}
+                <span v-if="isLoading" class="block h-6 w-20 animate-pulse rounded bg-muted-200/80 dark:bg-muted-800/60" />
+                <template v-else>
+                  {{ toCurrency(revenueMetrics.netRevenuePace.value, revenueMetrics.netRevenuePace.currency) }}
+                </template>
               </BaseHeading>
               <BaseText size="xs" class="text-muted-400">
-                in the last 6 hours
+                {{ revenueMetrics.netRevenuePace.timeframe }}
               </BaseText>
             </div>
             <div class="mt-3 h-1.5 rounded-full bg-muted-200 dark:bg-muted-700">
-              <div class="h-full w-[72%] rounded-full bg-primary-500 transition-all duration-500" />
+              <div
+                class="h-full rounded-full bg-primary-500 transition-all duration-500"
+                :style="{ width: `${revenueMetrics.netRevenuePace.progress}%` }"
+              />
             </div>
           </div>
         </div>

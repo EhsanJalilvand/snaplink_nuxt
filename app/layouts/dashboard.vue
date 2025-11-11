@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { SnapLinkPanelLanguage } from '#components'
+import { callOnce } from '#imports'
 import { getLocaleFlag } from '~/utils/locale'
 import { useAppLocale } from '~/composables/useLocale'
 
@@ -10,48 +11,26 @@ const { open } = usePanels()
 const { user, isAuthenticated, logout, checkAuth } = useAuth()
 
 // Workspace selector
-const currentWorkspaceId = useState<string | undefined>('currentWorkspaceId', () => undefined)
-const currentWorkspace = useState<{ id: string; name: string } | null>('currentWorkspace', () => null)
-const currentWorkspaceLabel = computed(() => currentWorkspace.value?.name ?? 'Select a workspace')
+const {
+  currentWorkspace,
+  currentWorkspaceLabel,
+  currentWorkspaceId,
+  fetchWorkspaces,
+  selectWorkspace,
+  hydrateFromStorage,
+} = useWorkspace()
 
-onMounted(() => {
-  if (!process.client) {
-    return
-  }
-
-  const storedWorkspace = localStorage.getItem('snaplink-current-workspace')
-
-  if (!storedWorkspace) {
-    return
-  }
-
-  try {
-    const parsed = JSON.parse(storedWorkspace) as { id: string; name: string }
-    currentWorkspaceId.value = parsed.id
-    currentWorkspace.value = parsed
-  } catch (error) {
-    if (import.meta.dev) {
-      console.warn('[dashboard.vue] Failed to parse stored workspace', error)
-    }
-  }
-})
-
-watch(currentWorkspace, (workspace) => {
-  if (!process.client) {
-    return
-  }
-
-  if (workspace) {
-    localStorage.setItem('snaplink-current-workspace', JSON.stringify(workspace))
-  } else {
-    localStorage.removeItem('snaplink-current-workspace')
-  }
+await callOnce(async () => {
+  hydrateFromStorage()
+  await fetchWorkspaces()
 })
 
 const handleCustomizeClick = async () => {
   try {
+    await fetchWorkspaces({ force: true })
+
     const WorkspaceSelectorPanel = (await import('~/components/WorkspaceSelectorPanel.vue')).default
-    
+
     const [selectedWorkspace] = await open(
       WorkspaceSelectorPanel,
       {
@@ -61,17 +40,12 @@ const handleCustomizeClick = async () => {
         position: 'right',
         size: 'md',
         overlay: true,
-      }
+      },
     )
-    
+
     if (selectedWorkspace) {
-      // TODO: Update current workspace via API
-      currentWorkspaceId.value = selectedWorkspace.id
-      currentWorkspace.value = {
-        id: selectedWorkspace.id,
-        name: selectedWorkspace.name,
-      }
-      
+      selectWorkspace(selectedWorkspace, { silent: true })
+
       if (import.meta.dev) {
         console.log('[dashboard.vue] Workspace selected:', selectedWorkspace)
       }
@@ -455,7 +429,7 @@ function handlePrimaryNavClick(item: MenuItem) {
             <span>{{ currentWorkspaceLabel }}</span>
           </div>
         </div>
- 
+
         <!-- Right side - Language, Theme, User -->
         <div class="flex items-center gap-2">
           <!-- Language Selector -->
