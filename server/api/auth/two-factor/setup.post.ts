@@ -96,7 +96,7 @@ export default defineEventHandler(async (event) => {
       
       // Create settings flow for TOTP setup
       const settingsFlow = await frontendApi.createBrowserSettingsFlow({
-        returnTo: `${config.public.siteUrl}/dashboard/settings/security`,
+        returnTo: `${config.public.siteUrl}/dashboard/accountsettings/security`,
       }, {
         headers: requestCookies ? { Cookie: requestCookies } : undefined,
       })

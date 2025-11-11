@@ -119,7 +119,7 @@ const quickLinks = [
     label: 'Profile',
     description: 'Update your personal details and preferences',
     icon: 'solar:user-linear',
-    to: '/dashboard/settings',
+    to: '/dashboard/accountsettings',
   },
   {
     label: 'Billing',
@@ -362,7 +362,7 @@ function handlePrimaryNavClick(item: MenuItem) {
               portal: { disabled: true },
             }"
           >
-            <TairoSidebarLink to="/dashboard/settings">
+            <TairoSidebarLink to="/dashboard/accountsettings">
               <Icon name="solar:user-id-linear" class="size-5" />
             </TairoSidebarLink>
           </BaseTooltip>

@@ -54,6 +54,17 @@ const updateWizardOpen = (value: boolean) => {
 
 <template>
   <div class="space-y-8 pb-16">
+    <div class="flex justify-start">
+      <BaseButton
+        to="/dashboard/accountsettings"
+        variant="link"
+        class="gap-2 px-0 text-sm text-primary-500 hover:text-primary-600 dark:text-primary-300 dark:hover:text-primary-200"
+      >
+        <Icon name="solar:arrow-left-linear" class="size-4" />
+        Back to account overview
+      </BaseButton>
+    </div>
+
     <SecurityPageHeader
       title="Security settings"
       subtitle="Rotate your password regularly and enable two-factor authentication for extra protection."

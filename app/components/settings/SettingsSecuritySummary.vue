@@ -18,7 +18,7 @@ const props = defineProps<{
           Strengthen access to keep your workspace safe.
         </BaseParagraph>
       </div>
-      <NuxtLink to="/dashboard/settings/security">
+      <NuxtLink to="/dashboard/accountsettings/security">
         <BaseButton size="sm" variant="outline" color="primary">
           <Icon name="solar:lock-keyhole-linear" class="size-4" />
           Review security

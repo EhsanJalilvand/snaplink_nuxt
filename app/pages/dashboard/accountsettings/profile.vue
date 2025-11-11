@@ -38,6 +38,17 @@ const dismissSuccess = () => {
     novalidate
     @submit.prevent="onSubmit"
   >
+    <div class="flex justify-start">
+      <BaseButton
+        to="/dashboard/accountsettings"
+        variant="link"
+        class="gap-2 px-0 text-sm text-primary-500 hover:text-primary-600 dark:text-primary-300 dark:hover:text-primary-200"
+      >
+        <Icon name="solar:arrow-left-linear" class="size-4" />
+        Back to account overview
+      </BaseButton>
+    </div>
+
     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-muted-200 pb-4 dark:border-muted-800">
       <div>
         <BaseHeading as="h1" size="2xl" weight="bold" class="text-muted-900 dark:text-muted-100">
@@ -48,7 +59,7 @@ const dismissSuccess = () => {
         </BaseParagraph>
       </div>
       <div class="flex items-center gap-2">
-        <BaseButton variant="ghost" to="/dashboard/settings">
+        <BaseButton variant="ghost" to="/dashboard/accountsettings">
           Cancel
         </BaseButton>
         <BaseButton type="submit" variant="primary" :loading="isSubmitting" :disabled="isSubmitting">

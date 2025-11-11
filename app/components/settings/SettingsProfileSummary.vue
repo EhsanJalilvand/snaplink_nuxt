@@ -18,7 +18,7 @@ const props = defineProps<{
           Keep your personal information accurate and recognizable.
         </BaseParagraph>
       </div>
-      <NuxtLink to="/dashboard/settings/profile">
+      <NuxtLink to="/dashboard/accountsettings/profile">
         <BaseButton size="sm" variant="outline" color="primary">
           <Icon name="solar:pen-2-linear" class="size-4" />
           Edit profile

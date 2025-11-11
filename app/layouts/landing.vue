@@ -42,7 +42,7 @@ const landingQuickLinks = [
     label: 'Profile',
     description: 'View and edit your account details',
     icon: 'solar:user-linear',
-    to: '/dashboard/settings',
+    to: '/dashboard/accountsettings',
   },
   {
     label: 'Dashboard',
