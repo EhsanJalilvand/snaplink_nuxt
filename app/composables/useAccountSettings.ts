@@ -1,4 +1,3 @@
-import type { TwoFactorStatusResponse } from '~/types/security'
 import type { AccountSettingsOverview, SettingsSummaryLink, TwoFactorStatus } from '~/types/settings'
 import { computed, toRefs, useState } from '#imports'
 import { useApi } from './useApi'
@@ -56,7 +55,7 @@ function initialState(): AccountSettingsState {
   }
 }
 
-export function useAccountSettings() {
+export const useAccountSettings = () => {
   const api = useApi()
   const state = useState<AccountSettingsState>('snaplink:account-settings', initialState)
 
@@ -69,23 +68,24 @@ export function useAccountSettings() {
     state.value.error = null
 
     try {
-      const response = await api.request<TwoFactorStatusResponse>({
-        path: '/auth/two-factor/status',
-        base: 'internal',
-        requiresAuth: true,
-        quiet: true,
-        retry: 0,
-        timeout: 7000,
-        method: 'GET',
-      })
+      const response = await api.get<{ success?: boolean; enabled?: boolean; updated_at?: string }>(
+        '/auth/two-factor/status',
+        {
+          path: '/auth/two-factor/status',
+          base: 'internal',
+          requiresAuth: true,
+          quiet: true,
+          retry: 0,
+          timeout: 7000,
+        },
+      )
 
       const enabled = Boolean(response?.enabled)
       state.value.twoFactor = {
         enabled,
         lastUpdated: response?.updated_at,
       }
-    }
-    catch (error) {
+    } catch (error) {
       if (import.meta.dev) {
         console.warn('[useAccountSettings] Unable to fetch 2FA status', error)
       }
@@ -94,8 +94,7 @@ export function useAccountSettings() {
         ...state.value.twoFactor,
         enabled: FALLBACK_TWO_FACTOR.enabled,
       }
-    }
-    finally {
+    } finally {
       state.value.isLoading = false
     }
   }

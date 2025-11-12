@@ -1,94 +1,168 @@
 import { computed, toRefs, useState } from '#imports'
 import type {
+  BillingUsageMetric,
+  BillingUsageModule,
   BillingUsagePayload,
   BillingUsagePeriod,
   BillingUsageResponse,
-  BillingUsageItem,
-  BillingUsageSummaryMetrics,
+  BillingUsageSummary,
 } from '~/types/billing'
 import { useApi } from './useApi'
 
 interface BillingUsageState {
   period: BillingUsagePeriod
-  items: BillingUsageItem[]
-  summary: BillingUsageSummaryMetrics
+  modules: BillingUsageModule[]
+  summary: BillingUsageSummary
   isLoading: boolean
   error: string | null
 }
 
-const FALLBACK_ITEMS: BillingUsageItem[] = [
-  {
-    id: 'usage-url-clicks',
-    service: 'URL Click',
-    icon: 'solar:link-linear',
-    current: 125_000,
-    limit: 200_000,
-    cost: 12.5,
-    color: 'primary',
-  },
-  {
-    id: 'usage-payment',
-    service: 'Payment Service',
-    icon: 'solar:card-linear',
-    current: 850,
-    limit: 1_000,
-    cost: 42.5,
-    color: 'success',
-  },
-  {
-    id: 'usage-bio',
-    service: 'Bio Service',
-    icon: 'solar:user-id-linear',
-    current: 320,
-    limit: 500,
-    cost: 16,
-    color: 'info',
-  },
-  {
-    id: 'usage-survey',
-    service: 'Survey Service',
-    icon: 'solar:document-linear',
-    current: 1_250,
-    limit: 2_000,
-    cost: 25,
-    color: 'warning',
-  },
-  {
-    id: 'usage-api',
-    service: 'API Call',
-    icon: 'solar:api-linear',
-    current: 45_000,
-    limit: 100_000,
-    cost: 22.5,
-    color: 'purple',
-  },
-  {
-    id: 'usage-webhook',
-    service: 'Webhook',
-    icon: 'solar:webhook-linear',
-    current: 5_600,
-    limit: 10_000,
-    cost: 5.6,
-    color: 'orange',
-  },
-]
+type MeterColor = 'success' | 'warning' | 'danger'
 
-const FALLBACK_SUMMARY: BillingUsageSummaryMetrics = {
-  totalServices: FALLBACK_ITEMS.length,
-  totalCost: FALLBACK_ITEMS.reduce((total, item) => total + item.cost, 0),
-  averageUtilization:
-    Math.round(
-      FALLBACK_ITEMS.reduce(
-        (total, item) => total + Math.min((item.current / item.limit) * 100, 100),
-        0,
-      ) / FALLBACK_ITEMS.length,
-    ),
+type DecoratedMetric = BillingUsageMetric & {
+  utilization: number
+  meterColor: MeterColor
+  utilizationLabel: string
+  hasAllowance: boolean
+}
+
+type DecoratedModule = BillingUsageModule & {
+  metrics: DecoratedMetric[]
+  utilization: number
+  utilizationState: MeterColor
+}
+
+const clampUtilization = (usage: number, included: number): number => {
+  if (included <= 0) {
+    return usage <= 0 ? 0 : 100
+  }
+  const ratio = (usage / included) * 100
+  return Number(Math.min(Math.max(ratio, 0), 250).toFixed(2))
+}
+
+const computeSummary = (
+  modules: BillingUsageModule[],
+  currencyFallback = 'USD',
+): BillingUsageSummary => {
+  if (!modules.length) {
+    return {
+      moduleCount: 0,
+      metricCount: 0,
+      totalCustomerCost: 0,
+      totalVendorCost: 0,
+      grossMargin: 0,
+      grossMarginPercent: 0,
+      averageUtilization: 0,
+      currency: currencyFallback,
+    }
+  }
+
+  const moduleCount = modules.length
+  const metricCount = modules.reduce((total, module) => total + module.metrics.length, 0)
+  const totalCustomerCost = modules.reduce(
+    (total, module) => total + module.cost.customerTotal,
+    0,
+  )
+  const totalVendorCost = modules.reduce(
+    (total, module) => total + module.cost.vendorTotal,
+    0,
+  )
+  const grossMargin = totalCustomerCost - totalVendorCost
+  const grossMarginPercent = totalCustomerCost === 0 ? 0 : (grossMargin / totalCustomerCost) * 100
+
+  const utilizationSamples = modules
+    .flatMap((module) => module.metrics)
+    .map((metric) => clampUtilization(metric.usage, metric.included))
+
+  const averageUtilization =
+    utilizationSamples.length === 0
+      ? 0
+      : Number(
+          (
+            utilizationSamples.reduce((total, value) => total + value, 0) /
+            utilizationSamples.length
+          ).toFixed(2),
+        )
+
+  const distinctCurrencies = [
+    ...new Set(modules.map((module) => module.cost.currency).filter(Boolean)),
+  ]
+
+  const currency =
+    distinctCurrencies.length === 0
+      ? currencyFallback
+      : distinctCurrencies.length === 1
+        ? distinctCurrencies[0]
+        : 'MULTI'
+
+  return {
+    moduleCount,
+    metricCount,
+    totalCustomerCost: Number(totalCustomerCost.toFixed(2)),
+    totalVendorCost: Number(totalVendorCost.toFixed(2)),
+    grossMargin: Number(grossMargin.toFixed(2)),
+    grossMarginPercent: Number(grossMarginPercent.toFixed(2)),
+    averageUtilization,
+    currency,
+  }
+}
+
+const decorateModules = (modules: BillingUsageModule[], summaryCurrency: string): DecoratedModule[] =>
+  modules.map((module) => {
+    const metrics = module.metrics.map<DecoratedMetric>((metric) => {
+      const utilization = clampUtilization(metric.usage, metric.included)
+      const meterColor: MeterColor =
+        utilization >= 120 ? 'danger' : utilization >= 90 ? 'warning' : 'success'
+      const hasAllowance = metric.included > 0
+
+      return {
+        ...metric,
+        utilization,
+        meterColor,
+        hasAllowance,
+        utilizationLabel: hasAllowance
+          ? `${metric.usage.toLocaleString()} / ${metric.included.toLocaleString()} ${metric.unit}`
+          : `${metric.usage.toLocaleString()} ${metric.unit}`,
+        currency: metric.currency || summaryCurrency,
+      }
+    })
+
+    const moduleUtilization =
+      metrics.length === 0
+        ? 0
+        : Number(
+            (
+              metrics.reduce((total, metric) => total + metric.utilization, 0) /
+              metrics.length
+            ).toFixed(2),
+          )
+
+    const utilizationState: MeterColor =
+      moduleUtilization >= 120 ? 'danger' : moduleUtilization >= 90 ? 'warning' : 'success'
+
+    return {
+      ...module,
+      metrics,
+      utilization: moduleUtilization,
+      utilizationState,
+    }
+  })
+
+const EMPTY_SUMMARY: BillingUsageSummary = {
+  moduleCount: 0,
+  metricCount: 0,
+  totalCustomerCost: 0,
+  totalVendorCost: 0,
+  grossMargin: 0,
+  grossMarginPercent: 0,
+  averageUtilization: 0,
+  currency: 'USD',
 }
 
 const initialState = (): BillingUsageState => ({
   period: 'month',
-  items: [],
-  summary: FALLBACK_SUMMARY,
+  modules: [],
+  summary: EMPTY_SUMMARY,
   isLoading: false,
   error: null,
 })
@@ -99,44 +173,18 @@ const periodOptions = [
   { label: 'This Year', value: 'year' as BillingUsagePeriod },
 ]
 
-const computeSummary = (items: BillingUsageItem[]): BillingUsageSummaryMetrics => {
-  if (items.length === 0) {
-    return {
-      totalServices: 0,
-      totalCost: 0,
-      averageUtilization: 0,
-    }
-  }
-
-  const totalCost = items.reduce((total, item) => total + item.cost, 0)
-  const averageUtilization = Math.round(
-    items.reduce((total, item) => total + Math.min((item.current / item.limit) * 100, 100), 0) /
-      items.length,
-  )
-
-  return {
-    totalServices: items.length,
-    totalCost,
-    averageUtilization,
-  }
-}
-
-const getPercentage = (item: BillingUsageItem) => Math.min((item.current / item.limit) * 100, 100)
-
-const getMeterColor = (percentage: number) => {
-  if (percentage >= 90) return 'danger'
-  if (percentage >= 70) return 'warning'
-  return 'success'
-}
-
 export const useBillingUsage = () => {
   const api = useApi()
   const state = useState<BillingUsageState>('snaplink:billing-usage', initialState)
 
-  const setStateFromPayload = (payload: BillingUsagePayload) => {
+  const setStateFromPayload = (payload?: BillingUsagePayload | null) => {
+    if (payload?.period) {
     state.value.period = payload.period
-    state.value.items = payload.items
-    state.value.summary = payload.summary ?? computeSummary(payload.items)
+    }
+
+    const modules = payload?.modules ?? []
+    state.value.modules = modules
+    state.value.summary = payload?.summary ?? computeSummary(modules, state.value.summary.currency || EMPTY_SUMMARY.currency)
     state.value.error = null
   }
 
@@ -145,6 +193,7 @@ export const useBillingUsage = () => {
       return
     }
 
+    state.value.period = period
     state.value.isLoading = true
     state.value.error = null
 
@@ -154,45 +203,36 @@ export const useBillingUsage = () => {
         validate: (payload): payload is BillingUsageResponse =>
           typeof payload === 'object' && payload !== null && 'data' in payload,
         retry: 1,
-        timeout: 15000,
+        timeout: 15_000,
         quiet: true,
         query: { period },
       })
 
-      if (response?.data?.items?.length) {
+      if (response?.data) {
         setStateFromPayload(response.data)
       } else {
-        setStateFromPayload({ period, items: FALLBACK_ITEMS, summary: FALLBACK_SUMMARY })
+        state.value.modules = []
+        state.value.summary = EMPTY_SUMMARY
       }
     } catch (error) {
-      if (import.meta.dev) {
-        console.warn('[useBillingUsage] Falling back to static usage data', error)
-      }
-      state.value.error = 'Unable to load usage telemetry. Showing cached data.'
-      setStateFromPayload({ period, items: FALLBACK_ITEMS, summary: FALLBACK_SUMMARY })
+      state.value.error = 'Unable to load usage telemetry. Please try again.'
     } finally {
       state.value.isLoading = false
     }
   }
 
-  const decoratedItems = computed(() =>
-    state.value.items.map((item) => {
-      const percentage = getPercentage(item)
-      return {
-        ...item,
-        percentage,
-        meterColor: getMeterColor(percentage),
-      }
-    }),
-  )
+  const decoratedModules = computed(() => {
+    const modules = state.value.modules
+    const summaryCurrency = state.value.summary.currency || EMPTY_SUMMARY.currency
+    return decorateModules(modules, summaryCurrency)
+  })
 
   return {
     ...toRefs(state.value),
     periodOptions,
-    usageItems: decoratedItems,
+    usageModules: decoratedModules,
     fetchUsage,
-    getPercentage,
-    getMeterColor,
     computeSummary,
   }
 }
+

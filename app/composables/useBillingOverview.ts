@@ -8,17 +8,18 @@ interface BillingOverviewState {
   error: string | null
 }
 
-const FALLBACK_DATA: BillingOverviewData = {
-  balance: 1250.5,
+const EMPTY_OVERVIEW: BillingOverviewData = {
+  balance: 0,
   status: 'active',
   monthlyUsage: {
-    clicks: 125_000,
-    apiCalls: 45_000,
+    clicks: 0,
+    apiCalls: 0,
+    aggregates: [],
   },
   usageChart: {
-    labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
-    clicks: [28_000, 32_000, 35_000, 30_000],
-    apiCalls: [10_000, 12_000, 11_000, 12_000],
+    labels: [],
+    clicks: [],
+    apiCalls: [],
   },
 }
 
@@ -58,24 +59,18 @@ export const useBillingOverview = () => {
 
       if (response?.data) {
         setData(response.data)
-      } else {
-        setData(FALLBACK_DATA)
       }
     } catch (error) {
-      if (import.meta.dev) {
-        console.warn('[useBillingOverview] Falling back to static data', error)
-      }
-      state.value.error = 'Unable to load billing overview. Showing cached data.'
-      setData(FALLBACK_DATA)
+      state.value.error = 'Unable to load billing overview. Please try again.'
     } finally {
       state.value.isLoading = false
     }
   }
 
-  const balance = computed(() => state.value.data?.balance ?? FALLBACK_DATA.balance)
-  const status = computed(() => state.value.data?.status ?? FALLBACK_DATA.status)
-  const monthlyUsage = computed(() => state.value.data?.monthlyUsage ?? FALLBACK_DATA.monthlyUsage)
-  const usageChart = computed(() => state.value.data?.usageChart ?? FALLBACK_DATA.usageChart)
+  const balance = computed(() => (state.value.data ?? EMPTY_OVERVIEW).balance)
+  const status = computed(() => (state.value.data ?? EMPTY_OVERVIEW).status)
+  const monthlyUsage = computed(() => (state.value.data ?? EMPTY_OVERVIEW).monthlyUsage)
+  const usageChart = computed(() => (state.value.data ?? EMPTY_OVERVIEW).usageChart)
 
   const statusConfig = computed(() => {
     const currentStatus = status.value

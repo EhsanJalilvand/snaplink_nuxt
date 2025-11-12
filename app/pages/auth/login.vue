@@ -89,7 +89,8 @@ const onSubmit = handleSubmit(async (values) => {
       // Get login flow from Kratos directly (client-side)
       // Use refresh=true to allow login even if session exists
       // This ensures CSRF cookie is set in browser properly
-      const returnTo = encodeURIComponent('http://localhost:3000/dashboard')
+      const siteUrl = config.public.siteUrl?.replace(/\/$/, '') || 'http://localhost:3000'
+      const returnTo = encodeURIComponent(`${siteUrl}/dashboard`)
       const flowResponse = await $fetch(`${config.public.kratosPublicUrl}/self-service/login/browser?refresh=true&return_to=${returnTo}`, {
         method: 'GET',
         credentials: 'include',
@@ -236,7 +237,8 @@ const onSubmit = handleSubmit(async (values) => {
         }
         
         // If redirect URL is valid, follow it
-        if (redirectUrl && (redirectUrl.startsWith('http://localhost:3000') || redirectUrl.startsWith('/'))) {
+        const siteUrl = config.public.siteUrl?.replace(/\/$/, '') || 'http://localhost:3000'
+        if (redirectUrl && (redirectUrl.startsWith(siteUrl) || redirectUrl.startsWith('/'))) {
           window.location.href = redirectUrl
           return
         }
@@ -370,13 +372,14 @@ const onSubmit = handleSubmit(async (values) => {
           })
         } else {
           // Invalid flow - try to follow redirect
-      if (redirectUrl.startsWith('http://localhost:3000') || redirectUrl.startsWith('/')) {
+      const siteUrl = config.public.siteUrl?.replace(/\/$/, '') || 'http://localhost:3000'
+      if (redirectUrl.startsWith(siteUrl) || redirectUrl.startsWith('/')) {
             window.location.href = redirectUrl
           } else {
             setFieldError('password', '2FA verification required. Please try again.')
           }
         }
-      } else if (redirectUrl.startsWith('http://localhost:3000') || redirectUrl.startsWith('/')) {
+      } else if (redirectUrl.startsWith(siteUrl) || redirectUrl.startsWith('/')) {
         // Other redirect (e.g., for verification)
         window.location.href = redirectUrl
       } else {

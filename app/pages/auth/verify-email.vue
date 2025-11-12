@@ -113,7 +113,8 @@ const onSubmit = handleSubmit(async (formValues) => {
             }
             
             // Create session using client-side login flow (like login.vue does)
-            const loginFlow = await $fetch(`${config.public.kratosPublicUrl}/self-service/login/browser?return_to=${encodeURIComponent('http://localhost:3000/dashboard')}`, {
+            const siteUrl = config.public.siteUrl?.replace(/\/$/, '') || 'http://localhost:3000'
+            const loginFlow = await $fetch(`${config.public.kratosPublicUrl}/self-service/login/browser?return_to=${encodeURIComponent(`${siteUrl}/dashboard`)}`, {
               method: 'GET',
               credentials: 'include',
               headers: {

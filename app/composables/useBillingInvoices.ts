@@ -17,59 +17,6 @@ interface BillingInvoicesState {
   status: 'all' | BillingInvoiceStatus
 }
 
-const FALLBACK_ITEMS: BillingInvoiceItem[] = [
-  {
-    id: 'INV-2024-001',
-    date: '2024-03-15',
-    amount: 125.5,
-    status: 'paid',
-    method: 'Credit Card',
-    description: 'Service usage - March 2024',
-  },
-  {
-    id: 'INV-2024-002',
-    date: '2024-02-15',
-    amount: 98.75,
-    status: 'paid',
-    method: 'Credit Card',
-    description: 'Service usage - February 2024',
-  },
-  {
-    id: 'INV-2024-003',
-    date: '2024-01-15',
-    amount: 150,
-    status: 'pending',
-    method: 'Bank Transfer',
-    description: 'Service usage - January 2024',
-  },
-  {
-    id: 'INV-2023-012',
-    date: '2023-12-15',
-    amount: 87.25,
-    status: 'paid',
-    method: 'Credit Card',
-    description: 'Service usage - December 2023',
-  },
-  {
-    id: 'INV-2023-011',
-    date: '2023-11-15',
-    amount: 200,
-    status: 'failed',
-    method: 'Credit Card',
-    description: 'Service usage - November 2023',
-  },
-]
-
-const FALLBACK_PLAN: BillingPlanInfo = {
-  planType: 'Pay as You Go',
-  billingCycle: 'Monthly',
-  pricing: [
-    { label: 'URL Click', value: '$0.0001 per click' },
-    { label: 'API Call', value: '$0.0005 per call' },
-    { label: 'Payment Service', value: '2.5% per transaction' },
-  ],
-}
-
 const initialState = (): BillingInvoicesState => ({
   items: [],
   plan: null,
@@ -111,9 +58,9 @@ export const useBillingInvoices = () => {
   const toasts = useNuiToasts()
   const state = useState<BillingInvoicesState>('snaplink:billing-invoices', initialState)
 
-  const setStateFromPayload = (payload: BillingInvoicePayload) => {
-    state.value.items = payload.items
-    state.value.plan = payload.plan
+  const setStateFromPayload = (payload: BillingInvoicePayload | null | undefined) => {
+    state.value.items = payload?.items ?? []
+    state.value.plan = payload?.plan ?? null
     state.value.error = null
   }
 
@@ -135,17 +82,13 @@ export const useBillingInvoices = () => {
         quiet: true,
       })
 
-      if (response?.data?.items?.length) {
+      if (response?.data) {
         setStateFromPayload(response.data)
       } else {
-        setStateFromPayload({ items: FALLBACK_ITEMS, plan: FALLBACK_PLAN })
+        setStateFromPayload(null)
       }
     } catch (error) {
-      if (import.meta.dev) {
-        console.warn('[useBillingInvoices] Falling back to static invoices', error)
-      }
-      state.value.error = 'Unable to load invoices. Showing cached data.'
-      setStateFromPayload({ items: FALLBACK_ITEMS, plan: FALLBACK_PLAN })
+      state.value.error = 'Unable to load invoices. Please try again.'
     } finally {
       state.value.isLoading = false
     }

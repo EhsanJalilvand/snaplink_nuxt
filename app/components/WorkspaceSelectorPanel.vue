@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted } from '#imports'
 import { useNuiToasts } from '#imports'
+import WorkspaceEditorDrawer from '~/components/workspace/WorkspaceEditorDrawer.vue'
 import type { Workspace } from '~/types/workspace'
 import { useWorkspace } from '~/composables/useWorkspace'
 
@@ -53,14 +54,22 @@ const handleSelect = (workspace: Workspace) => {
   }
 }
 
-const createNewWorkspace = () => {
-  toaster.add({
-    title: 'Create workspace',
-    description: 'Workspace creation flow will be available soon.',
-    icon: 'ph:info',
-    color: 'info',
-    progress: true,
-  })
+const isEditorOpen = ref(false)
+const editorWorkspace = ref<Workspace | null>(null)
+
+const openCreateWorkspace = () => {
+  editorWorkspace.value = null
+  isEditorOpen.value = true
+}
+
+const openEditWorkspace = (workspace: Workspace) => {
+  editorWorkspace.value = workspace
+  isEditorOpen.value = true
+}
+
+const handleSaved = async () => {
+  await fetchWorkspaces({ force: true })
+  isEditorOpen.value = false
 }
 
 const handleClose = () => {
@@ -247,7 +256,7 @@ onMounted(async () => {
             class="rounded-xl"
           >
             <template #title>
-              Showing cached workspaces
+              Unable to load workspaces
             </template>
             <p class="text-xs text-muted-600 dark:text-muted-300">
               {{ error }}
@@ -259,15 +268,33 @@ onMounted(async () => {
 
     <!-- Footer -->
     <div class="border-t border-muted-200 dark:border-muted-700 p-4">
-      <BaseButton
-        variant="primary"
-        class="w-full"
-        @click="createNewWorkspace"
-      >
-        <Icon name="ph:plus" class="size-4" />
-        <span>Create New Workspace</span>
-      </BaseButton>
+      <div class="flex gap-3">
+        <BaseButton
+          variant="outline"
+          class="flex-1"
+          :disabled="!selectedWorkspaceId"
+          @click="openEditWorkspace(workspaces.find((item) => item.id === selectedWorkspaceId)!)"
+        >
+          <Icon name="ph:pencil-simple" class="size-4" />
+          <span>Edit Workspace</span>
+        </BaseButton>
+        <BaseButton
+          variant="primary"
+          class="flex-1"
+          @click="openCreateWorkspace"
+        >
+          <Icon name="ph:plus" class="size-4" />
+          <span>Create New Workspace</span>
+        </BaseButton>
+      </div>
     </div>
+
+    <WorkspaceEditorDrawer
+      v-if="isEditorOpen"
+      :workspace="editorWorkspace || workspaces.find((item) => item.id === selectedWorkspaceId) || null"
+      @close="isEditorOpen = false"
+      @saved="handleSaved"
+    />
   </div>
 </template>
 

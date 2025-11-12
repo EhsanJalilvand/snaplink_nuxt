@@ -52,7 +52,7 @@ export default defineEventHandler(async (event) => {
 
     // Create verification flow
     const { data: verificationFlow } = await frontendApi.createBrowserVerificationFlow({
-      returnTo: 'http://localhost:3000/auth/verify-email',
+      returnTo: `${(config.public.siteUrl || 'http://localhost:3000').replace(/\/$/, '')}/auth/verify-email`,
     })
 
     if (!verificationFlow?.id) {

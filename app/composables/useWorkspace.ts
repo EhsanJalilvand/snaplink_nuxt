@@ -1,5 +1,7 @@
-import { computed } from '#imports'
+import { computed, useState } from '#imports'
 import type { Workspace, WorkspaceListResponse, WorkspaceSelectionPayload } from '~/types/workspace'
+import { useApi } from './useApi'
+import { useEvents } from './useEvents'
 
 interface WorkspaceState {
   items: Workspace[]
@@ -11,49 +13,6 @@ interface WorkspaceState {
 }
 
 const STORAGE_KEY = 'snaplink-current-workspace'
-
-const FALLBACK_WORKSPACES: Workspace[] = [
-  {
-    id: '1',
-    name: 'Personal Workspace',
-    description: 'My personal links and projects',
-    members: 1,
-    links: 0,
-    createdAt: '2024-01-01',
-  },
-  {
-    id: '2',
-    name: 'Business Team',
-    description: 'Marketing and sales team workspace',
-    members: 5,
-    links: 12,
-    createdAt: '2024-01-15',
-  },
-  {
-    id: '3',
-    name: 'Development Hub',
-    description: 'Development and engineering workspace',
-    members: 8,
-    links: 25,
-    createdAt: '2024-02-01',
-  },
-  {
-    id: '4',
-    name: 'Client Projects',
-    description: 'Client-facing projects and links',
-    members: 3,
-    links: 8,
-    createdAt: '2024-02-10',
-  },
-  {
-    id: '5',
-    name: 'Marketing Campaigns',
-    description: 'Marketing campaigns and promotional links',
-    members: 4,
-    links: 15,
-    createdAt: '2024-02-20',
-  },
-]
 
 const initialState = (): WorkspaceState => ({
   items: [],
@@ -193,14 +152,10 @@ export const useWorkspace = () => {
         quiet: true,
       })
 
-      const items = response?.data && response.data.length > 0 ? response.data : FALLBACK_WORKSPACES
+      const items = response?.data ?? []
       setWorkspaceList(items)
     } catch (error) {
-      if (import.meta.dev) {
-        console.warn('[useWorkspace] Falling back to static workspaces', error)
-      }
-      state.value.error = 'Unable to load workspaces from gateway. Showing cached workspaces.'
-      setWorkspaceList(FALLBACK_WORKSPACES)
+      state.value.error = 'Unable to load workspaces from gateway.'
     } finally {
       state.value.isLoading = false
 

@@ -239,6 +239,11 @@ const menu: MenuItem[] = [
         to: '/dashboard/billing/usage',
       },
       {
+        label: 'Modules',
+        icon: 'solar:circuit-linear',
+        to: '/dashboard/billing/modules',
+      },
+      {
         label: 'Invoices',
         icon: 'solar:document-linear',
         to: '/dashboard/billing/invoices',

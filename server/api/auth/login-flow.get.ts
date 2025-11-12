@@ -14,7 +14,8 @@ export default defineEventHandler(async (event) => {
     const returnTo = (query.return_to as string) || '/dashboard'
     
     // Make sure return_to is a full URL
-    const fullReturnTo = returnTo.startsWith('http') ? returnTo : `http://localhost:3000${returnTo}`
+    const siteUrl = (config.public.siteUrl || 'http://localhost:3000').replace(/\/$/, '')
+    const fullReturnTo = returnTo.startsWith('http') ? returnTo : `${siteUrl}${returnTo}`
 
     if (import.meta.dev) {
       console.log('[auth/login-flow.get.ts] Getting login flow with return_to:', fullReturnTo)

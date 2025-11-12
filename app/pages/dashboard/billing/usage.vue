@@ -10,7 +10,7 @@ definePageMeta({
 const {
   period,
   periodOptions,
-  usageItems,
+  usageModules,
   summary,
   isLoading,
   error,
@@ -48,7 +48,7 @@ const handlePeriodChange = async (value: typeof period.value) => {
     </BaseAlert>
 
     <BillingUsageGrid
-      :items="usageItems"
+      :modules="usageModules"
       :is-loading="isLoading"
     />
 

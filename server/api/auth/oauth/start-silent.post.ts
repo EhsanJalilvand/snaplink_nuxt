@@ -328,7 +328,8 @@ export default defineEventHandler(async (event) => {
       }
 
       // Follow redirect if it's not to our endpoints
-      if (!redirectUrl.startsWith('http://localhost:3000') && !redirectUrl.startsWith('/')) {
+      const siteUrl = (config.public.siteUrl || 'http://localhost:3000').replace(/\/$/, '')
+      if (!redirectUrl.startsWith(siteUrl) && !redirectUrl.startsWith('/')) {
         const nextResponse = await fetch(redirectUrl, {
           method: 'GET',
           headers: {

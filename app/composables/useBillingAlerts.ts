@@ -17,19 +17,19 @@ interface BillingAlertsState {
   error: string | null
 }
 
-const FALLBACK_SETTINGS: BillingAlertSettings = {
+const EMPTY_SETTINGS: BillingAlertSettings = {
   lowBalanceAlert: {
-    enabled: true,
-    threshold: 50,
-    email: true,
+    enabled: false,
+    threshold: 0,
+    email: false,
     webhook: false,
   },
   spendingLimit: {
     enabled: false,
-    monthlyLimit: 500,
+    monthlyLimit: 0,
   },
   billingAlerts: {
-    email: true,
+    email: false,
     webhook: false,
   },
 }
@@ -79,15 +79,9 @@ export const useBillingAlerts = () => {
 
       if (response?.data) {
         setSettings(response.data)
-      } else {
-        setSettings(FALLBACK_SETTINGS)
       }
     } catch (error) {
-      if (import.meta.dev) {
-        console.warn('[useBillingAlerts] Falling back to static alert settings', error)
-      }
-      state.value.error = 'Unable to load billing alerts. Showing cached data.'
-      setSettings(FALLBACK_SETTINGS)
+      state.value.error = 'Unable to load billing alerts. Please try again.'
     } finally {
       state.value.isLoading = false
     }
@@ -168,7 +162,7 @@ export const useBillingAlerts = () => {
     }
   }
 
-  const settings = computed(() => state.value.settings ?? FALLBACK_SETTINGS)
+  const settings = computed(() => state.value.settings ?? EMPTY_SETTINGS)
 
   return {
     ...toRefs(state.value),
