@@ -197,11 +197,22 @@ onMounted(async () => {
                       {{ workspace.description }}
                     </BaseParagraph>
                   </div>
-                  <Icon
-                    v-if="selectedWorkspaceId === workspace.id"
-                    name="lucide:check-circle"
-                    class="size-5 shrink-0 text-primary-600 dark:text-primary-400"
-                  />
+                  <div class="flex items-center gap-2">
+                    <BaseButton
+                      variant="ghost"
+                      size="xs"
+                      class="shrink-0"
+                      @click.stop="openEditWorkspace(workspace)"
+                    >
+                      <Icon name="ph:pencil-simple" class="size-4" />
+                      Edit
+                    </BaseButton>
+                    <Icon
+                      v-if="selectedWorkspaceId === workspace.id"
+                      name="lucide:check-circle"
+                      class="size-5 shrink-0 text-primary-600 dark:text-primary-400"
+                    />
+                  </div>
                 </div>
 
                 <div class="mt-2 flex items-center gap-4">
@@ -268,25 +279,14 @@ onMounted(async () => {
 
     <!-- Footer -->
     <div class="border-t border-muted-200 dark:border-muted-700 p-4">
-      <div class="flex gap-3">
-        <BaseButton
-          variant="outline"
-          class="flex-1"
-          :disabled="!selectedWorkspaceId"
-          @click="openEditWorkspace(workspaces.find((item) => item.id === selectedWorkspaceId)!)"
-        >
-          <Icon name="ph:pencil-simple" class="size-4" />
-          <span>Edit Workspace</span>
-        </BaseButton>
-        <BaseButton
-          variant="primary"
-          class="flex-1"
-          @click="openCreateWorkspace"
-        >
-          <Icon name="ph:plus" class="size-4" />
-          <span>Create New Workspace</span>
-        </BaseButton>
-      </div>
+      <BaseButton
+        variant="primary"
+        class="w-full"
+        @click="openCreateWorkspace"
+      >
+        <Icon name="ph:plus" class="size-4" />
+        <span>Create New Workspace</span>
+      </BaseButton>
     </div>
 
     <WorkspaceEditorDrawer
