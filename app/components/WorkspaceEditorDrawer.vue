@@ -15,7 +15,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   close: []
-  saved: [workspace: Workspace]
+  saved: [workspace: Workspace | null]
 }>()
 
 const api = useApi()
@@ -60,30 +60,38 @@ const handleSave = async () => {
 
   try {
     if (props.workspace) {
-      await api.put(`/workspaces/${props.workspace.id}`, {
-        name: state.name.trim(),
-        slug: state.slug.trim(),
-        description: state.description.trim() || null,
-      }, {
-        base: 'gateway',
-      })
+      await api.put(
+        `/workspaces/${props.workspace.id}`,
+        {
+          name: state.name.trim(),
+          slug: state.slug.trim(),
+          description: state.description.trim() || null,
+        },
+        {
+          base: 'gateway',
+        },
+      )
     } else {
-      await api.post('/workspaces', {
-        name: state.name.trim(),
-        slug: state.slug.trim(),
-        description: state.description.trim() || null,
-      }, {
-        base: 'gateway',
-      })
+      await api.post(
+        '/workspaces',
+        {
+          name: state.name.trim(),
+          slug: state.slug.trim(),
+          description: state.description.trim() || null,
+        },
+        {
+          base: 'gateway',
+        },
+      )
     }
 
     await fetchWorkspaces({ force: true })
 
     const refreshed = props.workspace
       ? (await api.get(`/workspaces/${props.workspace.id}`, { base: 'gateway' })).data
-      : undefined
+      : null
 
-    emit('saved', refreshed ?? null)
+    emit('saved', refreshed)
     emit('close')
   } catch (error: any) {
     state.error = error?.data?.message ?? 'Unable to save workspace. Please try again.'
@@ -108,7 +116,7 @@ const handleClose = () => {
       </BaseButton>
     </div>
 
-    <div class="flex-1 overflow-y-auto p-6 space-y-6">
+    <div class="flex-1 space-y-6 overflow-y-auto p-6">
       <div class="space-y-2">
         <BaseLabel>
           Workspace name
@@ -163,7 +171,7 @@ const handleClose = () => {
       </BaseAlert>
     </div>
 
-    <div class="border-t border-muted-200 dark:border-muted-700 p-6 flex items-center justify-between">
+    <div class="flex items-center justify-between border-t border-muted-200 p-6 dark:border-muted-700">
       <BaseButton variant="ghost" @click="handleClose">
         Cancel
       </BaseButton>
@@ -178,4 +186,5 @@ const handleClose = () => {
     </div>
   </div>
 </template>
+
 

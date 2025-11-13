@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from '#imports'
-import { useNuiToasts } from '#imports'
-import WorkspaceEditorDrawer from '~/components/workspace/WorkspaceEditorDrawer.vue'
 import type { Workspace } from '~/types/workspace'
+import { computed, onMounted, onUnmounted, ref, useNuiToasts } from '#imports'
+import WorkspaceEditorDrawer from '~/components/WorkspaceEditorDrawer.vue'
+import WorkspaceListItem from '~/components/WorkspaceListItem.vue'
 import { useWorkspace } from '~/composables/useWorkspace'
 
 const props = withDefaults(
@@ -22,6 +22,8 @@ const toaster = useNuiToasts()
 const { workspaces, isLoading, error, currentWorkspace, fetchWorkspaces, selectWorkspace } = useWorkspace()
 
 const searchQuery = ref('')
+const isEditorOpen = ref(false)
+const editorWorkspace = ref<Workspace | null>(null)
 
 const selectedWorkspaceId = computed(() => currentWorkspace.value?.id ?? props.currentWorkspaceId)
 
@@ -34,13 +36,13 @@ const filteredWorkspaces = computed(() => {
 
   return workspaces.value.filter((workspace) => {
     return (
-      workspace.name.toLowerCase().includes(query) ||
-      (workspace.description ?? '').toLowerCase().includes(query)
+      workspace.name.toLowerCase().includes(query)
+      || (workspace.description ?? '').toLowerCase().includes(query)
     )
   })
 })
 
-const handleSelect = (workspace: Workspace) => {
+function handleSelect(workspace: Workspace) {
   const selected = selectWorkspace(workspace)
 
   if (selected) {
@@ -54,26 +56,32 @@ const handleSelect = (workspace: Workspace) => {
   }
 }
 
-const isEditorOpen = ref(false)
-const editorWorkspace = ref<Workspace | null>(null)
-
-const openCreateWorkspace = () => {
+function openCreateWorkspace() {
   editorWorkspace.value = null
   isEditorOpen.value = true
 }
 
-const openEditWorkspace = (workspace: Workspace) => {
+function openEditWorkspace(workspace: Workspace) {
   editorWorkspace.value = workspace
   isEditorOpen.value = true
 }
 
-const handleSaved = async () => {
+async function handleSaved(savedWorkspace?: Workspace | null) {
   await fetchWorkspaces({ force: true })
-  isEditorOpen.value = false
+  closeEditor()
+
+  if (savedWorkspace) {
+    selectWorkspace(savedWorkspace)
+  }
 }
 
-const handleClose = () => {
+function handleClose() {
   emits('close')
+}
+
+function closeEditor() {
+  isEditorOpen.value = false
+  editorWorkspace.value = null
 }
 
 onMounted(async () => {
@@ -148,85 +156,14 @@ onMounted(async () => {
         </div>
 
         <template v-else>
-          <button
+          <WorkspaceListItem
             v-for="workspace in filteredWorkspaces"
             :key="workspace.id"
-            type="button"
-            class="w-full rounded-lg border border-muted-200 dark:border-muted-700 p-4 text-start transition-all duration-200 hover:border-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/20"
-            :class="
-              selectedWorkspaceId === workspace.id
-                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                : 'hover:shadow-sm'
-            "
-            @click="handleSelect(workspace)"
-          >
-            <div class="flex items-start gap-4">
-              <div class="shrink-0">
-                <BaseAvatar
-                  v-if="workspace.logo"
-                  :src="workspace.logo"
-                  size="md"
-                />
-                <div
-                  v-else
-                  class="flex size-12 items-center justify-center rounded-lg bg-primary-100 dark:bg-primary-900/30"
-                >
-                  <Icon
-                    name="solar:layers-linear"
-                    class="size-6 text-primary-600 dark:text-primary-400"
-                  />
-                </div>
-              </div>
-
-              <div class="flex-1 min-w-0">
-                <div class="flex items-start justify-between gap-2">
-                  <div class="flex-1 min-w-0">
-                    <BaseHeading
-                      as="h4"
-                      size="sm"
-                      weight="semibold"
-                      class="mb-1 text-muted-800 dark:text-muted-100"
-                    >
-                      {{ workspace.name }}
-                    </BaseHeading>
-                    <BaseParagraph
-                      v-if="workspace.description"
-                      size="xs"
-                      class="mb-2 line-clamp-1 text-muted-500 dark:text-muted-400"
-                    >
-                      {{ workspace.description }}
-                    </BaseParagraph>
-                  </div>
-                  <Icon
-                    v-if="selectedWorkspaceId === workspace.id"
-                    name="lucide:check-circle"
-                    class="size-5 shrink-0 text-primary-600 dark:text-primary-400"
-                  />
-                </div>
-
-                <div class="mt-2 flex items-center gap-4">
-                  <div class="flex items-center gap-1.5">
-                    <Icon
-                      name="solar:users-group-linear"
-                      class="size-3.5 text-muted-400"
-                    />
-                    <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
-                      {{ workspace.members }} {{ workspace.members === 1 ? 'member' : 'members' }}
-                    </BaseText>
-                  </div>
-                  <div class="flex items-center gap-1.5">
-                    <Icon
-                      name="solar:link-linear"
-                      class="size-3.5 text-muted-400"
-                    />
-                    <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
-                      {{ workspace.links }} {{ workspace.links === 1 ? 'link' : 'links' }}
-                    </BaseText>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </button>
+            :workspace="workspace"
+            :selected="selectedWorkspaceId === workspace.id"
+            @select="handleSelect"
+            @edit="openEditWorkspace"
+          />
 
           <div
             v-if="!isLoading && filteredWorkspaces.length === 0"
@@ -267,34 +204,22 @@ onMounted(async () => {
     </div>
 
     <!-- Footer -->
-    <div class="border-t border-muted-200 dark:border-muted-700 p-4">
-      <div class="flex gap-3">
-        <BaseButton
-          variant="outline"
-          class="flex-1"
-          :disabled="!selectedWorkspaceId"
-          @click="openEditWorkspace(workspaces.find((item) => item.id === selectedWorkspaceId)!)"
-        >
-          <Icon name="ph:pencil-simple" class="size-4" />
-          <span>Edit Workspace</span>
-        </BaseButton>
-        <BaseButton
-          variant="primary"
-          class="flex-1"
-          @click="openCreateWorkspace"
-        >
-          <Icon name="ph:plus" class="size-4" />
-          <span>Create New Workspace</span>
-        </BaseButton>
-      </div>
+    <div class="border-t border-muted-200 dark:border-muted-700">
+      <BaseButton
+        variant="primary"
+        class="flex w-full items-center justify-center gap-2 rounded-none py-5 text-base font-semibold"
+        @click="openCreateWorkspace"
+      >
+        <Icon name="ph:plus" class="size-4" />
+        <span>Create New Workspace</span>
+      </BaseButton>
     </div>
 
     <WorkspaceEditorDrawer
       v-if="isEditorOpen"
-      :workspace="editorWorkspace || workspaces.find((item) => item.id === selectedWorkspaceId) || null"
-      @close="isEditorOpen = false"
+      :workspace="editorWorkspace"
+      @close="closeEditor"
       @saved="handleSaved"
     />
   </div>
 </template>
-
