@@ -6,7 +6,7 @@ const DEFAULT_SECTIONS = [
   { id: 'geographic', label: 'Geographic Insights', icon: 'solar:map-point-linear' },
   { id: 'device', label: 'Device & Technology', icon: 'solar:smartphone-linear' },
   { id: 'referral', label: 'Referral & Source', icon: 'solar:link-linear' },
-  { id: 'behavior', label: 'User Behavior', icon: 'solar:users-group-linear' },
+  { id: 'behavior', label: 'User Behavior', icon: 'ph:users' },
   { id: 'geodevice', label: 'Geo-Device Insights', icon: 'solar:global-linear' },
 ]
 

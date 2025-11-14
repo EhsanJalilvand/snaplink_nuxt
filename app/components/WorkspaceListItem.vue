@@ -70,7 +70,7 @@ function handleEdit() {
         <div class="mt-2 flex items-center gap-4">
           <div class="flex items-center gap-1.5">
             <Icon
-              name="solar:users-group-linear"
+              name="ph:users"
               class="size-3.5 text-muted-400"
             />
             <BaseText size="xs" class="text-muted-500 dark:text-muted-400">

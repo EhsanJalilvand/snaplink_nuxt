@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { callOnce } from '#imports'
 import { usePreferencesWebhooks } from '~/composables/usePreferencesWebhooks'
+
+const props = defineProps<{
+  workspaceId?: string | null
+}>()
 
 const {
   items,
@@ -10,7 +13,6 @@ const {
   createModalOpen,
   draft,
   eventOptions,
-  fetchWebhooks,
   openCreateModal,
   closeCreateModal,
   updateDraft,
@@ -18,9 +20,7 @@ const {
   createWebhook,
   removeWebhook,
   toggleWebhookStatus,
-} = usePreferencesWebhooks()
-
-await callOnce(() => fetchWebhooks())
+} = usePreferencesWebhooks(props.workspaceId)
 
 const handleCreate = async () => {
   await createWebhook()
@@ -98,10 +98,10 @@ const handleToggleEvent = (value: string) => {
                   {{ webhook.name }}
                 </BaseHeading>
                 <BaseChip
-                  :color="webhook.status === 'active' ? 'success' : 'muted'"
+                  :color="webhook.isActive ? 'success' : 'muted'"
                   size="sm"
                 >
-                  {{ webhook.status === 'active' ? 'Active' : 'Inactive' }}
+                  {{ webhook.isActive ? 'Active' : 'Inactive' }}
                 </BaseChip>
               </div>
               <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400 mb-2">
@@ -126,7 +126,7 @@ const handleToggleEvent = (value: string) => {
                 @click="handleToggle(webhook.id)"
               >
                 <Icon
-                  :name="webhook.status === 'active' ? 'ph:toggle-right' : 'ph:toggle-left'"
+                  :name="webhook.isActive ? 'ph:toggle-right' : 'ph:toggle-left'"
                   class="size-4"
                 />
               </BaseButton>
@@ -146,7 +146,7 @@ const handleToggleEvent = (value: string) => {
           v-if="!isLoading && items.length === 0"
           class="text-center py-12"
         >
-          <Icon name="solar:api-linear" class="size-12 text-muted-400 mx-auto mb-4" />
+          <Icon name="ph:code" class="size-12 text-muted-400 mx-auto mb-4" />
           <BaseParagraph size="sm" class="text-muted-500 dark:text-muted-400 mb-4">
             No webhooks configured yet. Create one to get started!
           </BaseParagraph>

@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
 import type { Workspace } from '~/types/workspace'
 import { computed, onMounted, onUnmounted, ref, useNuiToasts } from '#imports'
-import WorkspaceEditorDrawer from '~/components/WorkspaceEditorDrawer.vue'
+import WorkspaceCreationWizard from '~/components/workspace/WorkspaceCreationWizard.vue'
 import WorkspaceListItem from '~/components/WorkspaceListItem.vue'
 import { useWorkspace } from '~/composables/useWorkspace'
 
@@ -18,12 +19,12 @@ const emits = defineEmits<{
   close: [selectedWorkspace?: Workspace]
 }>()
 
+const router = useRouter()
 const toaster = useNuiToasts()
 const { workspaces, isLoading, error, currentWorkspace, fetchWorkspaces, selectWorkspace } = useWorkspace()
 
 const searchQuery = ref('')
-const isEditorOpen = ref(false)
-const editorWorkspace = ref<Workspace | null>(null)
+const isWizardOpen = ref(false)
 
 const selectedWorkspaceId = computed(() => currentWorkspace.value?.id ?? props.currentWorkspaceId)
 
@@ -57,31 +58,36 @@ function handleSelect(workspace: Workspace) {
 }
 
 function openCreateWorkspace() {
-  editorWorkspace.value = null
-  isEditorOpen.value = true
+  isWizardOpen.value = true
 }
 
 function openEditWorkspace(workspace: Workspace) {
-  editorWorkspace.value = workspace
-  isEditorOpen.value = true
+  // Navigate to preferences page with workspaceId
+  router.push({
+    path: '/dashboard/preferences',
+    query: { workspaceId: workspace.id },
+  })
+  handleClose()
 }
 
-async function handleSaved(savedWorkspace?: Workspace | null) {
+async function handleWizardSaved(workspaceId: string) {
   await fetchWorkspaces({ force: true })
-  closeEditor()
+  isWizardOpen.value = false
 
-  if (savedWorkspace) {
-    selectWorkspace(savedWorkspace)
+  // Select the newly created workspace
+  const newWorkspace = workspaces.value.find(w => w.id === workspaceId)
+  if (newWorkspace) {
+    selectWorkspace(newWorkspace)
+    emits('close', newWorkspace)
   }
+}
+
+function handleWizardClose() {
+  isWizardOpen.value = false
 }
 
 function handleClose() {
   emits('close')
-}
-
-function closeEditor() {
-  isEditorOpen.value = false
-  editorWorkspace.value = null
 }
 
 onMounted(async () => {
@@ -215,11 +221,10 @@ onMounted(async () => {
       </BaseButton>
     </div>
 
-    <WorkspaceEditorDrawer
-      v-if="isEditorOpen"
-      :workspace="editorWorkspace"
-      @close="closeEditor"
-      @saved="handleSaved"
+    <WorkspaceCreationWizard
+      v-if="isWizardOpen"
+      @close="handleWizardClose"
+      @saved="handleWizardSaved"
     />
   </div>
 </template>

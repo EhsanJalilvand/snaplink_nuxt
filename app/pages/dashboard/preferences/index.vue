@@ -1,48 +1,28 @@
 <script setup lang="ts">
-import { computed } from '#imports'
-import PreferencesAppearance from '~/components/preferences/PreferencesAppearance.vue'
-import PreferencesTeam from '~/components/preferences/PreferencesTeam.vue'
-import PreferencesWebhooks from '~/components/preferences/PreferencesWebhooks.vue'
 import PreferencesPageHeader from '~/components/preferences/PreferencesPageHeader.vue'
-import PreferencesTabsNav from '~/components/preferences/PreferencesTabsNav.vue'
-import { usePreferencesTabs } from '~/composables/usePreferencesTabs'
-import type { PreferencesTabId } from '~/types/preferences'
+import WorkspacePreferences from '~/components/workspace/WorkspacePreferences.vue'
+import { useWorkspace } from '~/composables/useWorkspace'
 
 definePageMeta({
   title: 'Preferences',
   layout: 'dashboard',
 })
 
-const { tabs, activeTab, setActiveTab } = usePreferencesTabs()
+const route = useRoute()
+const { currentWorkspaceId } = useWorkspace()
 
-const componentMap: Record<PreferencesTabId, any> = {
-  appearance: PreferencesAppearance,
-  team: PreferencesTeam,
-  webhooks: PreferencesWebhooks,
-}
-
-const activeComponent = computed(() => componentMap[activeTab.value])
-
-const updateTab = (value: PreferencesTabId) => {
-  setActiveTab(value)
-}
+// Get workspaceId from query param or current workspace
+const workspaceId = computed(() => {
+  const queryWorkspaceId = route.query.workspaceId as string | undefined
+  return queryWorkspaceId || currentWorkspaceId.value
+})
 </script>
 
 <template>
   <div class="space-y-6 py-6">
     <PreferencesPageHeader />
 
-    <PreferencesTabsNav
-      :tabs="tabs"
-      :model-value="activeTab"
-      @update:model-value="updateTab"
-    />
-
-    <div class="mt-6">
-      <Suspense>
-        <component :is="activeComponent" />
-      </Suspense>
-    </div>
+    <WorkspacePreferences :workspace-id="workspaceId" />
   </div>
 </template>
 

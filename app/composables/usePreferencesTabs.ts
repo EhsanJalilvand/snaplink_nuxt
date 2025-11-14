@@ -8,14 +8,24 @@ const TABS: PreferencesTab[] = [
     icon: 'solar:palette-linear',
   },
   {
+    id: 'domains',
+    label: 'Domains',
+    icon: 'solar:global-linear',
+  },
+  {
+    id: 'permissions',
+    label: 'Permissions',
+    icon: 'solar:shield-check-linear',
+  },
+  {
     id: 'team',
     label: 'Team',
-    icon: 'solar:users-group-linear',
+    icon: 'ph:users',
   },
   {
     id: 'webhooks',
     label: 'Webhooks',
-    icon: 'solar:api-linear',
+    icon: 'ph:code',
   },
 ]
 

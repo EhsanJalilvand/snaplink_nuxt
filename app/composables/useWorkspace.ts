@@ -8,6 +8,7 @@ interface WorkspaceState {
   isLoading: boolean
   error: string | null
   currentWorkspaceId?: string
+  currentWorkspaceName?: string // Store name from localStorage for immediate display
   hydrated: boolean
   fetchedAt?: number
 }
@@ -19,6 +20,7 @@ const initialState = (): WorkspaceState => ({
   isLoading: false,
   error: null,
   currentWorkspaceId: undefined,
+  currentWorkspaceName: undefined,
   hydrated: false,
   fetchedAt: undefined,
 })
@@ -34,11 +36,11 @@ export const useWorkspace = () => {
       return
     }
 
-    state.value.hydrated = true
-
     if (!import.meta.client) {
       return
     }
+
+    state.value.hydrated = true
 
     const stored = localStorage.getItem(STORAGE_KEY)
 
@@ -47,8 +49,9 @@ export const useWorkspace = () => {
     }
 
     try {
-      const parsed = JSON.parse(stored) as { id: string }
+      const parsed = JSON.parse(stored) as { id: string; name?: string }
       state.value.currentWorkspaceId = parsed.id
+      state.value.currentWorkspaceName = parsed.name // Store name for immediate display
     } catch (error) {
       if (import.meta.dev) {
         console.warn('[useWorkspace] Failed to parse stored workspace', error)
@@ -62,6 +65,10 @@ export const useWorkspace = () => {
     state.value.fetchedAt = Date.now()
   }
 
+  if (import.meta.client) {
+    hydrateFromStorage()
+  }
+
   const workspaces = computed(() => state.value.items)
 
   const currentWorkspace = computed<Workspace | null>(() => {
@@ -72,7 +79,17 @@ export const useWorkspace = () => {
     return state.value.items.find((workspace) => workspace.id === state.value.currentWorkspaceId) ?? null
   })
 
-  const currentWorkspaceLabel = computed(() => currentWorkspace.value?.name ?? 'Select a workspace')
+  const currentWorkspaceLabel = computed(() => {
+    // First try to get name from loaded workspace
+    if (currentWorkspace.value?.name) {
+      return currentWorkspace.value.name
+    }
+    // Fallback to stored name from localStorage (for immediate display after refresh)
+    if (state.value.currentWorkspaceName) {
+      return state.value.currentWorkspaceName
+    }
+    return 'Select a workspace'
+  })
 
   const persistWorkspace = (workspace: Workspace | null) => {
     if (!import.meta.client) {
@@ -80,12 +97,13 @@ export const useWorkspace = () => {
     }
 
     if (workspace) {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ id: workspace.id, name: workspace.name }),
-      )
+      const data = { id: workspace.id, name: workspace.name }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+      // Also update state for immediate display
+      state.value.currentWorkspaceName = workspace.name
     } else {
       localStorage.removeItem(STORAGE_KEY)
+      state.value.currentWorkspaceName = undefined
     }
   }
 
@@ -94,6 +112,10 @@ export const useWorkspace = () => {
       workspace,
       previousWorkspace,
     })
+  }
+
+  const onWorkspaceSelection = (callback: (payload: WorkspaceSelectionPayload) => void) => {
+    return events.on<WorkspaceSelectionPayload>('workspace:selected', callback)
   }
 
   const selectWorkspace = (workspace: Workspace | string | null, options: { silent?: boolean } = {}) => {
@@ -115,9 +137,11 @@ export const useWorkspace = () => {
 
     if (resolved) {
       state.value.currentWorkspaceId = resolved.id
+      state.value.currentWorkspaceName = resolved.name
       persistWorkspace(resolved)
     } else {
       state.value.currentWorkspaceId = undefined
+      state.value.currentWorkspaceName = undefined
       persistWorkspace(null)
     }
 
@@ -154,6 +178,23 @@ export const useWorkspace = () => {
 
       const items = response?.data ?? []
       setWorkspaceList(items)
+      
+      // If we have a stored workspaceId but workspace wasn't found in list, clear it
+      if (state.value.currentWorkspaceId && !items.find(w => w.id === state.value.currentWorkspaceId)) {
+        if (import.meta.dev) {
+          console.warn('[useWorkspace] Stored workspace not found in list, clearing selection')
+        }
+        state.value.currentWorkspaceId = undefined
+        state.value.currentWorkspaceName = undefined
+        persistWorkspace(null)
+      } else if (state.value.currentWorkspaceId) {
+        // Update stored name if workspace is found
+        const found = items.find(w => w.id === state.value.currentWorkspaceId)
+        if (found) {
+          state.value.currentWorkspaceName = found.name
+          persistWorkspace(found)
+        }
+      }
     } catch (error) {
       state.value.error = 'Unable to load workspaces from gateway.'
     } finally {
@@ -168,6 +209,7 @@ export const useWorkspace = () => {
   const clearWorkspace = () => {
     const previous = currentWorkspace.value
     state.value.currentWorkspaceId = undefined
+    state.value.currentWorkspaceName = undefined
     persistWorkspace(null)
     emitSelection(null, previous)
   }
@@ -186,5 +228,6 @@ export const useWorkspace = () => {
     selectWorkspace,
     clearWorkspace,
     hydrateFromStorage,
+    onWorkspaceSelection,
   }
 }

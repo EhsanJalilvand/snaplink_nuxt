@@ -2,7 +2,7 @@ export type ThemeOption = 'light' | 'dark' | 'auto'
 export type BorderRadiusOption = 'none' | 'sm' | 'md' | 'lg'
 export type AnimationSpeedOption = 'fast' | 'normal' | 'slow'
 
-export type PreferencesTabId = 'appearance' | 'team' | 'webhooks'
+export type PreferencesTabId = 'appearance' | 'domains' | 'permissions' | 'team' | 'webhooks'
 
 export interface PreferencesTab {
   id: PreferencesTabId
@@ -16,6 +16,7 @@ export interface AppearanceSettings {
   fontFamily: string
   borderRadius: BorderRadiusOption
   animationSpeed: AnimationSpeedOption
+  logoUrl?: string
 }
 
 export interface AppearanceSettingsResponse {
@@ -56,9 +57,11 @@ export interface Webhook {
   name: string
   url: string
   events: string[]
-  status: 'active' | 'inactive'
+  isActive: boolean
+  status?: 'active' | 'inactive' // Computed from isActive for backward compatibility
   secret?: string
   createdAt: string
+  lastTriggeredAt?: string
 }
 
 export interface WebhookListResponse {
@@ -74,4 +77,38 @@ export interface CreateWebhookPayload {
 export interface UpdateWebhookStatusPayload {
   id: string
   status: 'active' | 'inactive'
+}
+
+export interface DomainSettings {
+  subdomain?: string
+  customDomain?: string
+  domainVerified: boolean
+}
+
+export interface DomainValidationResult {
+  isValid: boolean
+  isVerified: boolean
+  errorMessage?: string
+}
+
+export interface WorkspacePermission {
+  id: number
+  permission: number
+  name: string
+  category: string
+  description: string
+}
+
+export interface WorkspaceRolePermission {
+  id: string
+  workspaceId: string
+  role: 'Owner' | 'Admin' | 'Member' | 'Viewer'
+  permission: number
+  allowed: boolean
+}
+
+export interface PermissionMapping {
+  role: 'Owner' | 'Admin' | 'Member' | 'Viewer'
+  permission: number
+  allowed: boolean
 }

@@ -1,7 +1,8 @@
-import { computed, toRefs, useState } from '#imports'
+import { computed, toRefs, useState, watch } from '#imports'
 import { useApi } from './useApi'
 import { useSecurity } from './useSecurity'
 import { useNuiToasts } from '#imports'
+import { useWorkspace } from './useWorkspace'
 import type {
   InviteTeamPayload,
   TeamListResponse,
@@ -17,27 +18,6 @@ interface TeamPreferencesState {
   error: string | null
 }
 
-const FALLBACK_MEMBERS: TeamMember[] = [
-  {
-    id: 'team-1',
-    name: 'John Doe',
-    email: 'john@example.com',
-    role: 'owner',
-    avatar: null,
-    status: 'active',
-    createdAt: '2024-01-01',
-  },
-  {
-    id: 'team-2',
-    name: 'Jane Smith',
-    email: 'jane@example.com',
-    role: 'admin',
-    avatar: null,
-    status: 'active',
-    createdAt: '2024-01-12',
-  },
-]
-
 const ROLE_OPTIONS: Array<{ label: string; value: TeamMemberRole }> = [
   { label: 'Member', value: 'member' },
   { label: 'Admin', value: 'admin' },
@@ -51,12 +31,19 @@ const initialState = (): TeamPreferencesState => ({
   error: null,
 })
 
-export const usePreferencesTeam = () => {
+export const usePreferencesTeam = (workspaceId?: string | null) => {
   const api = useApi()
   const toasts = useNuiToasts()
   const security = useSecurity()
+  const { currentWorkspaceId } = useWorkspace()
+
+  const effectiveWorkspaceId = computed(() => workspaceId || currentWorkspaceId.value)
 
   const state = useState<TeamPreferencesState>('snaplink:preferences-team', initialState)
+
+  const resetState = () => {
+    Object.assign(state.value, initialState())
+  }
 
   const sanitizeMember = (member: TeamMember): TeamMember => ({
     ...member,
@@ -75,7 +62,7 @@ export const usePreferencesTeam = () => {
   }
 
   const fetchMembers = async () => {
-    if (state.value.isLoading) {
+    if (state.value.isLoading || !effectiveWorkspaceId.value) {
       return
     }
 
@@ -83,7 +70,7 @@ export const usePreferencesTeam = () => {
     state.value.error = null
 
     try {
-      const response = await api.get<TeamListResponse>('/preferences/team', {
+      const response = await api.get<TeamListResponse>(`/workspaces/${effectiveWorkspaceId.value}/preferences/team`, {
         base: 'gateway',
         requiresAuth: true,
         quiet: true,
@@ -96,21 +83,21 @@ export const usePreferencesTeam = () => {
       if (response?.data?.length) {
         setMembers(response.data)
       } else {
-        setMembers(FALLBACK_MEMBERS)
+        setMembers([])
       }
     } catch (error) {
       if (import.meta.dev) {
-        console.warn('[usePreferencesTeam] Falling back to static data', error)
+        console.warn('[usePreferencesTeam] Failed to load team members', error)
       }
-      state.value.error = 'Unable to load team members. Showing cached data.'
-      setMembers(FALLBACK_MEMBERS)
+      state.value.error = 'Unable to load team members.'
+      setMembers([])
     } finally {
       state.value.isLoading = false
     }
   }
 
   const inviteMember = async (payload: InviteTeamPayload) => {
-    if (state.value.isInviting) {
+    if (state.value.isInviting || !effectiveWorkspaceId.value) {
       return
     }
 
@@ -122,7 +109,11 @@ export const usePreferencesTeam = () => {
         role: payload.role,
       }
 
-      await api.post('/preferences/team/invite', sanitizedPayload, {
+      const response = await api.post<{ data: TeamMember }>(`/workspaces/${effectiveWorkspaceId.value}/members`, {
+        email: sanitizedPayload.email,
+        displayName: sanitizedPayload.email.split('@')[0],
+        role: sanitizedPayload.role,
+      }, {
         base: 'gateway',
         requiresAuth: true,
         quiet: true,
@@ -130,18 +121,23 @@ export const usePreferencesTeam = () => {
         retry: 0,
       })
 
-      const name = sanitizedPayload.email.split('@')[0]
-      const newMember: TeamMember = sanitizeMember({
-        id: `pending-${Date.now()}`,
-        name,
-        email: sanitizedPayload.email,
-        role: sanitizedPayload.role,
-        avatar: null,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-      })
-
-      state.value.members = [newMember, ...state.value.members]
+      if (response?.data) {
+        const newMember = sanitizeMember(response.data)
+        state.value.members = [newMember, ...state.value.members]
+      } else {
+        // Fallback if response doesn't include member data
+        const name = sanitizedPayload.email.split('@')[0]
+        const newMember: TeamMember = sanitizeMember({
+          id: `pending-${Date.now()}`,
+          name,
+          email: sanitizedPayload.email,
+          role: sanitizedPayload.role,
+          avatar: null,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+        })
+        state.value.members = [newMember, ...state.value.members]
+      }
 
       toasts.add({
         title: 'Invitation sent',
@@ -162,14 +158,15 @@ export const usePreferencesTeam = () => {
   }
 
   const updateRole = async (memberId: string, role: TeamMemberRole) => {
+    if (!effectiveWorkspaceId.value) {
+      return
+    }
+
     const sanitizedId = security.sanitizeInput(memberId, { trim: true })
     try {
-      const payload: UpdateTeamRolePayload = {
-        memberId: sanitizedId,
+      await api.put(`/workspaces/${effectiveWorkspaceId.value}/members/${sanitizedId}`, {
         role,
-      }
-
-      await api.put('/preferences/team/role', payload, {
+      }, {
         base: 'gateway',
         requiresAuth: true,
         quiet: true,
@@ -199,9 +196,13 @@ export const usePreferencesTeam = () => {
   }
 
   const removeMember = async (memberId: string) => {
+    if (!effectiveWorkspaceId.value) {
+      return
+    }
+
     const sanitizedId = security.sanitizeInput(memberId, { trim: true })
     try {
-      await api.delete(`/preferences/team/${sanitizedId}`, {
+      await api.delete(`/workspaces/${effectiveWorkspaceId.value}/members/${sanitizedId}`, {
         base: 'gateway',
         requiresAuth: true,
         quiet: true,
@@ -227,6 +228,23 @@ export const usePreferencesTeam = () => {
   }
 
   const roleOptions = computed(() => ROLE_OPTIONS)
+
+  watch(
+    effectiveWorkspaceId,
+    (newId, previousId) => {
+      if (!newId) {
+        resetState()
+        return
+      }
+
+      if (newId !== previousId) {
+        resetState()
+      }
+
+      fetchMembers()
+    },
+    { immediate: true },
+  )
 
   return {
     ...toRefs(state.value),

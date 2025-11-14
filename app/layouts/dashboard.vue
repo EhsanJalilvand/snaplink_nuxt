@@ -3,6 +3,7 @@ import { SnapLinkPanelLanguage } from '#components'
 import { callOnce } from '#imports'
 import { getLocaleFlag } from '~/utils/locale'
 import { useAppLocale } from '~/composables/useLocale'
+import { useWorkspaceBranding } from '~/composables/useWorkspaceBranding'
 
 const currentLocale = useAppLocale()
 const { open } = usePanels()
@@ -17,8 +18,11 @@ const {
   currentWorkspaceId,
   fetchWorkspaces,
   selectWorkspace,
+  clearWorkspace,
   hydrateFromStorage,
 } = useWorkspace()
+
+useWorkspaceBranding()
 
 await callOnce(async () => {
   hydrateFromStorage()
@@ -261,6 +265,9 @@ const route = useRoute()
 const router = useRouter()
 const sidebarId = ref(getRouteSidebarId())
 
+// Development mode flag
+const isDev = import.meta.dev
+
 watch(() => route.path, () => {
   sidebarId.value = getRouteSidebarId()
 })
@@ -404,7 +411,8 @@ function handlePrimaryNavClick(item: MenuItem) {
     </TairoSidebarNav>
 
     <TairoSidebarContent class="min-h-screen">
-      <!-- Top Navbar -->
+      <WorkspaceGuard>
+        <!-- Top Navbar -->
       <div class="border-muted-200 dark:border-muted-800 sticky top-0 z-40 flex h-16 w-full items-center justify-between border-b bg-white/95 px-4 backdrop-blur-md dark:bg-muted-950/95 md:px-6 lg:px-8 relative">
         <!-- Left side - Logo and Title -->
         <div class="flex items-center gap-4">
@@ -437,6 +445,17 @@ function handlePrimaryNavClick(item: MenuItem) {
 
         <!-- Right side - Language, Theme, User -->
         <div class="flex items-center gap-2">
+          <!-- Temporary: Clear Workspace Button (for testing) -->
+          <BaseButton
+            v-if="isDev"
+            size="xs"
+            variant="outline"
+            color="danger"
+            @click="clearWorkspace"
+          >
+            <Icon name="ph:x" class="size-3" />
+            <span class="hidden lg:inline">Clear WS</span>
+          </BaseButton>
           <!-- Language Selector -->
           <button
             type="button"
@@ -560,10 +579,11 @@ function handlePrimaryNavClick(item: MenuItem) {
         </div>
       </div>
 
-      <!-- Main Content -->
-      <div class="px-4 md:px-6 xl:px-8">
-        <slot />
-      </div>
+        <!-- Main Content -->
+        <div class="px-4 md:px-6 xl:px-8">
+          <slot />
+        </div>
+      </WorkspaceGuard>
     </TairoSidebarContent>
   </TairoSidebarLayout>
 </template>

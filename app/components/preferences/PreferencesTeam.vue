@@ -1,6 +1,10 @@
 <script setup lang="ts">
-import { callOnce, ref } from '#imports'
+import { ref } from '#imports'
 import { usePreferencesTeam } from '~/composables/usePreferencesTeam'
+
+const props = defineProps<{
+  workspaceId?: string | null
+}>()
 
 const {
   members,
@@ -8,16 +12,13 @@ const {
   isInviting,
   error,
   roleOptions,
-  fetchMembers,
   inviteMember,
   removeMember,
   updateRole,
-} = usePreferencesTeam()
+} = usePreferencesTeam(props.workspaceId)
 
 const inviteEmail = ref('')
 const inviteRole = ref<'member' | 'admin' | 'owner'>('member')
-
-await callOnce(() => fetchMembers())
 
 const handleInvite = async () => {
   if (!inviteEmail.value) {
@@ -195,7 +196,7 @@ const handleUpdateRole = async (memberId: string, newRole: string) => {
           v-if="!isLoading && members.length === 0"
           class="text-center py-12"
         >
-          <Icon name="solar:users-group-linear" class="size-12 text-muted-400 mx-auto mb-4" />
+          <Icon name="ph:users" class="size-12 text-muted-400 mx-auto mb-4" />
           <BaseParagraph size="sm" class="text-muted-500 dark:text-muted-400">
             No team members yet. Invite someone to get started!
           </BaseParagraph>
