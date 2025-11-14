@@ -8,14 +8,10 @@ definePageMeta({
   layout: 'dashboard',
 })
 
-const route = useRoute()
 const { currentWorkspaceId } = useWorkspace()
 
-// Get workspaceId from query param or current workspace
-const workspaceId = computed(() => {
-  const queryWorkspaceId = route.query.workspaceId as string | undefined
-  return queryWorkspaceId || currentWorkspaceId.value
-})
+// Get workspaceId from current workspace state (not from URL)
+const workspaceId = computed(() => currentWorkspaceId.value)
 </script>
 
 <template>

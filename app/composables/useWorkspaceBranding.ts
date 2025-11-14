@@ -1,4 +1,4 @@
-import { computed, useState, watch } from '#imports'
+import { computed, useState, watch, onMounted, nextTick } from '#imports'
 import { useWorkspace } from './useWorkspace'
 import { useApi } from './useApi'
 import { useWorkspaceTheme } from './useWorkspaceTheme'
@@ -67,6 +67,16 @@ export const useWorkspaceBranding = () => {
     },
     { immediate: true },
   )
+  
+  // Also try to fetch branding on mount if workspace is already selected
+  // This ensures branding is applied even when user visits landing page directly
+  if (import.meta.client) {
+    onMounted(() => {
+      if (currentWorkspaceId.value && !state.value.settings) {
+        fetchBranding(currentWorkspaceId.value)
+      }
+    })
+  }
 
   const refreshBranding = () => {
     if (currentWorkspaceId.value) {

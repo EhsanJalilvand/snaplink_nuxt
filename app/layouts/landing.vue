@@ -114,9 +114,6 @@ const menu = computed(() => [
             >
           </button>
 
-          <!-- Dark Mode Toggle -->
-          <BaseThemeToggle aria-label="Toggle darkmode" />
-
           <!-- Auth Buttons (if not logged in) -->
           <div v-if="!isAuthenticated" class="hidden sm:flex items-center gap-2">
             <BaseButton size="sm" variant="ghost" to="/auth/login">

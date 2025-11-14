@@ -62,10 +62,11 @@ function openCreateWorkspace() {
 }
 
 function openEditWorkspace(workspace: Workspace) {
-  // Navigate to preferences page with workspaceId
+  // Select the workspace first (so preferences page can access it)
+  selectWorkspace(workspace)
+  // Navigate to preferences page (workspaceId will come from currentWorkspaceId state)
   router.push({
     path: '/dashboard/preferences',
-    query: { workspaceId: workspace.id },
   })
   handleClose()
 }

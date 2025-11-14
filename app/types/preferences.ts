@@ -12,11 +12,13 @@ export interface PreferencesTab {
 
 export interface AppearanceSettings {
   primaryColor: string
+  accentColor?: string
   theme: ThemeOption
   fontFamily: string
   borderRadius: BorderRadiusOption
   animationSpeed: AnimationSpeedOption
   logoUrl?: string
+  faviconUrl?: string
 }
 
 export interface AppearanceSettingsResponse {

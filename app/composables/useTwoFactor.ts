@@ -212,23 +212,51 @@ export const useTwoFactor = () => {
         path: '/auth/two-factor',
         base: 'internal',
         requiresAuth: true,
-        quiet: true,
+        quiet: false, // Don't be quiet so we can see errors
         timeout: 7000,
       })
 
       if (response?.success) {
-        status.value = { enabled: false }
+        // Immediately update local state optimistically
+        status.value.enabled = false
+        
+        // Fetch actual status from backend to verify
+        await fetchStatus()
+        
+        // Check if status is still enabled after fetch (backend didn't actually disable it)
+        if (status.value.enabled) {
+          toasts.add({
+            title: 'Disable failed',
+            description: 'Two-factor authentication could not be disabled. Please try again or contact support.',
+            icon: 'ph:warning',
+            progress: true,
+          })
+          return
+        }
+        
         toasts.add({
           title: 'Two-factor disabled',
           description: 'Authenticator prompts have been turned off.',
-          icon: 'ph:info',
+          icon: 'ph:check',
+          progress: true,
+        })
+      } else {
+        // Response was not successful
+        await fetchStatus()
+        toasts.add({
+          title: 'Disable failed',
+          description: 'Could not disable 2FA. Please try again.',
+          icon: 'ph:warning',
           progress: true,
         })
       }
     } catch (error: any) {
+      // Fetch status to ensure UI reflects actual state
+      await fetchStatus()
+      
       toasts.add({
         title: 'Disable failed',
-        description: security.escapeHtml(error?.message ?? 'Could not disable 2FA.'),
+        description: security.escapeHtml(error?.message ?? 'Could not disable 2FA. Please try again.'),
         icon: 'ph:warning',
         progress: true,
       })

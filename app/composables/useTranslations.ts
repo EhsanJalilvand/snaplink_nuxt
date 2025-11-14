@@ -1,5 +1,5 @@
 export function useTranslations() {
-  const locale = useState<string>('app-locale', () => 'en')
+  const locale = useAppLocale()
   
   const translations = {
     en: {
@@ -60,6 +60,29 @@ export function useTranslations() {
         privacy: 'Privacy Policy',
         terms: 'Terms of Service',
         copyright: '© 2024 SnapLink. All rights reserved.'
+      },
+      preferences: {
+        appearance: 'Appearance',
+        domains: 'Domains',
+        permissions: 'Permissions',
+        team: 'Team',
+        webhooks: 'Webhooks',
+        colorScheme: 'Color Scheme',
+        primaryColor: 'Primary Color',
+        theme: 'Theme',
+        fontFamily: 'Font Family',
+        workspaceLogo: 'Workspace Logo',
+        saveChanges: 'Save Changes',
+        selectBrandColor: 'Select your brand color',
+        chooseTheme: 'Choose your preferred theme',
+        uploadLogo: 'Upload a logo for your workspace',
+        chooseFile: 'Choose File',
+        upload: 'Upload',
+        remove: 'Remove',
+        recommendedSize: 'Recommended size: 512x512px. Max file size: 5MB',
+        light: 'Light',
+        dark: 'Dark',
+        auto: 'Auto',
       }
     },
     fa: {
@@ -120,6 +143,29 @@ export function useTranslations() {
         privacy: 'سیاست حریم خصوصی',
         terms: 'شرایط خدمات',
         copyright: '© 2024 SnapLink. تمام حقوق محفوظ است.'
+      },
+      preferences: {
+        appearance: 'ظاهر',
+        domains: 'دامنه‌ها',
+        permissions: 'مجوزها',
+        team: 'تیم',
+        webhooks: 'وب‌هوک‌ها',
+        colorScheme: 'طرح رنگ',
+        primaryColor: 'رنگ اصلی',
+        theme: 'تم',
+        fontFamily: 'فونت',
+        workspaceLogo: 'لوگوی فضای کاری',
+        saveChanges: 'ذخیره تغییرات',
+        selectBrandColor: 'رنگ برند خود را انتخاب کنید',
+        chooseTheme: 'تم مورد نظر خود را انتخاب کنید',
+        uploadLogo: 'لوگویی برای فضای کاری خود آپلود کنید',
+        chooseFile: 'انتخاب فایل',
+        upload: 'آپلود',
+        remove: 'حذف',
+        recommendedSize: 'اندازه توصیه شده: 512x512px. حداکثر حجم فایل: 5MB',
+        light: 'روشن',
+        dark: 'تاریک',
+        auto: 'خودکار',
       }
     },
     ar: {
@@ -180,6 +226,29 @@ export function useTranslations() {
         privacy: 'سياسة الخصوصية',
         terms: 'شروط الخدمة',
         copyright: '© 2024 SnapLink. جميع الحقوق محفوظة.'
+      },
+      preferences: {
+        appearance: 'المظهر',
+        domains: 'النطاقات',
+        permissions: 'الأذونات',
+        team: 'الفريق',
+        webhooks: 'Webhooks',
+        colorScheme: 'مخطط الألوان',
+        primaryColor: 'اللون الأساسي',
+        theme: 'السمة',
+        fontFamily: 'خط العائلة',
+        workspaceLogo: 'شعار مساحة العمل',
+        saveChanges: 'حفظ التغييرات',
+        selectBrandColor: 'اختر لون علامتك التجارية',
+        chooseTheme: 'اختر السمة المفضلة لديك',
+        uploadLogo: 'قم بتحميل شعار لمساحة العمل الخاصة بك',
+        chooseFile: 'اختر الملف',
+        upload: 'تحميل',
+        remove: 'إزالة',
+        recommendedSize: 'الحجم الموصى به: 512x512 بكسل. الحد الأقصى لحجم الملف: 5 ميجابايت',
+        light: 'فاتح',
+        dark: 'داكن',
+        auto: 'تلقائي',
       }
     },
     fr: {
@@ -240,6 +309,29 @@ export function useTranslations() {
         privacy: 'Politique de Confidentialité',
         terms: 'Conditions de Service',
         copyright: '© 2024 SnapLink. Tous droits réservés.'
+      },
+      preferences: {
+        appearance: 'Apparence',
+        domains: 'Domaines',
+        permissions: 'Autorisations',
+        team: 'Équipe',
+        webhooks: 'Webhooks',
+        colorScheme: 'Schéma de couleurs',
+        primaryColor: 'Couleur principale',
+        theme: 'Thème',
+        fontFamily: 'Famille de polices',
+        workspaceLogo: 'Logo de l\'espace de travail',
+        saveChanges: 'Enregistrer les modifications',
+        selectBrandColor: 'Sélectionnez votre couleur de marque',
+        chooseTheme: 'Choisissez votre thème préféré',
+        uploadLogo: 'Téléchargez un logo pour votre espace de travail',
+        chooseFile: 'Choisir un fichier',
+        upload: 'Télécharger',
+        remove: 'Supprimer',
+        recommendedSize: 'Taille recommandée: 512x512px. Taille maximale du fichier: 5 Mo',
+        light: 'Clair',
+        dark: 'Sombre',
+        auto: 'Automatique',
       }
     },
     es: {
@@ -300,6 +392,29 @@ export function useTranslations() {
         privacy: 'Política de Privacidad',
         terms: 'Términos de Servicio',
         copyright: '© 2024 SnapLink. Todos los derechos reservados.'
+      },
+      preferences: {
+        appearance: 'Apariencia',
+        domains: 'Dominios',
+        permissions: 'Permisos',
+        team: 'Equipo',
+        webhooks: 'Webhooks',
+        colorScheme: 'Esquema de colores',
+        primaryColor: 'Color principal',
+        theme: 'Tema',
+        fontFamily: 'Familia de fuentes',
+        workspaceLogo: 'Logo del espacio de trabajo',
+        saveChanges: 'Guardar cambios',
+        selectBrandColor: 'Selecciona el color de tu marca',
+        chooseTheme: 'Elige tu tema preferido',
+        uploadLogo: 'Sube un logo para tu espacio de trabajo',
+        chooseFile: 'Elegir archivo',
+        upload: 'Subir',
+        remove: 'Eliminar',
+        recommendedSize: 'Tamaño recomendado: 512x512px. Tamaño máximo de archivo: 5 MB',
+        light: 'Claro',
+        dark: 'Oscuro',
+        auto: 'Automático',
       }
     },
     de: {
@@ -360,6 +475,29 @@ export function useTranslations() {
         privacy: 'Datenschutzrichtlinie',
         terms: 'Nutzungsbedingungen',
         copyright: '© 2024 SnapLink. Alle Rechte vorbehalten.'
+      },
+      preferences: {
+        appearance: 'Erscheinungsbild',
+        domains: 'Domänen',
+        permissions: 'Berechtigungen',
+        team: 'Team',
+        webhooks: 'Webhooks',
+        colorScheme: 'Farbschema',
+        primaryColor: 'Primärfarbe',
+        theme: 'Thema',
+        fontFamily: 'Schriftfamilie',
+        workspaceLogo: 'Workspace-Logo',
+        saveChanges: 'Änderungen speichern',
+        selectBrandColor: 'Wählen Sie Ihre Markenfarbe',
+        chooseTheme: 'Wählen Sie Ihr bevorzugtes Thema',
+        uploadLogo: 'Laden Sie ein Logo für Ihren Workspace hoch',
+        chooseFile: 'Datei auswählen',
+        upload: 'Hochladen',
+        remove: 'Entfernen',
+        recommendedSize: 'Empfohlene Größe: 512x512px. Maximale Dateigröße: 5 MB',
+        light: 'Hell',
+        dark: 'Dunkel',
+        auto: 'Automatisch',
       }
     },
     ja: {
@@ -420,11 +558,36 @@ export function useTranslations() {
         privacy: 'プライバシーポリシー',
         terms: '利用規約',
         copyright: '© 2024 SnapLink. 全著作権所有。'
+      },
+      preferences: {
+        appearance: '外観',
+        domains: 'ドメイン',
+        permissions: '権限',
+        team: 'チーム',
+        webhooks: 'Webhooks',
+        colorScheme: 'カラースキーム',
+        primaryColor: 'プライマリカラー',
+        theme: 'テーマ',
+        fontFamily: 'フォントファミリー',
+        workspaceLogo: 'ワークスペースロゴ',
+        saveChanges: '変更を保存',
+        selectBrandColor: 'ブランドカラーを選択',
+        chooseTheme: 'お好みのテーマを選択',
+        uploadLogo: 'ワークスペースのロゴをアップロード',
+        chooseFile: 'ファイルを選択',
+        upload: 'アップロード',
+        remove: '削除',
+        recommendedSize: '推奨サイズ: 512x512px。最大ファイルサイズ: 5 MB',
+        light: 'ライト',
+        dark: 'ダーク',
+        auto: '自動',
       }
     }
   }
   
-  const t = computed(() => translations[locale.value as keyof typeof translations] || translations.en)
+  const t = computed(() => {
+    return translations[locale.value as keyof typeof translations] || translations.en
+  })
   
   return { t, locale }
 }

@@ -33,11 +33,9 @@ export const useWorkspaceGuard = () => {
 
   /**
    * Check if workspace is selected
-   * Also checks query parameter for workspaceId (for cases where workspace is passed via URL)
    */
   const hasWorkspace = computed(() => {
-    const queryWorkspaceId = route.query.workspaceId as string | undefined
-    return !!(currentWorkspaceId.value || queryWorkspaceId)
+    return !!currentWorkspaceId.value
   })
 
   /**
@@ -58,7 +56,6 @@ export const useWorkspaceGuard = () => {
         requiresWorkspace: requiresWorkspace.value,
         hasWorkspace: hasWorkspace.value,
         currentWorkspaceId: currentWorkspaceId.value,
-        queryWorkspaceId: route.query.workspaceId,
         isSelectorOpen: isSelectorOpen.value,
         active,
       })
@@ -93,13 +90,7 @@ export const useWorkspaceGuard = () => {
       if (selectedWorkspace) {
         selectWorkspace(selectedWorkspace, { silent: true })
 
-        // If we're on a route that requires workspace, navigate to it with workspaceId
-        if (requiresWorkspace.value) {
-          await navigateTo({
-            path: route.path,
-            query: { ...route.query, workspaceId: selectedWorkspace.id },
-          }, { replace: true })
-        }
+        // No need to add workspaceId to URL - it's managed via state
 
         return selectedWorkspace
       }

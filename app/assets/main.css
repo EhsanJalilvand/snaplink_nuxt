@@ -2,6 +2,23 @@
 @import '@shuriken-ui/nuxt';
 @import '#layers/@cssninja/tairo/theme.css';
 
+/* IRANSansX Font Face */
+@font-face {
+  font-family: 'IRANSansX';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/iransansx/IRANSansX-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IRANSansX';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/iransansx/IRANSansX-Bold.woff2') format('woff2');
+}
+
 @theme {
   --font-sans: 'Inter', sans-serif;
   --font-mono: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;

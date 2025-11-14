@@ -2,10 +2,13 @@
 import { ref, watch } from '#imports'
 import { usePreferencesAppearance } from '~/composables/usePreferencesAppearance'
 import { useWorkspaceTheme } from '~/composables/useWorkspaceTheme'
+import { useTranslations } from '~/composables/useTranslations'
 
 const props = defineProps<{
   workspaceId?: string | null
 }>()
+
+const { t } = useTranslations()
 
 const {
   settings,
@@ -28,6 +31,7 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
 
 const { applyTheme } = useWorkspaceTheme()
 
+// Watch workspaceId changes to reset logo preview
 watch(
   () => props.workspaceId,
   () => {
@@ -36,6 +40,7 @@ watch(
   },
 )
 
+// Apply theme when settings change
 watch(
   settings,
   (newSettings) => {
@@ -137,18 +142,18 @@ const handleSave = async () => {
           weight="semibold"
           class="text-muted-800 dark:text-muted-100 mb-2"
         >
-          Color Scheme
+          {{ t.preferences.colorScheme }}
         </BaseHeading>
         <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400">
-          Choose your primary color and theme preferences
+          {{ t.preferences.selectBrandColor }} & {{ t.preferences.chooseTheme }}
         </BaseParagraph>
       </div>
 
       <div class="space-y-6">
         <!-- Primary Color -->
         <TairoFormGroup
-          label="Primary Color"
-          sublabel="Select your brand color"
+          :label="t.preferences.primaryColor"
+          :sublabel="t.preferences.selectBrandColor"
         >
           <div class="flex gap-2 flex-wrap">
             <button
@@ -171,8 +176,8 @@ const handleSave = async () => {
 
         <!-- Theme -->
         <TairoFormGroup
-          label="Theme"
-          sublabel="Choose your preferred theme"
+          :label="t.preferences.theme"
+          :sublabel="t.preferences.chooseTheme"
         >
           <div class="flex gap-2">
             <button
@@ -188,7 +193,7 @@ const handleSave = async () => {
               :disabled="isLoading"
               @click="handleThemeSelect(option.value)"
             >
-              {{ option.label }}
+              {{ t.preferences[option.value] || option.label }}
             </button>
           </div>
         </TairoFormGroup>
@@ -198,7 +203,7 @@ const handleSave = async () => {
     <!-- Font Family -->
     <div class="bg-white dark:bg-muted-800 rounded-lg border border-muted-200 dark:border-muted-700 p-6">
       <TairoFormGroup
-        label="Font Family"
+        :label="t.preferences.fontFamily"
       >
         <BaseSelect
           v-model="settings.fontFamily"
@@ -224,10 +229,10 @@ const handleSave = async () => {
           weight="semibold"
           class="text-muted-800 dark:text-muted-100 mb-2"
         >
-          Workspace Logo
+          {{ t.preferences.workspaceLogo }}
         </BaseHeading>
         <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400">
-          Upload a logo for your workspace
+          {{ t.preferences.uploadLogo }}
         </BaseParagraph>
       </div>
 
@@ -268,7 +273,7 @@ const handleSave = async () => {
                 @click="handleChooseFile"
               >
                 <Icon name="ph:upload" class="size-4" />
-                <span>Choose File</span>
+                <span>{{ t.preferences.chooseFile }}</span>
               </BaseButton>
               <BaseButton
                 v-if="logoFile"
@@ -279,7 +284,7 @@ const handleSave = async () => {
                 @click="handleLogoUpload"
               >
                 <Icon name="ph:check" class="size-4" />
-                <span>Upload</span>
+                <span>{{ t.preferences.upload }}</span>
               </BaseButton>
               <BaseButton
                 v-if="settings.logoUrl && !logoFile"
@@ -291,11 +296,11 @@ const handleSave = async () => {
                 @click="handleLogoDelete"
               >
                 <Icon name="ph:trash" class="size-4" />
-                <span>Remove</span>
+                <span>{{ t.preferences.remove }}</span>
               </BaseButton>
             </div>
             <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
-              Recommended size: 512x512px. Max file size: 5MB
+              {{ t.preferences.recommendedSize }}
             </BaseText>
           </div>
         </div>
@@ -311,7 +316,7 @@ const handleSave = async () => {
         @click="handleSave"
       >
         <Icon name="ph:check" class="size-4" />
-        <span>Save Changes</span>
+        <span>{{ t.preferences.saveChanges }}</span>
       </BaseButton>
     </div>
   </div>

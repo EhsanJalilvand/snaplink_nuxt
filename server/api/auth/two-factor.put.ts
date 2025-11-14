@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { Configuration, FrontendApi } from '@ory/client'
+import { Configuration, FrontendApi, AdminApi } from '@ory/client'
 import { checkRateLimit, getClientIP } from '../../utils/rateLimit.js'
 
 const twoFactorSchema = z.object({
@@ -111,9 +111,136 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    // For now, return success message
-    // In a production environment, you would update the user's 2FA status in Kratos traits
-    // or integrate with your TOTP provider
+    // If disabling 2FA, we need to unlink TOTP from Kratos
+    if (!enabled && kratosSession) {
+      try {
+        const kratosConfig = new Configuration({
+          basePath: config.kratosPublicUrl,
+        })
+        const frontendApi = new FrontendApi(kratosConfig)
+        
+        const requestCookies = getHeader(event, 'cookie') || ''
+        
+        // Create settings flow to unlink TOTP
+        const settingsFlow = await frontendApi.createBrowserSettingsFlow({
+          returnTo: config.public.siteUrl,
+        }, {
+          headers: requestCookies ? { Cookie: requestCookies } : undefined,
+        })
+        
+        if (!settingsFlow.data?.id) {
+          throw createError({
+            statusCode: 500,
+            statusMessage: 'Failed to create settings flow',
+            message: 'Settings flow was created but no flow ID was returned',
+          })
+        }
+        
+        // Get CSRF token from flow
+        const csrfToken = settingsFlow.data.ui?.nodes?.find(
+          (node: any) => node.attributes?.name === 'csrf_token'
+        )?.attributes?.value
+        
+        if (!csrfToken) {
+          throw createError({
+            statusCode: 500,
+            statusMessage: 'Failed to get CSRF token',
+            message: 'CSRF token not found in settings flow',
+          })
+        }
+        
+        // Check if TOTP is configured by looking for totp_unlink node
+        const totpUnlinkNode = settingsFlow.data.ui?.nodes?.find(
+          (node: any) => node.group === 'totp' && node.attributes?.name === 'totp_unlink'
+        )
+        
+        if (!totpUnlinkNode) {
+          // TOTP is not configured, nothing to disable
+          if (import.meta.dev) {
+            console.log('[auth/two-factor.put.ts] TOTP is not configured for user:', userId)
+          }
+          return {
+            success: true,
+            message: '2FA is already disabled',
+          }
+        }
+        
+        // Submit settings flow with totp_unlink to remove TOTP
+        const flowUrl = `${config.kratosPublicUrl}/self-service/settings?flow=${settingsFlow.data.id}`
+        
+        if (import.meta.dev) {
+          console.log('[auth/two-factor.put.ts] Unlinking TOTP for user:', userId)
+        }
+        
+        // Attempt to unlink TOTP via Frontend API
+        try {
+          await $fetch(flowUrl, {
+            method: 'POST',
+            headers: requestCookies ? { Cookie: requestCookies } : undefined,
+            body: {
+              method: 'totp',
+              totp_unlink: 'true',
+              csrf_token: csrfToken,
+            },
+          })
+          
+          if (import.meta.dev) {
+            console.log('[auth/two-factor.put.ts] TOTP unlink request sent successfully for user:', userId)
+          }
+        } catch (unlinkError: any) {
+          // Even if Kratos returns an error, the unlink might have succeeded
+          // Check the error response to see if TOTP was actually removed
+          const errorData = unlinkError.response?._data || unlinkError.data || {}
+          const responseNodes = errorData.ui?.nodes || []
+          const stillHasTotp = responseNodes.some(
+            (node: any) => node.group === 'totp' && node.attributes?.name === 'totp_unlink'
+          )
+          
+          if (stillHasTotp) {
+            // TOTP still exists in the response, unlink likely failed
+            if (import.meta.dev) {
+              console.error('[auth/two-factor.put.ts] TOTP unlink failed - TOTP still exists in response')
+              console.error('[auth/two-factor.put.ts] Error details:', {
+                status: unlinkError.status,
+                statusText: unlinkError.statusText,
+                message: unlinkError.message,
+              })
+            }
+            
+            // Throw error - unlink failed
+            throw createError({
+              statusCode: 500,
+              statusMessage: 'Failed to disable 2FA',
+              message: 'Unable to remove TOTP from your account. The unlink request was rejected. Please try again.',
+            })
+          } else {
+            // TOTP was removed (even though Kratos returned an error)
+            if (import.meta.dev) {
+              console.log('[auth/two-factor.put.ts] TOTP unlinked successfully (error response but TOTP removed)')
+            }
+          }
+        }
+        
+        if (import.meta.dev) {
+          console.log('[auth/two-factor.put.ts] TOTP unlink process completed for user:', userId)
+        }
+      } catch (kratosError: any) {
+        if (import.meta.dev) {
+          console.error('[auth/two-factor.put.ts] Error unlinking TOTP:', kratosError)
+        }
+        
+        // If it's already our error, re-throw it
+        if (kratosError.statusCode) {
+          throw kratosError
+        }
+        
+        throw createError({
+          statusCode: 500,
+          statusMessage: 'Failed to disable 2FA',
+          message: kratosError.message || 'Unable to remove TOTP from your account.',
+        })
+      }
+    }
     
     if (import.meta.dev) {
       console.log('[auth/two-factor.put.ts] 2FA settings updated for user:', userId, 'enabled:', enabled)

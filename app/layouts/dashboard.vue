@@ -469,9 +469,6 @@ function handlePrimaryNavClick(item: MenuItem) {
             >
           </button>
 
-          <!-- Dark Mode Toggle -->
-          <BaseThemeToggle aria-label="Toggle darkmode" />
-
           <!-- Activity Button -->
           <button
             type="button"

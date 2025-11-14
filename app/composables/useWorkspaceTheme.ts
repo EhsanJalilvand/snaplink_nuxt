@@ -17,6 +17,7 @@ const FONT_STACKS: Record<string, string> = {
   Roboto: '"Roboto", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif',
   Poppins: '"Poppins", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif',
   'Open Sans': '"Open Sans", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif',
+  IRANSansX: '"IRANSansX", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif',
 }
 
 const FONT_GOOGLE_NAMES: Record<string, string> = {

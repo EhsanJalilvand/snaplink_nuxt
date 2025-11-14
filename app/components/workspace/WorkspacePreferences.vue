@@ -40,7 +40,10 @@ const updateTab = (value: PreferencesTabId) => {
 </script>
 
 <template>
-  <div v-if="hasWorkspace" class="space-y-6">
+  <div
+    v-if="hasWorkspace"
+    class="space-y-6"
+  >
     <PreferencesTabsNav
       :tabs="tabs"
       :model-value="activeTab"
