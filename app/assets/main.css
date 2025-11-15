@@ -50,4 +50,58 @@
     --color-chart-title: var(--color-muted-400);
     --color-chart-subtitle: var(--color-white);
   }
+
+  /* Fix for TairoInput double border issue */
+  /* Remove border-radius from wrapper div (TairoInput container) - override all rounded variants with higher specificity */
+  div.flex.group.rounded-sm,
+  div.flex.group.rounded-md,
+  div.flex.group.rounded-lg,
+  div.flex.group.rounded-full,
+  div.flex.group[class*="rounded-sm"],
+  div.flex.group[class*="rounded-md"],
+  div.flex.group[class*="rounded-lg"],
+  div.flex.group[class*="rounded-full"],
+  div.flex.group[class*="rounded"] {
+    border-radius: 0 !important;
+    -webkit-border-radius: 0 !important;
+    -moz-border-radius: 0 !important;
+  }
+  
+  /* Remove left border from input when it's inside a flex group (TairoInput wrapper) */
+  .group.flex > input,
+  .group.flex > .nui-input,
+  .group.flex > [class*="nui-input"],
+  div.group.flex > input,
+  div.group.flex > .nui-input {
+    border-left: none !important;
+  }
+  
+  /* Remove right border from icon container */
+  .group.flex > .border:first-child,
+  div.group.flex > .border:first-child {
+    border-right: none !important;
+  }
+  
+  /* Also remove border-radius from all children to ensure no rounded corners */
+  .group.flex > *,
+  div.group.flex > * {
+    border-radius: 0 !important;
+    -webkit-border-radius: 0 !important;
+    -moz-border-radius: 0 !important;
+  }
+}
+
+@layer utilities {
+  /* Force remove border-radius from TairoInput wrapper with maximum specificity */
+  div.flex.group[class*="rounded"] {
+    border-radius: 0 !important;
+    -webkit-border-radius: 0 !important;
+    -moz-border-radius: 0 !important;
+  }
+  
+  div.flex.group > * {
+    border-radius: 0 !important;
+    -webkit-border-radius: 0 !important;
+    -moz-border-radius: 0 !important;
+  }
 }

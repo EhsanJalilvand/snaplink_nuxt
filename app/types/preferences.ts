@@ -104,7 +104,7 @@ export interface WorkspacePermission {
 export interface WorkspaceRolePermission {
   id: string
   workspaceId: string
-  role: 'Owner' | 'Admin' | 'Member' | 'Viewer'
+  role: number // Backend returns role as enum value: Owner=1, Admin=2, Member=3, Viewer=4
   permission: number
   allowed: boolean
 }

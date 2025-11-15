@@ -67,7 +67,7 @@ const handleSave = async () => {
       </p>
     </BaseAlert>
 
-    <!-- Subdomain Settings -->
+    <!-- Domain Settings -->
     <div class="bg-white dark:bg-muted-800 rounded-lg border border-muted-200 dark:border-muted-700 p-6">
       <div class="mb-6">
         <BaseHeading
@@ -76,109 +76,106 @@ const handleSave = async () => {
           weight="semibold"
           class="text-muted-800 dark:text-muted-100 mb-2"
         >
-          Subdomain
+          Domain Configuration
         </BaseHeading>
         <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400">
-          Set a custom subdomain for your workspace (e.g., yourworkspace.snaplink.io)
+          Configure your workspace domain settings
         </BaseParagraph>
       </div>
 
-      <div class="space-y-4">
+      <div class="space-y-6">
+        <!-- Subdomain Section -->
         <TairoFormGroup
           label="Subdomain"
-          sublabel="Choose a unique subdomain"
+          sublabel="Choose a unique subdomain (e.g., yourworkspace.snaplink.io)"
         >
-          <div class="flex items-center gap-2">
-            <TairoInput
-              :model-value="settings.subdomain"
-              type="text"
-              placeholder="yourworkspace"
-              icon="solar:global-linear"
-              rounded="lg"
-              :disabled="isLoading || isValidating"
-              @update:model-value="handleSubdomainChange"
-            >
-              <template #trailing>
-                <span class="text-sm text-muted-500">.snaplink.io</span>
-              </template>
-            </TairoInput>
+          <div>
+            <div class="flex items-center gap-2 w-full">
+              <TairoInput
+                :model-value="settings.subdomain"
+                type="text"
+                placeholder="yourworkspace"
+                icon="solar:global-linear"
+                size="lg"
+                class="flex-1"
+                :disabled="isLoading || isValidating"
+                @update:model-value="handleSubdomainChange"
+              />
+              <div class="px-3 h-12 border border-muted-200 dark:border-muted-700 rounded-md bg-muted-50 dark:bg-muted-900 flex items-center">
+                <span class="text-sm font-medium text-muted-600 dark:text-muted-400">.snaplink.io</span>
+              </div>
+            </div>
+            <div class="mt-2">
+              <BaseText
+                v-if="subdomainError"
+                size="xs"
+                class="text-danger-500"
+              >
+                {{ subdomainError }}
+              </BaseText>
+              <BaseText
+                v-else
+                size="xs"
+                class="text-muted-500 dark:text-muted-400"
+              >
+                Only lowercase letters, numbers, and hyphens are allowed. Must be 3-63 characters.
+              </BaseText>
+            </div>
           </div>
-          <BaseText
-            v-if="subdomainError"
-            size="xs"
-            class="text-danger-500"
-          >
-            {{ subdomainError }}
-          </BaseText>
-          <BaseText
-            v-else
-            size="xs"
-            class="text-muted-500 dark:text-muted-400"
-          >
-            Only lowercase letters, numbers, and hyphens are allowed. Must be 3-63 characters.
-          </BaseText>
         </TairoFormGroup>
-      </div>
-    </div>
 
-    <!-- Custom Domain Settings -->
-    <div class="bg-white dark:bg-muted-800 rounded-lg border border-muted-200 dark:border-muted-700 p-6">
-      <div class="mb-6">
-        <BaseHeading
-          as="h3"
-          size="md"
-          weight="semibold"
-          class="text-muted-800 dark:text-muted-100 mb-2"
-        >
-          Custom Domain
-        </BaseHeading>
-        <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400">
-          Use your own domain for your workspace (e.g., links.yourdomain.com)
-        </BaseParagraph>
-      </div>
-
-      <div class="space-y-4">
+        <!-- Custom Domain Section -->
         <TairoFormGroup
           label="Custom Domain"
-          sublabel="Enter your custom domain"
+          sublabel="Use your own domain (e.g., links.yourdomain.com)"
         >
-          <TairoInput
-            :model-value="settings.customDomain"
-            type="text"
-            placeholder="links.yourdomain.com"
-            icon="solar:global-linear"
-            rounded="lg"
-            :disabled="isLoading || isValidating"
-            @update:model-value="handleCustomDomainChange"
-          />
-          <BaseText
-            v-if="customDomainError"
-            size="xs"
-            class="text-danger-500"
-          >
-            {{ customDomainError }}
-          </BaseText>
-          <BaseText
-            v-else-if="settings.customDomain && settings.domainVerified"
-            size="xs"
-            class="text-success-500"
-          >
-            Domain verified successfully
-          </BaseText>
-          <BaseText
-            v-else-if="settings.customDomain && !settings.domainVerified"
-            size="xs"
-            class="text-warning-500"
-          >
-            Domain needs verification. Please configure DNS records.
-          </BaseText>
-          <BaseText
-            v-else
-            size="xs"
-            class="text-muted-500 dark:text-muted-400"
-          >
-            Enter your custom domain. DNS verification will be required.
-          </BaseText>
+          <div>
+            <div class="flex items-center gap-2 w-full">
+              <TairoInput
+                :model-value="settings.customDomain"
+                type="text"
+                placeholder="links.yourdomain.com"
+                icon="solar:global-linear"
+                size="lg"
+                class="flex-1"
+                :disabled="isLoading || isValidating"
+                @update:model-value="handleCustomDomainChange"
+              />
+              <div class="px-3 h-12 border border-transparent rounded-md flex items-center opacity-0 pointer-events-none">
+                <span class="text-sm font-medium">.snaplink.io</span>
+              </div>
+            </div>
+            <div class="mt-2">
+              <BaseText
+                v-if="customDomainError"
+                size="xs"
+                class="text-danger-500"
+              >
+                {{ customDomainError }}
+              </BaseText>
+              <BaseText
+                v-else-if="settings.customDomain && settings.domainVerified"
+                size="xs"
+                class="text-success-500"
+              >
+                Domain verified successfully
+              </BaseText>
+              <BaseText
+                v-else-if="settings.customDomain && !settings.domainVerified"
+                size="xs"
+                class="text-warning-500"
+              >
+                Domain needs verification. Please configure DNS records.
+              </BaseText>
+              <BaseText
+                v-else
+                size="xs"
+                class="text-muted-500 dark:text-muted-400"
+              >
+                Enter your custom domain. DNS verification will be required.
+              </BaseText>
+            </div>
+          </div>
         </TairoFormGroup>
       </div>
     </div>

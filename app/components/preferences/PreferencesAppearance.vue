@@ -205,9 +205,9 @@ const handleSave = async () => {
       <TairoFormGroup
         :label="t.preferences.fontFamily"
       >
-        <BaseSelect
+        <TairoSelect
           v-model="settings.fontFamily"
-          rounded="lg"
+          icon="solar:text-field-linear"
         >
           <BaseSelectItem
             v-for="option in fontOptions"
@@ -216,7 +216,7 @@ const handleSave = async () => {
           >
             {{ option.label }}
           </BaseSelectItem>
-        </BaseSelect>
+        </TairoSelect>
       </TairoFormGroup>
     </div>
 

@@ -15,6 +15,14 @@ interface PermissionState {
 
 const ROLES = ['Owner', 'Admin', 'Member', 'Viewer'] as const
 
+// Map role names to enum values (matching backend WorkspaceRole enum)
+const roleToEnumMap: Record<typeof ROLES[number], number> = {
+  Owner: 1,
+  Admin: 2,
+  Member: 3,
+  Viewer: 4,
+}
+
 const initialState = (): PermissionState => ({
   permissions: [],
   rolePermissions: [],
@@ -37,13 +45,15 @@ export const usePreferencesPermissions = (workspaceId?: string | null) => {
     Object.assign(state.value, initialState())
   }
 
-  const fetchPermissions = async () => {
+  const fetchPermissions = async (silent = false) => {
     if (!effectiveWorkspaceId.value) {
       return
     }
 
-    state.value.isLoading = true
-    state.value.error = null
+    if (!silent) {
+      state.value.isLoading = true
+      state.value.error = null
+    }
 
     try {
       const [permissionsResponse, rolePermissionsResponse] = await Promise.all([
@@ -61,18 +71,35 @@ export const usePreferencesPermissions = (workspaceId?: string | null) => {
 
       if (permissionsResponse?.data) {
         state.value.permissions = permissionsResponse.data
+        if (import.meta.dev) {
+          console.log('[usePreferencesPermissions] Permissions loaded:', permissionsResponse.data.length)
+        }
       }
 
       if (rolePermissionsResponse?.data) {
         state.value.rolePermissions = rolePermissionsResponse.data
+        if (import.meta.dev) {
+          console.log('[usePreferencesPermissions] Role permissions loaded:', {
+            count: rolePermissionsResponse.data.length,
+            sample: rolePermissionsResponse.data.slice(0, 5),
+          })
+        }
+      } else {
+        if (import.meta.dev) {
+          console.warn('[usePreferencesPermissions] No role permissions in response:', rolePermissionsResponse)
+        }
       }
     } catch (error) {
       if (import.meta.dev) {
         console.warn('[usePreferencesPermissions] Failed to load permissions', error)
       }
-      state.value.error = 'Unable to load permissions.'
+      if (!silent) {
+        state.value.error = 'Unable to load permissions.'
+      }
     } finally {
-      state.value.isLoading = false
+      if (!silent) {
+        state.value.isLoading = false
+      }
     }
   }
 
@@ -85,25 +112,53 @@ export const usePreferencesPermissions = (workspaceId?: string | null) => {
     state.value.error = null
 
     try {
-      const response = await api.put<{ data: WorkspaceRolePermission[] }>(
+      // Map role names to enum values
+      const roleEnumMap: Record<string, number> = {
+        Owner: 1,
+        Admin: 2,
+        Member: 3,
+        Viewer: 4,
+      }
+
+      const requestBody = {
+        Mappings: mappings.map(m => ({
+          Role: roleEnumMap[m.role] || 0,
+          Permission: m.permission,
+          Allowed: m.allowed,
+        })),
+      }
+
+      await api.put<{ data: WorkspaceRolePermission[] }>(
         `/workspaces/${effectiveWorkspaceId.value}/permissions`,
-        { mappings },
+        requestBody,
         {
           base: 'gateway',
           requiresAuth: true,
         }
       )
 
-      if (response?.data) {
-        state.value.rolePermissions = response.data
-        toasts.add({
-          title: 'Permissions updated',
-          description: 'Role permissions saved successfully.',
-          icon: 'ph:check',
-          progress: true,
+      // Refresh permissions from server to ensure state is up to date (silent to avoid UI flicker)
+      await fetchPermissions(true)
+
+      toasts.add({
+        title: 'Permissions updated',
+        description: 'Role permissions saved successfully.',
+        icon: 'ph:check',
+        progress: true,
+      })
+    } catch (error: any) {
+      if (import.meta.dev) {
+        console.error('[usePreferencesPermissions] Save error:', {
+          error,
+          errorData: error?.data,
+          errorMessage: error?.message,
+          errorStatus: error?.status,
+          errorStatusMessage: error?.statusMessage,
         })
+        if (error?.data) {
+          console.error('[usePreferencesPermissions] Error details:', JSON.stringify(error.data, null, 2))
+        }
       }
-    } catch (error) {
       state.value.error = 'Failed to save permissions.'
       toasts.add({
         title: 'Save failed',
@@ -122,12 +177,17 @@ export const usePreferencesPermissions = (workspaceId?: string | null) => {
       return true
     }
 
+    // Convert role name to enum value (backend returns role as number)
+    const roleEnum = roleToEnumMap[role]
+    
     const mapping = state.value.rolePermissions.find(
-      (rp) => rp.role === role && rp.permission === permissionId
+      (rp) => rp.role === roleEnum && rp.permission === permissionId
     )
 
+    const result = mapping?.allowed ?? false
+
     // If no mapping exists, default to false (except Owner)
-    return mapping?.allowed ?? false
+    return result
   }
 
   const permissionsByCategory = computed(() => {

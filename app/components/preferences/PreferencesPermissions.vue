@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from '#imports'
+import { ref, watch, nextTick } from '#imports'
 import { usePreferencesPermissions } from '~/composables/usePreferencesPermissions'
 import type { PermissionMapping } from '~/types/preferences'
 
@@ -9,6 +9,7 @@ const props = defineProps<{
 
 const {
   permissions,
+  rolePermissions,
   permissionsByCategory,
   roles,
   isLoading,
@@ -18,24 +19,48 @@ const {
   getPermissionForRole,
 } = usePreferencesPermissions(props.workspaceId)
 
-const permissionMappings = ref<Map<string, boolean>>(new Map())
+const permissionMappings = ref<Record<string, boolean>>({})
 
 // Initialize mappings from existing role permissions
 const initializeMappings = () => {
-  permissionMappings.value.clear()
+  if (import.meta.dev) {
+    console.log('[PreferencesPermissions] Initializing mappings...', {
+      permissionsCount: permissions.value.length,
+      rolePermissionsCount: rolePermissions.value.length,
+    })
+  }
+  // Create a new object instead of Map to ensure Vue reactivity
+  const newMappings: Record<string, boolean> = {}
   roles.forEach((role) => {
     permissions.value.forEach((perm) => {
-      const key = `${role}-${perm.id}`
-      permissionMappings.value.set(key, getPermissionForRole(role, perm.id))
+      const key = `${role}-${perm.permission}`
+      const allowed = getPermissionForRole(role, perm.permission)
+      newMappings[key] = allowed
+      // Owner permissions are always true, so this should never happen
+      if (import.meta.dev && role === 'Owner' && !allowed) {
+        console.warn('[PreferencesPermissions] Owner permission is false (unexpected):', {
+          permission: perm.permission,
+        })
+      }
     })
   })
+  permissionMappings.value = newMappings
+  // Log only in dev mode and only once per initialization
+  if (import.meta.dev) {
+    console.log('[PreferencesPermissions] Mappings initialized:', {
+      mappingsCount: Object.keys(permissionMappings.value).length,
+    })
+  }
 }
 
-watch([permissions, () => props.workspaceId], () => {
+watch([permissions, rolePermissions, () => props.workspaceId], () => {
   if (permissions.value.length > 0) {
-    initializeMappings()
+    // Use nextTick to ensure Vue reactivity works correctly
+    nextTick(() => {
+      initializeMappings()
+    })
   }
-}, { immediate: true })
+}, { immediate: true, deep: true })
 
 const togglePermission = (role: string, permissionId: number) => {
   // Owner cannot be changed
@@ -44,20 +69,25 @@ const togglePermission = (role: string, permissionId: number) => {
   }
 
   const key = `${role}-${permissionId}`
-  const current = permissionMappings.value.get(key) ?? false
-  permissionMappings.value.set(key, !current)
+  const current = permissionMappings.value[key] ?? false
+  permissionMappings.value[key] = !current
 }
 
 const handleSave = async () => {
   const mappings: PermissionMapping[] = []
 
   roles.forEach((role) => {
+    // Skip Owner role - it cannot be changed
+    if (role === 'Owner') {
+      return
+    }
+
     permissions.value.forEach((perm) => {
-      const key = `${role}-${perm.id}`
-      const allowed = permissionMappings.value.get(key) ?? false
+      const key = `${role}-${perm.permission}`
+      const allowed = permissionMappings.value[key] ?? false
       mappings.push({
         role: role as PermissionMapping['role'],
-        permission: perm.id,
+        permission: perm.permission,
         allowed,
       })
     })
@@ -155,13 +185,13 @@ const handleSave = async () => {
                 </td>
                 <td
                   v-for="role in roles"
-                  :key="`${permission.id}-${role}`"
+                  :key="`${permission.permission}-${role}`"
                   class="text-center py-3 px-4"
                 >
                   <BaseCheckbox
-                    :model-value="permissionMappings.get(`${role}-${permission.id}`) ?? (role === 'Owner')"
+                    :model-value="permissionMappings[`${role}-${permission.permission}`] ?? (role === 'Owner')"
                     :disabled="role === 'Owner' || isLoading"
-                    @update:model-value="togglePermission(role, permission.id)"
+                    @update:model-value="togglePermission(role, permission.permission)"
                   />
                 </td>
               </tr>
@@ -185,4 +215,5 @@ const handleSave = async () => {
     </template>
   </div>
 </template>
+
 
