@@ -85,34 +85,15 @@ export const useApi = () => {
       return typeof internalBase === 'string' ? internalBase : '/api'
     }
 
-    // For gateway, always use public config (available on both client and server)
-    const gatewayBase = (config.public as Record<string, any>).apiGatewayBaseUrl ?? 'http://localhost:5100'
-    if (import.meta.dev) {
-      // eslint-disable-next-line no-console
-      console.log('[useApi] Gateway base URL:', gatewayBase, 'from config:', {
-        public: (config.public as Record<string, any>).apiGatewayBaseUrl,
-      })
-    }
-    return typeof gatewayBase === 'string' ? gatewayBase : 'http://localhost:5100'
+    // For gateway, use Nuxt server proxy route (which handles authentication)
+    // This ensures authentication is handled server-side with cookies
+    return '/api/gateway'
   }
 
   const getAuthHeaders = async (requiresAuth: boolean): Promise<Record<string, string>> => {
-    if (!requiresAuth) {
-      return {}
-    }
-
-    const headers: Record<string, string> = {}
-
-    // Browser cookies are sent automatically when credentials: 'include'
-    // Optionally attach bearer token if available from session storage/local storage
-    if (import.meta.client) {
-      const token = sessionStorage.getItem('snaplink:access_token')
-      if (token) {
-        headers.Authorization = `Bearer ${token}`
-      }
-    }
-
-    return headers
+    // Authentication is now handled server-side via /api/gateway proxy
+    // Cookies are automatically sent with credentials: 'include'
+    return {}
   }
 
   const handleError = (error: unknown, context: ApiErrorContext, quiet?: boolean): never => {
