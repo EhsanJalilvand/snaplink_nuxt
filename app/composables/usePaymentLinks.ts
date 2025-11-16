@@ -1,4 +1,4 @@
-import { computed, toRefs } from '#imports'
+import { computed, toRefs, watch } from '#imports'
 import type {
   PaymentLink,
   PaymentLinkActionContext,
@@ -7,6 +7,7 @@ import type {
   PaymentLinkListResponse,
   PaymentLinkStatus,
 } from '~/types/payment-links'
+import { useWorkspace } from './useWorkspace'
 
 interface PaymentLinkState {
   items: PaymentLink[]
@@ -84,6 +85,7 @@ export const usePaymentLinks = () => {
   const api = useApi()
   const toasts = useNuiToasts()
   const security = useSecurity()
+  const { currentWorkspaceId } = useWorkspace()
 
   const state = useState<PaymentLinkState>('snaplink:payment-links', initialState)
 
@@ -113,41 +115,157 @@ export const usePaymentLinks = () => {
   }
 
   const fetchLinks = async (options: { force?: boolean } = {}) => {
+    if (import.meta.dev) {
+      // eslint-disable-next-line no-console
+      console.warn('[usePaymentLinks] fetchLinks called', {
+        force: options.force,
+        isLoading: state.value.isLoading,
+        itemsCount: state.value.items.length,
+        lastFetchedAt: state.value.lastFetchedAt,
+      })
+    }
+
     if (state.value.isLoading) {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentLinks] Already loading, skipping...')
+      }
       return
     }
 
-    if (state.value.items.length > 0 && !options.force) {
+    // Only skip if we have cached data and not forcing a refresh
+    // But always attempt API call on first load (when lastFetchedAt is undefined)
+    if (state.value.items.length > 0 && !options.force && state.value.lastFetchedAt) {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentLinks] Skipping fetch - using cached data. Use force: true to refresh.')
+      }
       return
+    }
+
+    if (import.meta.dev) {
+      // eslint-disable-next-line no-console
+      console.warn('[usePaymentLinks] Proceeding with API call...')
     }
 
     state.value.isLoading = true
     state.value.error = null
 
     try {
-      const response = await api.get<PaymentLinkListResponse>('/payments/links', {
+      const workspaceId = currentWorkspaceId.value
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentLinks] Checking workspaceId:', workspaceId)
+      }
+      if (!workspaceId) {
+        const errorMsg = 'Workspace ID is required. Please select a workspace first.'
+        if (import.meta.dev) {
+          // eslint-disable-next-line no-console
+          console.error('[usePaymentLinks]', errorMsg)
+        }
+        throw new Error(errorMsg)
+      }
+
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentLinks] Fetching payment links from API...', {
+          workspaceId,
+          endpoint: `/api/payment/workspaces/${workspaceId}/payment-links`,
+        })
+      }
+
+      const response = await api.get<PaymentLinkListResponse>(`/api/payment/workspaces/${workspaceId}/payment-links`, {
         base: 'gateway',
         validate: (payload): payload is PaymentLinkListResponse =>
-          typeof payload === 'object' && payload !== null && Array.isArray((payload as PaymentLinkListResponse).data),
+          typeof payload === 'object' && payload !== null && 'data' in payload && Array.isArray((payload as any).data),
         retry: 1,
         timeout: 15000,
-        quiet: true,
+        quiet: false, // Changed to false to see errors
       })
 
-      const links = response?.data && response.data.length > 0 ? response.data : FALLBACK_LINKS
-      setLinks(links)
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentLinks] API response received:', response)
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentLinks] Raw API data:', JSON.stringify(response?.data, null, 2))
+      }
+
+      // Map API response to local PaymentLink format
+      const mappedLinks: PaymentLink[] = (response?.data || []).map((link: any) => {
+        if (import.meta.dev) {
+          // eslint-disable-next-line no-console
+          console.warn('[usePaymentLinks] Mapping link:', link)
+        }
+        return {
+        id: link.id,
+        name: link.title || link.name,
+        reference: `snap.link/pay/${link.id.slice(-8)}`,
+        amount: link.amount || 0,
+        currency: link.currency || 'USD',
+        payments: link.currentUsage || 0,
+        conversion: link.maxUsage ? ((link.currentUsage || 0) / link.maxUsage) * 100 : 0,
+        status: link.status === 'active' ? 'active' : link.status === 'paused' ? 'paused' : 'completed',
+        createdAt: link.createdAt || link.created_at || new Date().toISOString(),
+      }
+      })
+
+      // Only use FALLBACK_LINKS if API returns empty array and we have no cached data
+      if (mappedLinks.length > 0) {
+        if (import.meta.dev) {
+          // eslint-disable-next-line no-console
+          console.warn('[usePaymentLinks] Setting links from API:', mappedLinks.length, 'items')
+          // eslint-disable-next-line no-console
+          console.warn('[usePaymentLinks] Mapped links:', JSON.stringify(mappedLinks, null, 2))
+        }
+        setLinks(mappedLinks)
+      } else if (state.value.items.length === 0) {
+        // Only use fallback if we have no data at all
+        if (import.meta.dev) {
+          console.warn('[usePaymentLinks] API returned empty array, using fallback data')
+        }
+        setLinks(FALLBACK_LINKS)
+      } else {
+        // Keep existing data if API returns empty but we have cached data
+        if (import.meta.dev) {
+          // eslint-disable-next-line no-console
+          console.warn('[usePaymentLinks] API returned empty, keeping existing cached data')
+        }
+        setLinks(state.value.items)
+      }
     } catch (error) {
       if (import.meta.dev) {
-        console.warn('[usePaymentLinks] Falling back to static links', error)
+        console.error('[usePaymentLinks] API call failed:', error)
+        console.error('[usePaymentLinks] Error details:', {
+          message: (error as Error)?.message,
+          stack: (error as Error)?.stack,
+        })
       }
-      state.value.error = 'Unable to load payment links from gateway. Showing cached data.'
-      setLinks(FALLBACK_LINKS)
+      
+      // Only use fallback if we have no data at all
+      if (state.value.items.length === 0) {
+        state.value.error = 'Unable to load payment links from gateway. Showing test data.'
+        if (import.meta.dev) {
+          console.warn('[usePaymentLinks] No cached data, using fallback links')
+        }
+        setLinks(FALLBACK_LINKS)
+      } else {
+        // Keep existing data and show error
+        state.value.error = 'Unable to refresh payment links from gateway. Showing cached data.'
+        if (import.meta.dev) {
+          console.warn('[usePaymentLinks] Keeping existing cached data due to API error')
+        }
+      }
     } finally {
       state.value.isLoading = false
     }
   }
 
-  const filters = toRefs(state.value.filters)
+  const filters = computed({
+    get: () => state.value.filters,
+    set: (value: PaymentLinkFilters) => {
+      state.value.filters = value
+    },
+  })
 
   const setFilter = <K extends keyof PaymentLinkFilters>(key: K, value: PaymentLinkFilters[K]) => {
     state.value.filters[key] = value
@@ -179,74 +297,177 @@ export const usePaymentLinks = () => {
     })
   })
 
-  const createLink = (payload: PaymentLinkCreatePayload) => {
-    const normalized: PaymentLink = {
-      id: payload.id,
-      name: payload.description?.trim() || `Payment link ${payload.id.slice(-4)}`,
-      reference: payload.link.replace(/^https?:\/\//, ''),
-      amount: payload.amount,
-      currency: payload.currency,
-      payments: 0,
-      conversion: 0,
-      status: payload.status ?? 'active',
-      createdAt: payload.createdAt ?? new Date().toISOString(),
+  const createLink = async (payload: PaymentLinkCreatePayload) => {
+    const workspaceId = currentWorkspaceId.value
+    if (!workspaceId) {
+      toasts.add({
+        title: 'Error',
+        description: 'Workspace ID is required',
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      throw new Error('Workspace ID is required')
     }
 
-    state.value.items = [normalized, ...state.value.items]
+    try {
+      const response = await api.post<{ data: any }>(
+        `/api/payment/workspaces/${workspaceId}/payment-links`,
+        {
+          title: payload.description?.trim() || `Payment link ${payload.id.slice(-4)}`,
+          amount: payload.amount,
+          currency: payload.currency,
+          category: payload.category,
+          description: payload.description,
+          expirationDate: payload.expirationDate,
+          maxUsage: payload.maxUsage,
+          metadata: payload.metadata,
+        },
+        {
+          base: 'gateway',
+          requiresAuth: true,
+        }
+      )
 
-    toasts.add({
-      title: 'Payment link created',
-      description: 'Your new payment link is ready to share.',
-      icon: 'ph:check',
-      color: 'success',
-      progress: true,
-    })
+      const createdLink = response?.data
+      const normalized: PaymentLink = {
+        id: createdLink?.id || payload.id,
+        name: createdLink?.title || payload.description?.trim() || `Payment link ${payload.id.slice(-4)}`,
+        reference: `snap.link/pay/${(createdLink?.id || payload.id).slice(-8)}`,
+        amount: createdLink?.amount || payload.amount,
+        currency: createdLink?.currency || payload.currency,
+        payments: createdLink?.currentUsage || 0,
+        conversion: 0,
+        status: createdLink?.status === 'active' ? 'active' : createdLink?.status === 'paused' ? 'paused' : 'completed',
+        createdAt: createdLink?.createdAt || createdLink?.created_at || new Date().toISOString(),
+      }
 
-    return normalized
+      state.value.items = [normalized, ...state.value.items]
+
+      toasts.add({
+        title: 'Payment link created',
+        description: 'Your new payment link is ready to share.',
+        icon: 'ph:check',
+        color: 'success',
+        progress: true,
+      })
+
+      return normalized
+    } catch (error: any) {
+      toasts.add({
+        title: 'Error creating payment link',
+        description: error.message || 'Failed to create payment link',
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      throw error
+    }
   }
 
-  const toggleLinkStatus = (linkId: string) => {
+  const toggleLinkStatus = async (linkId: string) => {
+    const workspaceId = currentWorkspaceId.value
+    if (!workspaceId) {
+      toasts.add({
+        title: 'Error',
+        description: 'Workspace ID is required',
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return null
+    }
+
     const target = state.value.items.find((link) => link.id === linkId)
     if (!target) {
       return null
     }
 
     const previousStatus = target.status
+    const newStatus = target.status === 'active' ? 'paused' : 'active'
 
-    if (target.status === 'active') {
-      target.status = 'paused'
-    } else if (target.status === 'paused') {
-      target.status = 'active'
+    try {
+      await api.put(
+        `/api/payment/workspaces/${workspaceId}/payment-links/${linkId}`,
+        {
+          status: newStatus,
+        },
+        {
+          base: 'gateway',
+          requiresAuth: true,
+        }
+      )
+
+      target.status = newStatus
+
+      toasts.add({
+        title: newStatus === 'active' ? 'Link reactivated' : 'Link paused',
+        description: newStatus === 'active'
+          ? 'Customers can access this payment link again.'
+          : 'Payment link is paused and hidden from new customers.',
+        icon: newStatus === 'active' ? 'ph:play-circle' : 'ph:pause-circle',
+        color: newStatus === 'active' ? 'success' : 'warning',
+        progress: true,
+      })
+
+      return { link: target, previousStatus } satisfies PaymentLinkActionContext
+    } catch (error: any) {
+      toasts.add({
+        title: 'Error updating link',
+        description: error.message || 'Failed to update payment link status',
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return null
     }
-
-    toasts.add({
-      title: target.status === 'active' ? 'Link reactivated' : 'Link paused',
-      description: target.status === 'active'
-        ? 'Customers can access this payment link again.'
-        : 'Payment link is paused and hidden from new customers.',
-      icon: target.status === 'active' ? 'ph:play-circle' : 'ph:pause-circle',
-      color: target.status === 'active' ? 'success' : 'warning',
-      progress: true,
-    })
-
-    return { link: target, previousStatus } satisfies PaymentLinkActionContext
   }
 
-  const removeLink = (linkId: string) => {
+  const removeLink = async (linkId: string) => {
+    const workspaceId = currentWorkspaceId.value
+    if (!workspaceId) {
+      toasts.add({
+        title: 'Error',
+        description: 'Workspace ID is required',
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return
+    }
+
     const target = state.value.items.find((link) => link.id === linkId)
     if (!target) {
       return
     }
 
-    state.value.items = state.value.items.filter((link) => link.id !== linkId)
+    try {
+      await api.delete(
+        `/api/payment/workspaces/${workspaceId}/payment-links/${linkId}`,
+        {
+          base: 'gateway',
+          requiresAuth: true,
+        }
+      )
 
-    toasts.add({
-      title: 'Payment link removed',
-      description: 'The link has been deleted from your catalog.',
-      icon: 'ph:trash',
-      color: 'danger',
-      progress: true,
-    })
+      state.value.items = state.value.items.filter((link) => link.id !== linkId)
+
+      toasts.add({
+        title: 'Payment link removed',
+        description: 'The link has been deleted from your catalog.',
+        icon: 'ph:trash',
+        color: 'danger',
+        progress: true,
+      })
+    } catch (error: any) {
+      toasts.add({
+        title: 'Error deleting link',
+        description: error.message || 'Failed to delete payment link',
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+    }
   }
 
   const copyLinkReference = async (reference: string) => {
@@ -290,6 +511,37 @@ export const usePaymentLinks = () => {
   const error = computed(() => state.value.error)
   const isLoading = computed(() => state.value.isLoading)
   const links = computed(() => state.value.items)
+
+  // Watch for workspace changes and refresh data
+  watch(
+    currentWorkspaceId,
+    (newWorkspaceId, previousWorkspaceId) => {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentLinks] Workspace changed', {
+          from: previousWorkspaceId,
+          to: newWorkspaceId,
+        })
+      }
+
+      if (!newWorkspaceId) {
+        // Clear state if no workspace selected
+        Object.assign(state.value, initialState())
+        return
+      }
+
+      // If workspace changed, reset state and fetch new data
+      if (newWorkspaceId !== previousWorkspaceId) {
+        if (import.meta.dev) {
+          // eslint-disable-next-line no-console
+          console.warn('[usePaymentLinks] Resetting state and fetching new data for workspace:', newWorkspaceId)
+        }
+        Object.assign(state.value, initialState())
+        fetchLinks({ force: true })
+      }
+    },
+    { immediate: false },
+  )
 
   return {
     links,

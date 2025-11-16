@@ -1,26 +1,46 @@
 import { ref, readonly } from '#imports'
 import { useApi } from './useApi'
 import { useNuiToasts } from '#imports'
+import { useWorkspace } from './useWorkspace'
 import type { PaymentIntent, PaymentSession, PaymentConfirmation, ProcessingFilters } from '~/types/payment-processing'
 
 export const usePaymentProcessing = () => {
   const api = useApi()
   const toasts = useNuiToasts()
+  const { currentWorkspaceId } = useWorkspace()
 
   const isLoading = ref(false)
   const error = ref<string | null>(null)
 
   const fetchIntents = async (filters: ProcessingFilters) => {
+    const workspaceId = currentWorkspaceId.value
+    if (!workspaceId) {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentProcessing] Workspace ID is required')
+      }
+      return []
+    }
+
     isLoading.value = true
     error.value = null
 
     try {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentProcessing] Fetching intents...', {
+          workspaceId,
+          endpoint: `/api/payment/workspaces/${workspaceId}/processing/intents`,
+        })
+      }
+
       const response = await api.get<{ data: PaymentIntent[] }>(
-        '/processing/intents',
+        `/api/payment/workspaces/${workspaceId}/processing/intents`,
         {
           base: 'gateway',
           requiresAuth: true,
           params: filters,
+          quiet: false,
         }
       )
 
@@ -34,16 +54,34 @@ export const usePaymentProcessing = () => {
   }
 
   const fetchSessions = async (filters: ProcessingFilters) => {
+    const workspaceId = currentWorkspaceId.value
+    if (!workspaceId) {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentProcessing] Workspace ID is required')
+      }
+      return []
+    }
+
     isLoading.value = true
     error.value = null
 
     try {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentProcessing] Fetching sessions...', {
+          workspaceId,
+          endpoint: `/api/payment/workspaces/${workspaceId}/processing/sessions`,
+        })
+      }
+
       const response = await api.get<{ data: PaymentSession[] }>(
-        '/processing/sessions',
+        `/api/payment/workspaces/${workspaceId}/processing/sessions`,
         {
           base: 'gateway',
           requiresAuth: true,
           params: filters,
+          quiet: false,
         }
       )
 
@@ -57,16 +95,34 @@ export const usePaymentProcessing = () => {
   }
 
   const fetchConfirmations = async (filters: ProcessingFilters) => {
+    const workspaceId = currentWorkspaceId.value
+    if (!workspaceId) {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentProcessing] Workspace ID is required')
+      }
+      return []
+    }
+
     isLoading.value = true
     error.value = null
 
     try {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentProcessing] Fetching confirmations...', {
+          workspaceId,
+          endpoint: `/api/payment/workspaces/${workspaceId}/processing/confirmations`,
+        })
+      }
+
       const response = await api.get<{ data: PaymentConfirmation[] }>(
-        '/processing/confirmations',
+        `/api/payment/workspaces/${workspaceId}/processing/confirmations`,
         {
           base: 'gateway',
           requiresAuth: true,
           params: filters,
+          quiet: false,
         }
       )
 
@@ -80,16 +136,35 @@ export const usePaymentProcessing = () => {
   }
 
   const cancelIntent = async (intentId: string) => {
+    const workspaceId = currentWorkspaceId.value
+    if (!workspaceId) {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentProcessing] Workspace ID is required')
+      }
+      return false
+    }
+
     isLoading.value = true
     error.value = null
 
     try {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentProcessing] Canceling intent...', {
+          workspaceId,
+          intentId,
+          endpoint: `/api/payment/workspaces/${workspaceId}/processing/intents/${intentId}/cancel`,
+        })
+      }
+
       await api.post(
-        `/processing/intents/${intentId}/cancel`,
+        `/api/payment/workspaces/${workspaceId}/processing/intents/${intentId}/cancel`,
         {},
         {
           base: 'gateway',
           requiresAuth: true,
+          quiet: false,
         }
       )
 
@@ -118,16 +193,34 @@ export const usePaymentProcessing = () => {
   }
 
   const fetchRefunds = async (filters: ProcessingFilters) => {
+    const workspaceId = currentWorkspaceId.value
+    if (!workspaceId) {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentProcessing] Workspace ID is required')
+      }
+      return []
+    }
+
     isLoading.value = true
     error.value = null
 
     try {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentProcessing] Fetching refunds...', {
+          workspaceId,
+          endpoint: `/api/payment/workspaces/${workspaceId}/processing/refunds`,
+        })
+      }
+
       const response = await api.get<{ data: any[] }>(
-        '/processing/refunds',
+        `/api/payment/workspaces/${workspaceId}/processing/refunds`,
         {
           base: 'gateway',
           requiresAuth: true,
           params: filters,
+          quiet: false,
         }
       )
 
@@ -141,16 +234,34 @@ export const usePaymentProcessing = () => {
   }
 
   const fetchDisputes = async (filters: ProcessingFilters) => {
+    const workspaceId = currentWorkspaceId.value
+    if (!workspaceId) {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentProcessing] Workspace ID is required')
+      }
+      return []
+    }
+
     isLoading.value = true
     error.value = null
 
     try {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentProcessing] Fetching disputes...', {
+          workspaceId,
+          endpoint: `/api/payment/workspaces/${workspaceId}/processing/disputes`,
+        })
+      }
+
       const response = await api.get<{ data: any[] }>(
-        '/processing/disputes',
+        `/api/payment/workspaces/${workspaceId}/processing/disputes`,
         {
           base: 'gateway',
           requiresAuth: true,
           params: filters,
+          quiet: false,
         }
       )
 

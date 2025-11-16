@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { callOnce, ref, watch } from '#imports'
+import { ref, watch } from '#imports'
 import { usePaymentProcessing } from '~/composables/usePaymentProcessing'
 import type { ProcessingFilters } from '~/types/payment-processing'
 
@@ -20,7 +20,14 @@ const loadRefunds = async () => {
   refunds.value = await fetchRefunds(filters.value)
 }
 
-callOnce(() => loadRefunds())
+// Always fetch on mount to ensure API call is made
+onMounted(async () => {
+  if (import.meta.dev) {
+    // eslint-disable-next-line no-console
+    console.warn('[processing/refunds.vue] onMounted - calling loadRefunds()')
+  }
+  await loadRefunds()
+})
 
 watch(() => filters.value, () => {
   loadRefunds()

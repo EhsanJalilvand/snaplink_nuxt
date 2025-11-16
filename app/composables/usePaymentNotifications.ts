@@ -1,4 +1,4 @@
-import { computed } from '#imports'
+import { computed, watch } from '#imports'
 import type {
   PaymentNotificationChannels,
   PaymentNotificationEvents,
@@ -7,6 +7,7 @@ import type {
   PaymentNotificationResponse,
   PaymentNotificationTemplates,
 } from '~/types/payment-notifications'
+import { useWorkspace } from './useWorkspace'
 
 interface PaymentNotificationState extends PaymentNotificationPayload {
   isLoading: boolean
@@ -66,6 +67,7 @@ export const usePaymentNotifications = () => {
   const api = useApi()
   const toasts = useNuiToasts()
   const security = useSecurity()
+  const { currentWorkspaceId } = useWorkspace()
 
   const state = useState<PaymentNotificationState>('snaplink:payment-notifications', initialState)
 
@@ -83,6 +85,15 @@ export const usePaymentNotifications = () => {
       return
     }
 
+    const workspaceId = currentWorkspaceId.value
+    if (!workspaceId) {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentNotifications] Workspace ID is required')
+      }
+      return
+    }
+
     if (state.value.lastFetchedAt && !options.force) {
       return
     }
@@ -91,13 +102,21 @@ export const usePaymentNotifications = () => {
     state.value.error = null
 
     try {
-      const response = await api.get<PaymentNotificationResponse>('/payments/notifications', {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentNotifications] Fetching notifications...', {
+          workspaceId,
+          endpoint: `/api/payment/workspaces/${workspaceId}/notifications`,
+        })
+      }
+
+      const response = await api.get<PaymentNotificationResponse>(`/api/payment/workspaces/${workspaceId}/notifications`, {
         base: 'gateway',
         validate: (payload): payload is PaymentNotificationResponse =>
           typeof payload === 'object' && payload !== null && 'channels' in payload,
         retry: 1,
         timeout: 15000,
-        quiet: true,
+        quiet: false,
       })
 
       if (response) {
@@ -151,14 +170,37 @@ export const usePaymentNotifications = () => {
   const previewFailed = computed(() => formatTemplate(state.value.templates.failed))
 
   const saveConfiguration = async () => {
+    const workspaceId = currentWorkspaceId.value
+    if (!workspaceId) {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentNotifications] Workspace ID is required')
+      }
+      toasts.add({
+        title: 'Save failed',
+        description: 'Workspace ID is required. Please select a workspace first.',
+        icon: 'ph:warning',
+        progress: true,
+      })
+      return
+    }
+
     try {
-      await api.post('/payments/notifications', {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentNotifications] Saving notifications...', {
+          workspaceId,
+          endpoint: `/api/payment/workspaces/${workspaceId}/notifications`,
+        })
+      }
+
+      await api.post(`/api/payment/workspaces/${workspaceId}/notifications`, {
         channels: state.value.channels,
         events: state.value.events,
         templates: state.value.templates,
       }, {
         base: 'gateway',
-        quiet: true,
+        quiet: false,
       })
 
       toasts.add({
@@ -184,6 +226,37 @@ export const usePaymentNotifications = () => {
 
   const isLoading = computed(() => state.value.isLoading)
   const error = computed(() => state.value.error)
+
+  // Watch for workspace changes and refresh data
+  watch(
+    currentWorkspaceId,
+    (newWorkspaceId, previousWorkspaceId) => {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentNotifications] Workspace changed', {
+          from: previousWorkspaceId,
+          to: newWorkspaceId,
+        })
+      }
+
+      if (!newWorkspaceId) {
+        // Clear state if no workspace selected
+        Object.assign(state.value, initialState())
+        return
+      }
+
+      // If workspace changed, reset state and fetch new data
+      if (newWorkspaceId !== previousWorkspaceId) {
+        if (import.meta.dev) {
+          // eslint-disable-next-line no-console
+          console.warn('[usePaymentNotifications] Resetting state and fetching new data for workspace:', newWorkspaceId)
+        }
+        Object.assign(state.value, initialState())
+        fetchNotifications({ force: true })
+      }
+    },
+    { immediate: false },
+  )
 
   return {
     ...toRefs(state.value),

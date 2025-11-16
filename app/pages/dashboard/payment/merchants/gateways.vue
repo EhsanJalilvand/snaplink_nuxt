@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { callOnce, ref, watch } from '#imports'
+import { ref, watch } from '#imports'
 import { usePaymentGatewaysList } from '~/composables/usePaymentGatewaysList'
 import { usePaymentGatewayApproval } from '~/composables/usePaymentGatewayApproval'
 import GatewayStatusBadge from '~/components/payment/GatewayStatusBadge.vue'
@@ -23,7 +23,14 @@ const loadGateways = async () => {
   await fetchGateways(filters.value)
 }
 
-callOnce(() => loadGateways())
+// Always fetch on mount to ensure API call is made
+onMounted(async () => {
+  if (import.meta.dev) {
+    // eslint-disable-next-line no-console
+    console.warn('[merchants/gateways.vue] onMounted - calling loadGateways()')
+  }
+  await loadGateways()
+})
 
 watch(() => filters.value, () => {
   loadGateways()

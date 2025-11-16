@@ -80,7 +80,7 @@ export default defineNuxtConfig({
     apiGatewayBaseUrl:
       process.env.API_GATEWAY_BASE_URL ||
       process.env.NUXT_API_GATEWAY_BASE_URL ||
-      'http://localhost:5100',
+      'http://localhost:5100', // Ocelot API Gateway
     apiInternalBaseUrl: process.env.API_INTERNAL_BASE_URL || process.env.NUXT_API_INTERNAL_BASE_URL || '/api',
     
     // Public keys (exposed to client-side)
@@ -97,7 +97,7 @@ export default defineNuxtConfig({
       apiGatewayBaseUrl:
         process.env.NUXT_PUBLIC_API_GATEWAY_BASE_URL ||
         process.env.API_GATEWAY_BASE_URL ||
-        'http://localhost:5100',
+        'http://localhost:5100', // Ocelot API Gateway
       apiInternalBaseUrl: process.env.NUXT_PUBLIC_API_INTERNAL_BASE_URL || process.env.API_INTERNAL_BASE_URL || '/api',
     },
   },

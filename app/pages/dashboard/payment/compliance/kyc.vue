@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { callOnce, ref, watch } from '#imports'
+import { ref, watch } from '#imports'
 import { usePaymentCompliance } from '~/composables/usePaymentCompliance'
 import GatewayStatusBadge from '~/components/payment/GatewayStatusBadge.vue'
 import type { ComplianceFilters } from '~/types/payment-compliance'
@@ -21,7 +21,14 @@ const loadKYC = async () => {
   kycList.value = await fetchKYCList(filters.value)
 }
 
-callOnce(() => loadKYC())
+// Always fetch on mount to ensure API call is made
+onMounted(async () => {
+  if (import.meta.dev) {
+    // eslint-disable-next-line no-console
+    console.warn('[compliance/kyc.vue] onMounted - calling loadKYC()')
+  }
+  await loadKYC()
+})
 
 watch(() => filters.value, () => {
   loadKYC()

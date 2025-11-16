@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { callOnce, computed, ref } from '#imports'
+import { computed, ref } from '#imports'
 import { usePaymentReports } from '~/composables/usePaymentReports'
 import type { ReportFilters } from '~/types/payment-reports'
 
@@ -43,7 +43,14 @@ const loadAllReports = async () => {
   ])
 }
 
-callOnce(() => loadAllReports())
+// Always fetch on mount to ensure API call is made
+onMounted(async () => {
+  if (import.meta.dev) {
+    // eslint-disable-next-line no-console
+    console.warn('[reports.vue] onMounted - calling loadAllReports()')
+  }
+  await loadAllReports()
+})
 
 const updateDateRange = (days: number | 'custom') => {
   if (days === 'custom') {

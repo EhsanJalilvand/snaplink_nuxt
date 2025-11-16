@@ -1,24 +1,44 @@
 import { ref } from '#imports'
 import { useApi } from './useApi'
+import { useWorkspace } from './useWorkspace'
 import type { SalesReport, SettlementReport, RiskReport, ReportFilters } from '~/types/payment-reports'
 
 export const usePaymentReports = () => {
   const api = useApi()
+  const { currentWorkspaceId } = useWorkspace()
 
   const isLoading = ref(false)
   const error = ref<string | null>(null)
 
   const fetchSalesReport = async (filters: ReportFilters): Promise<SalesReport | null> => {
+    const workspaceId = currentWorkspaceId.value
+    if (!workspaceId) {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentReports] Workspace ID is required')
+      }
+      return null
+    }
+
     isLoading.value = true
     error.value = null
 
     try {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentReports] Fetching sales report...', {
+          workspaceId,
+          endpoint: `/api/payment/workspaces/${workspaceId}/reports/sales`,
+        })
+      }
+
       const response = await api.get<{ data: SalesReport }>(
-        '/reports/sales',
+        `/api/payment/workspaces/${workspaceId}/reports/sales`,
         {
           base: 'gateway',
           requiresAuth: true,
           params: filters,
+          quiet: false,
         }
       )
 
@@ -32,16 +52,34 @@ export const usePaymentReports = () => {
   }
 
   const fetchSettlementReport = async (filters: ReportFilters): Promise<SettlementReport | null> => {
+    const workspaceId = currentWorkspaceId.value
+    if (!workspaceId) {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentReports] Workspace ID is required')
+      }
+      return null
+    }
+
     isLoading.value = true
     error.value = null
 
     try {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentReports] Fetching settlement report...', {
+          workspaceId,
+          endpoint: `/api/payment/workspaces/${workspaceId}/reports/settlements`,
+        })
+      }
+
       const response = await api.get<{ data: SettlementReport }>(
-        '/reports/settlements',
+        `/api/payment/workspaces/${workspaceId}/reports/settlements`,
         {
           base: 'gateway',
           requiresAuth: true,
           params: filters,
+          quiet: false,
         }
       )
 
@@ -55,16 +93,34 @@ export const usePaymentReports = () => {
   }
 
   const fetchRiskReport = async (filters: ReportFilters): Promise<RiskReport | null> => {
+    const workspaceId = currentWorkspaceId.value
+    if (!workspaceId) {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentReports] Workspace ID is required')
+      }
+      return null
+    }
+
     isLoading.value = true
     error.value = null
 
     try {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentReports] Fetching risk report...', {
+          workspaceId,
+          endpoint: `/api/payment/workspaces/${workspaceId}/reports/risk`,
+        })
+      }
+
       const response = await api.get<{ data: RiskReport }>(
-        '/reports/risk',
+        `/api/payment/workspaces/${workspaceId}/reports/risk`,
         {
           base: 'gateway',
           requiresAuth: true,
           params: filters,
+          quiet: false,
         }
       )
 

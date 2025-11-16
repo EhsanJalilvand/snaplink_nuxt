@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { callOnce, ref, computed, watch } from '#imports'
+import { ref, computed, watch } from '#imports'
 import { usePaymentProcessing } from '~/composables/usePaymentProcessing'
 import GatewayStatusBadge from '~/components/payment/GatewayStatusBadge.vue'
 import type { ProcessingFilters } from '~/types/payment-processing'
@@ -23,7 +23,7 @@ const filters = ref<ProcessingFilters>({
   status: 'all',
   dateRange: undefined,
   gatewayId: undefined,
-  currency: undefined,
+  currency: 'all',
   minAmount: undefined,
   maxAmount: undefined,
 })
@@ -50,7 +50,14 @@ const loadAll = async () => {
   ])
 }
 
-callOnce(() => loadAll())
+// Always fetch on mount to ensure API call is made
+onMounted(async () => {
+  if (import.meta.dev) {
+    // eslint-disable-next-line no-console
+    console.warn('[transactions.vue] onMounted - calling loadAll()')
+  }
+  await loadAll()
+})
 
 watch(() => filters.value, () => {
   loadAll()
@@ -194,7 +201,7 @@ const handleCancel = async (id: string) => {
             size="lg"
             placeholder="All Currencies"
           >
-            <BaseSelectItem value="">All Currencies</BaseSelectItem>
+            <BaseSelectItem value="all">All Currencies</BaseSelectItem>
             <BaseSelectItem value="USD">USD</BaseSelectItem>
             <BaseSelectItem value="EUR">EUR</BaseSelectItem>
             <BaseSelectItem value="USDC">USDC</BaseSelectItem>

@@ -22,13 +22,10 @@ interface AppearanceState {
 
 const FALLBACK_SETTINGS: AppearanceSettings = {
   primaryColor: '#6366f1',
-  accentColor: '#8b5cf6',
   theme: 'light',
   fontFamily: 'Inter',
   borderRadius: 'md', // Default, not saved
   animationSpeed: 'normal', // Default, not saved
-  logoUrl: '',
-  faviconUrl: '',
 }
 
 const COLOR_PRESETS = [
@@ -106,17 +103,13 @@ export const usePreferencesAppearance = (workspaceId?: string | null) => {
     return api.buildUrl(baseUrl, url)
   }
 
-  const setSettings = (payload: AppearanceSettings | any) => {
+  const setSettings = (payload: AppearanceSettings) => {
     state.value.settings = {
       ...FALLBACK_SETTINGS,
-      primaryColor: payload.primaryColor || FALLBACK_SETTINGS.primaryColor,
-      accentColor: payload.accentColor || FALLBACK_SETTINGS.accentColor,
-      theme: payload.theme || FALLBACK_SETTINGS.theme,
-      fontFamily: payload.fontFamily || FALLBACK_SETTINGS.fontFamily,
+      ...payload,
       borderRadius: 'md', // Always default, ignore from API
       animationSpeed: 'normal', // Always default, ignore from API
       logoUrl: resolveAssetUrl(payload.logoUrl),
-      faviconUrl: resolveAssetUrl(payload.faviconUrl),
     }
     state.value.error = null
   }
@@ -195,33 +188,26 @@ export const usePreferencesAppearance = (workspaceId?: string | null) => {
     state.value.error = null
 
     try {
-      // Build payload with all required fields for backend
-      // Backend expects: PrimaryColor, AccentColor, FontFamily, Theme, BorderRadius, AnimationSpeed, LogoUrl, FaviconUrl
-      // ASP.NET Core model binding is case-insensitive, so camelCase should work
-      // But we'll send both to be safe, or let the JSON serializer handle it
-      const payload = {
-        primaryColor: state.value.settings.primaryColor || FALLBACK_SETTINGS.primaryColor,
-        accentColor: state.value.settings.accentColor || FALLBACK_SETTINGS.accentColor || '#8b5cf6',
-        theme: String(state.value.settings.theme || FALLBACK_SETTINGS.theme), // Ensure it's a string
-        fontFamily: state.value.settings.fontFamily || FALLBACK_SETTINGS.fontFamily,
+      // Only save primaryColor, theme, fontFamily, and logoUrl
+      // borderRadius and animationSpeed are always default (md, normal)
+      const payload: SaveAppearancePayload = {
+        primaryColor: state.value.settings.primaryColor,
+        theme: state.value.settings.theme,
+        fontFamily: state.value.settings.fontFamily,
         borderRadius: 'md', // Always default
         animationSpeed: 'normal', // Always default
-        logoUrl: state.value.settings.logoUrl || '',
-        faviconUrl: state.value.settings.faviconUrl || '',
+        logoUrl: state.value.settings.logoUrl,
       }
       const url = `/workspaces/${effectiveWorkspaceId.value}/preferences/appearance`
       console.log('[usePreferencesAppearance] Making PUT request to:', url, { payload })
       const response = await api.put(url, payload, {
         base: 'gateway',
         requiresAuth: true,
-        quiet: false, // Set to false to see error details
+        quiet: true,
         retry: 0,
         timeout: 7000,
       })
       console.log('[usePreferencesAppearance] Save response:', response)
-      
-      // Refresh settings after save
-      await fetchSettings()
 
       state.value.lastSavedAt = Date.now()
       toasts.add({

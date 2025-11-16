@@ -43,6 +43,14 @@ export function sanitizePath(path: string): string {
 }
 
 export function buildUrl(baseUrl: string, path: string): string {
+  // If baseUrl is absolute (starts with http:// or https://), use it directly
+  if (/^https?:\/\//i.test(baseUrl)) {
+    const base = baseUrl.replace(/\/$/, '')
+    const target = sanitizePath(path)
+    return `${base}${target}`
+  }
+  
+  // For relative URLs, combine them
   const base = baseUrl.replace(/\/$/, '')
   const target = sanitizePath(path)
   return `${base}${target}`
@@ -70,12 +78,22 @@ export const useApi = () => {
 
   const getBaseUrl = (base: ApiBase): string => {
     if (base === 'internal') {
-      const internalBase = (config.public as Record<string, any>).apiInternalBaseUrl ?? (config as Record<string, any>).apiInternalBaseUrl ?? '/api'
+      // For internal, try public first (client-side), then private (server-side)
+      const internalBase = import.meta.client
+        ? (config.public as Record<string, any>).apiInternalBaseUrl
+        : ((config.public as Record<string, any>).apiInternalBaseUrl ?? (config as Record<string, any>).apiInternalBaseUrl)
       return typeof internalBase === 'string' ? internalBase : '/api'
     }
 
-    const gatewayBase = (config.public as Record<string, any>).apiGatewayBaseUrl ?? (config as Record<string, any>).apiGatewayBaseUrl ?? ''
-    return typeof gatewayBase === 'string' ? gatewayBase : ''
+    // For gateway, always use public config (available on both client and server)
+    const gatewayBase = (config.public as Record<string, any>).apiGatewayBaseUrl ?? 'http://localhost:5100'
+    if (import.meta.dev) {
+      // eslint-disable-next-line no-console
+      console.log('[useApi] Gateway base URL:', gatewayBase, 'from config:', {
+        public: (config.public as Record<string, any>).apiGatewayBaseUrl,
+      })
+    }
+    return typeof gatewayBase === 'string' ? gatewayBase : 'http://localhost:5100'
   }
 
   const getAuthHeaders = async (requiresAuth: boolean): Promise<Record<string, string>> => {

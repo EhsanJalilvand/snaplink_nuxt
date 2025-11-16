@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { callOnce, ref, watch } from '#imports'
+import { ref, watch } from '#imports'
 import { usePaymentCompliance } from '~/composables/usePaymentCompliance'
 import RiskIndicator from '~/components/payment/RiskIndicator.vue'
 import type { ComplianceFilters } from '~/types/payment-compliance'
@@ -21,7 +21,14 @@ const loadRiskScores = async () => {
   riskScores.value = await fetchRiskScores(filters.value)
 }
 
-callOnce(() => loadRiskScores())
+// Always fetch on mount to ensure API call is made
+onMounted(async () => {
+  if (import.meta.dev) {
+    // eslint-disable-next-line no-console
+    console.warn('[compliance/risk-score.vue] onMounted - calling loadRiskScores()')
+  }
+  await loadRiskScores()
+})
 
 watch(() => filters.value, () => {
   loadRiskScores()

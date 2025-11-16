@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { callOnce, computed } from '#imports'
+import { computed } from '#imports'
 
 definePageMeta({
   title: 'Merchant Gateway',
@@ -25,7 +25,14 @@ const {
   setComplianceValue,
 } = usePaymentGateway()
 
-await callOnce(() => fetchGateway())
+// Always fetch on mount to ensure API call is made
+onMounted(async () => {
+  if (import.meta.dev) {
+    // eslint-disable-next-line no-console
+    console.warn('[gateway.vue] onMounted - calling fetchGateway() with force: true')
+  }
+  await fetchGateway({ force: true })
+})
 
 const webhookUrl = computed({
   get: () => webhook.value.url,

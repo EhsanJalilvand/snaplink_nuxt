@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { callOnce, ref, watch } from '#imports'
+import { ref, watch } from '#imports'
 import type { IPWhitelist } from '~/types/payment-gateway'
 
 definePageMeta({
@@ -47,7 +47,14 @@ const loadIPWhitelist = async () => {
   isLoading.value = false
 }
 
-callOnce(() => loadIPWhitelist())
+// Always fetch on mount to ensure API call is made
+onMounted(async () => {
+  if (import.meta.dev) {
+    // eslint-disable-next-line no-console
+    console.warn('[merchants/ip-whitelist.vue] onMounted - calling loadIPWhitelist()')
+  }
+  await loadIPWhitelist()
+})
 
 const filteredIPs = computed(() => {
   if (!search.value) return ipWhitelist.value

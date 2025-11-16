@@ -1,4 +1,4 @@
-import { computed, toRefs } from '#imports'
+import { computed, toRefs, watch } from '#imports'
 import type {
   PaymentGatewayCompliance,
   PaymentGatewayConnection,
@@ -7,6 +7,7 @@ import type {
   PaymentGatewayResponse,
   PaymentGatewayWebhookConfig,
 } from '~/types/payment-gateway'
+import { useWorkspace } from './useWorkspace'
 
 interface PaymentGatewayState {
   connections: PaymentGatewayConnection[]
@@ -111,6 +112,7 @@ export const usePaymentGateway = () => {
   const api = useApi()
   const toasts = useNuiToasts()
   const security = useSecurity()
+  const { currentWorkspaceId } = useWorkspace()
 
   const state = useState<PaymentGatewayState>('snaplink:payment-gateway', initialState)
 
@@ -129,6 +131,15 @@ export const usePaymentGateway = () => {
       return
     }
 
+    const workspaceId = currentWorkspaceId.value
+    if (!workspaceId) {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentGateway] Workspace ID is required')
+      }
+      return
+    }
+
     if (!options.force && state.value.lastFetchedAt) {
       return
     }
@@ -137,13 +148,21 @@ export const usePaymentGateway = () => {
     state.value.error = null
 
     try {
-      const response = await api.get<PaymentGatewayResponse>('/payments/gateway', {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentGateway] Fetching gateway from API...', {
+          workspaceId,
+          endpoint: `/api/payment/workspaces/${workspaceId}/gateway`,
+        })
+      }
+
+      const response = await api.get<PaymentGatewayResponse>(`/api/payment/workspaces/${workspaceId}/gateway`, {
         base: 'gateway',
         validate: (payload): payload is PaymentGatewayResponse =>
           typeof payload === 'object' && payload !== null && 'connections' in payload,
         retry: 1,
         timeout: 15000,
-        quiet: true,
+        quiet: false,
       })
 
       if (response && Array.isArray(response.connections) && response.connections.length > 0) {
@@ -260,6 +279,37 @@ export const usePaymentGateway = () => {
 
   const isLoading = computed(() => state.value.isLoading)
   const error = computed(() => state.value.error)
+
+  // Watch for workspace changes and refresh data
+  watch(
+    currentWorkspaceId,
+    (newWorkspaceId, previousWorkspaceId) => {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePaymentGateway] Workspace changed', {
+          from: previousWorkspaceId,
+          to: newWorkspaceId,
+        })
+      }
+
+      if (!newWorkspaceId) {
+        // Clear state if no workspace selected
+        Object.assign(state.value, initialState())
+        return
+      }
+
+      // If workspace changed, reset state and fetch new data
+      if (newWorkspaceId !== previousWorkspaceId) {
+        if (import.meta.dev) {
+          // eslint-disable-next-line no-console
+          console.warn('[usePaymentGateway] Resetting state and fetching new data for workspace:', newWorkspaceId)
+        }
+        Object.assign(state.value, initialState())
+        fetchGateway({ force: true })
+      }
+    },
+    { immediate: false },
+  )
 
   return {
     ...toRefs(state.value),

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { callOnce, definePageMeta } from '#imports'
+import { definePageMeta } from '#imports'
 import { usePaymentNotifications } from '~/composables/usePaymentNotifications'
 
 definePageMeta({
@@ -22,7 +22,14 @@ const {
   saveConfiguration,
 } = usePaymentNotifications()
 
-await callOnce(() => fetchNotifications())
+// Always fetch on mount to ensure API call is made
+onMounted(async () => {
+  if (import.meta.dev) {
+    // eslint-disable-next-line no-console
+    console.warn('[notifications.vue] onMounted - calling fetchNotifications() with force: true')
+  }
+  await fetchNotifications({ force: true })
+})
 
 const templateTokens = ['{{customer.name}}', '{{payment.id}}', '{{payment.amount}}', '{{payment.currency}}']
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { callOnce, ref } from '#imports'
+import { ref } from '#imports'
 import { usePaymentReports } from '~/composables/usePaymentReports'
 import RiskIndicator from '~/components/payment/RiskIndicator.vue'
 import type { ReportFilters } from '~/types/payment-reports'
@@ -34,7 +34,14 @@ const loadReport = async () => {
   report.value = await fetchRiskReport(filters.value)
 }
 
-callOnce(() => loadReport())
+// Always fetch on mount to ensure API call is made
+onMounted(async () => {
+  if (import.meta.dev) {
+    // eslint-disable-next-line no-console
+    console.warn('[reports/risk.vue] onMounted - calling loadReport()')
+  }
+  await loadReport()
+})
 
 const updateDateRange = (days: number | 'custom') => {
   if (days === 'custom') {

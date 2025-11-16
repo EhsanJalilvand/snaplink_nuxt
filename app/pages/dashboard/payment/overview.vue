@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { callOnce, computed } from '#imports'
+import { computed } from '#imports'
 
 definePageMeta({
   title: 'Payment Overview',
@@ -16,7 +16,14 @@ const {
   fetchOverview,
 } = usePayments()
 
-callOnce(() => fetchOverview())
+// Always fetch on mount to ensure API call is made
+onMounted(async () => {
+  if (import.meta.dev) {
+    // eslint-disable-next-line no-console
+    console.warn('[overview.vue] onMounted - calling fetchOverview() with force: true')
+  }
+  await fetchOverview({ force: true })
+})
 
 const handleAction = (action: 'create-link' | 'open-gateway' | 'open-payouts') => {
   switch (action) {

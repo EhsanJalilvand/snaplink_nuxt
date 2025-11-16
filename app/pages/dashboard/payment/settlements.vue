@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { callOnce, ref, watch, computed } from '#imports'
+import { ref, watch, computed } from '#imports'
 import { usePaymentSettlement } from '~/composables/usePaymentSettlement'
 import type { SettlementLog, SettlementStatus, SettlementFee, EscrowTransaction, EscrowStatus } from '~/types/payment-settlement'
 
@@ -27,7 +27,14 @@ const loadAll = async () => {
   ])
 }
 
-callOnce(() => loadAll())
+// Always fetch on mount to ensure API call is made
+onMounted(async () => {
+  if (import.meta.dev) {
+    // eslint-disable-next-line no-console
+    console.warn('[settlements.vue] onMounted - calling loadAll()')
+  }
+  await loadAll()
+})
 
 watch([statusFilter, gatewayIdFilter], () => {
   loadAll()

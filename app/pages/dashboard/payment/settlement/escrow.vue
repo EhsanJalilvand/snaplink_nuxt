@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { callOnce, ref, watch, computed } from '#imports'
+import { ref, watch, computed } from '#imports'
 import { usePaymentSettlement } from '~/composables/usePaymentSettlement'
 import type { EscrowTransaction, EscrowStatus } from '~/types/payment-settlement'
 
@@ -19,7 +19,14 @@ const loadEscrows = async () => {
   escrows.value = await fetchEscrowTransactions(gatewayIdFilter.value || undefined)
 }
 
-callOnce(() => loadEscrows())
+// Always fetch on mount to ensure API call is made
+onMounted(async () => {
+  if (import.meta.dev) {
+    // eslint-disable-next-line no-console
+    console.warn('[settlement/escrow.vue] onMounted - calling loadEscrows()')
+  }
+  await loadEscrows()
+})
 
 watch([statusFilter, gatewayIdFilter], () => {
   loadEscrows()

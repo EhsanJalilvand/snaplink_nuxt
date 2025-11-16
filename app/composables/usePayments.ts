@@ -1,10 +1,11 @@
-import { computed, toRefs } from '#imports'
+import { computed, toRefs, watch } from '#imports'
 import type {
   PaymentOverviewData,
   PaymentOverviewResponse,
   PaymentRevenueDataset,
   PaymentStatusItem,
 } from '~/types/payments'
+import { useWorkspace } from './useWorkspace'
 
 interface PaymentState {
   overview: PaymentOverviewData | null
@@ -256,6 +257,7 @@ const totalStatusTransactions = (status: PaymentStatusItem[]) =>
 
 export const usePayments = () => {
   const api = useApi()
+  const { currentWorkspaceId } = useWorkspace()
 
   const state = useState<PaymentState>('snaplink:payments', () => ({
     overview: null,
@@ -273,6 +275,15 @@ export const usePayments = () => {
       return
     }
 
+    const workspaceId = currentWorkspaceId.value
+    if (!workspaceId) {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePayments] Workspace ID is required')
+      }
+      return
+    }
+
     if (state.value.overview && !options.force) {
       return
     }
@@ -281,13 +292,21 @@ export const usePayments = () => {
     state.value.overviewError = null
 
     try {
-      const response = await api.get<PaymentOverviewResponse>('/payments/overview', {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePayments] Fetching overview from API...', {
+          workspaceId,
+          endpoint: `/api/payment/workspaces/${workspaceId}/overview`,
+        })
+      }
+
+      const response = await api.get<PaymentOverviewResponse>(`/api/payment/workspaces/${workspaceId}/overview`, {
         base: 'gateway',
         validate: (payload): payload is PaymentOverviewResponse =>
           typeof payload === 'object' && payload !== null && 'data' in payload,
         retry: 2,
         timeout: 20000,
-        quiet: true,
+        quiet: false,
       })
 
       if (response?.data) {
@@ -309,6 +328,39 @@ export const usePayments = () => {
   const overview = computed(() => state.value.overview ?? FALLBACK_OVERVIEW)
   const revenueByPeriod = computed(() => mapRevenueByPeriod(overview.value.revenue))
   const statusTotal = computed(() => totalStatusTransactions(overview.value.status))
+
+  // Watch for workspace changes and refresh data
+  watch(
+    currentWorkspaceId,
+    (newWorkspaceId, previousWorkspaceId) => {
+      if (import.meta.dev) {
+        // eslint-disable-next-line no-console
+        console.warn('[usePayments] Workspace changed', {
+          from: previousWorkspaceId,
+          to: newWorkspaceId,
+        })
+      }
+
+      if (!newWorkspaceId) {
+        // Clear state if no workspace selected
+        state.value.overview = null
+        state.value.overviewError = null
+        return
+      }
+
+      // If workspace changed, reset state and fetch new data
+      if (newWorkspaceId !== previousWorkspaceId) {
+        if (import.meta.dev) {
+          // eslint-disable-next-line no-console
+          console.warn('[usePayments] Resetting state and fetching new data for workspace:', newWorkspaceId)
+        }
+        state.value.overview = null
+        state.value.overviewError = null
+        fetchOverview({ force: true })
+      }
+    },
+    { immediate: false },
+  )
 
   return {
     ...toRefs(state.value),

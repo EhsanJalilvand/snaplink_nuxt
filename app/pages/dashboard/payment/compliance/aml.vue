@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { callOnce, ref, watch } from '#imports'
+import { ref, watch } from '#imports'
 import { usePaymentCompliance } from '~/composables/usePaymentCompliance'
 import type { ComplianceFilters } from '~/types/payment-compliance'
 
@@ -19,7 +19,14 @@ const loadAML = async () => {
   amlList.value = await fetchAML(filters.value)
 }
 
-callOnce(() => loadAML())
+// Always fetch on mount to ensure API call is made
+onMounted(async () => {
+  if (import.meta.dev) {
+    // eslint-disable-next-line no-console
+    console.warn('[compliance/aml.vue] onMounted - calling loadAML()')
+  }
+  await loadAML()
+})
 
 watch(() => filters.value, () => {
   loadAML()

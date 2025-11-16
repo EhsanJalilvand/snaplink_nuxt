@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { callOnce, ref, watch, computed } from '#imports'
+import { ref, watch, computed } from '#imports'
 import { usePaymentSettlement } from '~/composables/usePaymentSettlement'
 import type { SettlementLog, SettlementStatus } from '~/types/payment-settlement'
 
@@ -19,7 +19,14 @@ const loadLogs = async () => {
   logs.value = await fetchSettlementLogs(gatewayIdFilter.value || undefined)
 }
 
-callOnce(() => loadLogs())
+// Always fetch on mount to ensure API call is made
+onMounted(async () => {
+  if (import.meta.dev) {
+    // eslint-disable-next-line no-console
+    console.warn('[settlement/logs.vue] onMounted - calling loadLogs()')
+  }
+  await loadLogs()
+})
 
 watch([statusFilter, gatewayIdFilter], () => {
   loadLogs()

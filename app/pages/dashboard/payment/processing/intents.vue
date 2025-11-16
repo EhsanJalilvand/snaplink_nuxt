@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { callOnce, ref, computed, watch } from '#imports'
+import { ref, computed, watch } from '#imports'
 import { usePaymentProcessing } from '~/composables/usePaymentProcessing'
 import GatewayStatusBadge from '~/components/payment/GatewayStatusBadge.vue'
 import type { ProcessingFilters, PaymentIntentStatus } from '~/types/payment-processing'
@@ -37,7 +37,14 @@ const loadIntents = async () => {
   intents.value = await fetchIntents(filters.value)
 }
 
-callOnce(() => loadIntents())
+// Always fetch on mount to ensure API call is made
+onMounted(async () => {
+  if (import.meta.dev) {
+    // eslint-disable-next-line no-console
+    console.warn('[processing/intents.vue] onMounted - calling loadIntents()')
+  }
+  await loadIntents()
+})
 
 watch(() => filters.value, () => {
   loadIntents()

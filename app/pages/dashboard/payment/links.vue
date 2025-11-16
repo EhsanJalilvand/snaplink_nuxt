@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { callOnce } from '#imports'
 import PaymentLinkWizard from '~/components/payment/PaymentLinkWizard.vue'
 import PaymentLinksToolbar from '~/components/payment/PaymentLinksToolbar.vue'
 import PaymentLinksTable from '~/components/payment/PaymentLinksTable.vue'
@@ -26,7 +25,17 @@ const {
   copyLinkReference,
 } = usePaymentLinks()
 
-callOnce(() => fetchLinks())
+// Always fetch on mount to ensure API call is made
+onMounted(async () => {
+  if (import.meta.dev) {
+    // eslint-disable-next-line no-console
+    console.warn('[links.vue] onMounted - calling fetchLinks() with force: true')
+  }
+  
+  // Wait a bit to ensure workspace is loaded
+  await nextTick()
+  await fetchLinks({ force: true })
+})
 
 const showWizard = ref(false)
 
