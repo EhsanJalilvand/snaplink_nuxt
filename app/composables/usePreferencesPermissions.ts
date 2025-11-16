@@ -51,8 +51,8 @@ export const usePreferencesPermissions = (workspaceId?: string | null) => {
     }
 
     if (!silent) {
-      state.value.isLoading = true
-      state.value.error = null
+    state.value.isLoading = true
+    state.value.error = null
     }
 
     try {
@@ -94,11 +94,11 @@ export const usePreferencesPermissions = (workspaceId?: string | null) => {
         console.warn('[usePreferencesPermissions] Failed to load permissions', error)
       }
       if (!silent) {
-        state.value.error = 'Unable to load permissions.'
+      state.value.error = 'Unable to load permissions.'
       }
     } finally {
       if (!silent) {
-        state.value.isLoading = false
+      state.value.isLoading = false
       }
     }
   }
@@ -140,12 +140,12 @@ export const usePreferencesPermissions = (workspaceId?: string | null) => {
       // Refresh permissions from server to ensure state is up to date (silent to avoid UI flicker)
       await fetchPermissions(true)
 
-      toasts.add({
-        title: 'Permissions updated',
-        description: 'Role permissions saved successfully.',
-        icon: 'ph:check',
-        progress: true,
-      })
+        toasts.add({
+          title: 'Permissions updated',
+          description: 'Role permissions saved successfully.',
+          icon: 'ph:check',
+          progress: true,
+        })
     } catch (error: any) {
       if (import.meta.dev) {
         console.error('[usePreferencesPermissions] Save error:', {
@@ -179,7 +179,7 @@ export const usePreferencesPermissions = (workspaceId?: string | null) => {
 
     // Convert role name to enum value (backend returns role as number)
     const roleEnum = roleToEnumMap[role]
-    
+
     const mapping = state.value.rolePermissions.find(
       (rp) => rp.role === roleEnum && rp.permission === permissionId
     )

@@ -91,35 +91,35 @@ const handleSave = async () => {
         >
           <div>
             <div class="flex items-center gap-2 w-full">
-              <TairoInput
-                :model-value="settings.subdomain"
-                type="text"
-                placeholder="yourworkspace"
-                icon="solar:global-linear"
+            <TairoInput
+              :model-value="settings.subdomain"
+              type="text"
+              placeholder="yourworkspace"
+              icon="solar:global-linear"
                 size="lg"
                 class="flex-1"
-                :disabled="isLoading || isValidating"
-                @update:model-value="handleSubdomainChange"
+              :disabled="isLoading || isValidating"
+              @update:model-value="handleSubdomainChange"
               />
               <div class="px-3 h-12 border border-muted-200 dark:border-muted-700 rounded-md bg-muted-50 dark:bg-muted-900 flex items-center">
                 <span class="text-sm font-medium text-muted-600 dark:text-muted-400">.snaplink.io</span>
               </div>
-            </div>
+          </div>
             <div class="mt-2">
-              <BaseText
-                v-if="subdomainError"
-                size="xs"
-                class="text-danger-500"
-              >
-                {{ subdomainError }}
-              </BaseText>
-              <BaseText
-                v-else
-                size="xs"
-                class="text-muted-500 dark:text-muted-400"
-              >
-                Only lowercase letters, numbers, and hyphens are allowed. Must be 3-63 characters.
-              </BaseText>
+          <BaseText
+            v-if="subdomainError"
+            size="xs"
+            class="text-danger-500"
+          >
+            {{ subdomainError }}
+          </BaseText>
+          <BaseText
+            v-else
+            size="xs"
+            class="text-muted-500 dark:text-muted-400"
+          >
+            Only lowercase letters, numbers, and hyphens are allowed. Must be 3-63 characters.
+          </BaseText>
             </div>
           </div>
         </TairoFormGroup>
@@ -131,49 +131,49 @@ const handleSave = async () => {
         >
           <div>
             <div class="flex items-center gap-2 w-full">
-              <TairoInput
-                :model-value="settings.customDomain"
-                type="text"
-                placeholder="links.yourdomain.com"
-                icon="solar:global-linear"
+          <TairoInput
+            :model-value="settings.customDomain"
+            type="text"
+            placeholder="links.yourdomain.com"
+            icon="solar:global-linear"
                 size="lg"
                 class="flex-1"
-                :disabled="isLoading || isValidating"
-                @update:model-value="handleCustomDomainChange"
-              />
+            :disabled="isLoading || isValidating"
+            @update:model-value="handleCustomDomainChange"
+          />
               <div class="px-3 h-12 border border-transparent rounded-md flex items-center opacity-0 pointer-events-none">
                 <span class="text-sm font-medium">.snaplink.io</span>
               </div>
             </div>
             <div class="mt-2">
-              <BaseText
-                v-if="customDomainError"
-                size="xs"
-                class="text-danger-500"
-              >
-                {{ customDomainError }}
-              </BaseText>
-              <BaseText
-                v-else-if="settings.customDomain && settings.domainVerified"
-                size="xs"
-                class="text-success-500"
-              >
-                Domain verified successfully
-              </BaseText>
-              <BaseText
-                v-else-if="settings.customDomain && !settings.domainVerified"
-                size="xs"
-                class="text-warning-500"
-              >
-                Domain needs verification. Please configure DNS records.
-              </BaseText>
-              <BaseText
-                v-else
-                size="xs"
-                class="text-muted-500 dark:text-muted-400"
-              >
-                Enter your custom domain. DNS verification will be required.
-              </BaseText>
+          <BaseText
+            v-if="customDomainError"
+            size="xs"
+            class="text-danger-500"
+          >
+            {{ customDomainError }}
+          </BaseText>
+          <BaseText
+            v-else-if="settings.customDomain && settings.domainVerified"
+            size="xs"
+            class="text-success-500"
+          >
+            Domain verified successfully
+          </BaseText>
+          <BaseText
+            v-else-if="settings.customDomain && !settings.domainVerified"
+            size="xs"
+            class="text-warning-500"
+          >
+            Domain needs verification. Please configure DNS records.
+          </BaseText>
+          <BaseText
+            v-else
+            size="xs"
+            class="text-muted-500 dark:text-muted-400"
+          >
+            Enter your custom domain. DNS verification will be required.
+          </BaseText>
             </div>
           </div>
         </TairoFormGroup>

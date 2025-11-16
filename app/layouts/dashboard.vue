@@ -179,17 +179,37 @@ const menu: MenuItem[] = [
         to: '/dashboard/payment/overview',
       },
       {
+        label: 'Reports',
+        icon: 'solar:chart-2-linear',
+        to: '/dashboard/payment/reports',
+      },
+      {
+        label: 'Transactions',
+        icon: 'solar:card-send-linear',
+        to: '/dashboard/payment/transactions',
+      },
+      {
+        label: 'Settlements',
+        icon: 'solar:wallet-money-linear',
+        to: '/dashboard/payment/settlements',
+      },
+      {
+        label: 'Security',
+        icon: 'solar:shield-check-linear',
+        to: '/dashboard/payment/security',
+      },
+      {
+        label: 'Gateways',
+        icon: 'solar:shop-linear',
+        to: '/dashboard/payment/gateways',
+      },
+      {
         label: 'Payment Links',
         icon: 'solar:link-circle-linear',
         to: '/dashboard/payment/links',
       },
       {
-        label: 'Merchant Gateway',
-        icon: 'solar:shop-linear',
-        to: '/dashboard/payment/gateway',
-      },
-      {
-        label: 'Notification Settings',
+        label: 'Notifications',
         icon: 'solar:bell-bing-linear',
         to: '/dashboard/payment/notifications',
       },

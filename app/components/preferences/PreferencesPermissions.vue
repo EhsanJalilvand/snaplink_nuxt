@@ -57,7 +57,7 @@ watch([permissions, rolePermissions, () => props.workspaceId], () => {
   if (permissions.value.length > 0) {
     // Use nextTick to ensure Vue reactivity works correctly
     nextTick(() => {
-      initializeMappings()
+    initializeMappings()
     })
   }
 }, { immediate: true, deep: true })
