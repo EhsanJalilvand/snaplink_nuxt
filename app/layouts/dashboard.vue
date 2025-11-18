@@ -98,6 +98,8 @@ const userAvatar = computed(() => {
   return `https://ui-avatars.com/api/?name=${encodeURIComponent(userDisplayName.value)}&background=6366f1&color=fff`
 })
 
+const showUserMenu = computed(() => Boolean(sharedUser.value || isAuthenticated.value))
+
 // Handle logout
 const handleLogout = async () => {
   await logout()
@@ -504,7 +506,7 @@ function handlePrimaryNavClick(item: MenuItem) {
 
           <!-- User Menu -->
           <BaseDropdown
-            v-if="isAuthenticated && sharedUser"
+            v-if="showUserMenu"
             variant="default"
             :bindings="{
               content: {
@@ -521,7 +523,6 @@ function handlePrimaryNavClick(item: MenuItem) {
               >
                 <BaseChip size="sm" color="custom" :offset="3" class="text-success-500">
                   <BaseAvatar
-                    v-if="sharedUser"
                     size="xs"
                     :src="userAvatar"
                   />
@@ -593,6 +594,13 @@ function handlePrimaryNavClick(item: MenuItem) {
               <span class="group-hover:text-destructive-500">Logout</span>
             </BaseDropdownItem>
           </BaseDropdown>
+          <div
+            v-else
+            class="flex items-center gap-2 rounded-full bg-muted-100 px-3 py-1.5 text-sm text-muted-500 dark:bg-muted-800 dark:text-muted-400"
+          >
+            <div class="size-8 rounded-full bg-muted-200 dark:bg-muted-700 animate-pulse" />
+            <span class="hidden lg:inline">Loading profile…</span>
+          </div>
         </div>
       </div>
 

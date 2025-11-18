@@ -292,7 +292,8 @@ export const useAuth = () => {
       
       // Clear any stored data
       if (process.client) {
-        sessionStorage.clear()
+        sessionStorage.removeItem('snaplink:access_token')
+        sessionStorage.removeItem('oauth2_return_to')
       }
 
       toaster.add({
@@ -330,7 +331,9 @@ export const useAuth = () => {
         credentials: 'include',
       })
 
-      if (response.success) {
+      if (response.success && response.access_token && import.meta.client) {
+        // Update access token in sessionStorage
+        sessionStorage.setItem('snaplink:access_token', response.access_token)
         return true
       }
       return false

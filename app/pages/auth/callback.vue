@@ -63,6 +63,11 @@ onMounted(async () => {
 
     if (response.success) {
       // Success - tokens are now in HttpOnly cookies
+      // Also store access token in sessionStorage for direct API calls to Gateway
+      if (response.access_token && import.meta.client) {
+        sessionStorage.setItem('snaplink:access_token', response.access_token)
+      }
+      
       // Refresh user data to get updated state
       const { refreshUser } = useUserData()
       await refreshUser()

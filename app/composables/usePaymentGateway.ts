@@ -20,89 +20,22 @@ interface PaymentGatewayState {
   lastFetchedAt?: number
 }
 
-const FALLBACK_STATE: Omit<PaymentGatewayState, 'isLoading' | 'error' | 'lastFetchedAt'> = {
-  connections: [
-    {
-      id: 'gw-1',
-      name: 'Stripe US',
-      status: 'active',
-      mode: 'Live',
-      volumeShare: 45,
-      lastSync: '3 mins ago',
-      latency: '184 ms',
-    },
-    {
-      id: 'gw-2',
-      name: 'Adyen EU',
-      status: 'active',
-      mode: 'Live',
-      volumeShare: 28,
-      lastSync: '12 mins ago',
-      latency: '212 ms',
-    },
-    {
-      id: 'gw-3',
-      name: 'Circle USDC',
-      status: 'standby',
-      mode: 'Sandbox',
-      volumeShare: 17,
-      lastSync: '58 mins ago',
-      latency: '164 ms',
-    },
-  ],
+const initialState = (): PaymentGatewayState => ({
+  connections: [],
   webhook: {
-    url: 'https://api.snaplink.app/webhooks/payment',
-    secret: 'whsec_live_4f98d1f0c1',
+    url: '',
+    secret: '',
     retries: 3,
-    events: ['payment.success', 'payment.failed', 'payment.refunded'],
+    events: [],
   },
   compliance: {
-    maxTransaction: 25000,
-    dailyVolume: 250000,
-    allowedCurrencies: ['USD', 'EUR', 'USDC'],
-    riskProfile: 'Adaptive',
+    maxTransaction: 0,
+    dailyVolume: 0,
+    allowedCurrencies: [],
+    riskProfile: 'Standard',
   },
-  report: [
-    {
-      id: '#TX-8453',
-      gateway: 'Stripe US',
-      method: 'Card • Visa',
-      amount: 480.65,
-      currency: 'USD',
-      status: 'Captured',
-      createdAt: '2024-02-14T12:42:00Z',
-    },
-    {
-      id: '#TX-8452',
-      gateway: 'Adyen EU',
-      method: 'iDEAL',
-      amount: 189,
-      currency: 'EUR',
-      status: 'Settled',
-      createdAt: '2024-02-14T12:05:00Z',
-    },
-    {
-      id: '#TX-8451',
-      gateway: 'Circle USDC',
-      method: 'Crypto • USDC',
-      amount: 5600,
-      currency: 'USDC',
-      status: 'Pending',
-      createdAt: '2024-02-14T11:20:00Z',
-    },
-  ],
-  events: [
-    { label: 'Payment successful', value: 'payment.success' },
-    { label: 'Payment failed', value: 'payment.failed' },
-    { label: 'Payment pending', value: 'payment.pending' },
-    { label: 'Refund requested', value: 'payment.refund.requested' },
-    { label: 'Refund processed', value: 'payment.refunded' },
-    { label: 'Dispute opened', value: 'payment.dispute.opened' },
-  ],
-}
-
-const initialState = (): PaymentGatewayState => ({
-  ...structuredClone(FALLBACK_STATE),
+  report: [],
+  events: [],
   isLoading: false,
   error: null,
   lastFetchedAt: undefined,
@@ -165,17 +98,33 @@ export const usePaymentGateway = () => {
         quiet: false,
       })
 
-      if (response && Array.isArray(response.connections) && response.connections.length > 0) {
+      if (response && Array.isArray(response.connections)) {
         setStateFromResponse(response)
       } else {
-        setStateFromResponse({ ...FALLBACK_STATE })
+        // API returned empty or invalid data
+        setStateFromResponse({
+          connections: [],
+          webhook: { url: '', secret: '', retries: 3, events: [] },
+          compliance: { maxTransaction: 0, dailyVolume: 0, allowedCurrencies: [], riskProfile: 'Standard' },
+          report: [],
+          events: [],
+        })
       }
     } catch (error) {
       if (import.meta.dev) {
-        console.warn('[usePaymentGateway] Falling back to static gateway data', error)
+        console.error('[usePaymentGateway] Failed to load gateway configuration', error)
       }
-      state.value.error = 'Unable to load gateway configuration. Showing cached data.'
-      setStateFromResponse({ ...FALLBACK_STATE })
+      state.value.error = 'Unable to load gateway configuration. Please try again.'
+      // Keep existing data if available, otherwise reset to empty state
+      if (state.value.connections.length === 0) {
+        setStateFromResponse({
+          connections: [],
+          webhook: { url: '', secret: '', retries: 3, events: [] },
+          compliance: { maxTransaction: 0, dailyVolume: 0, allowedCurrencies: [], riskProfile: 'Standard' },
+          report: [],
+          events: [],
+        })
+      }
     } finally {
       state.value.isLoading = false
     }

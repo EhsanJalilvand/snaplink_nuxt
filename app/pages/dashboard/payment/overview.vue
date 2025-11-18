@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from '#imports'
+import type { PaymentOverviewData } from '~/types/payments'
 
 definePageMeta({
   title: 'Payment Overview',
@@ -15,6 +16,35 @@ const {
   statusTotal,
   fetchOverview,
 } = usePayments()
+
+const emptyOverview: PaymentOverviewData = {
+  summary: {
+    total: 0,
+    pending: 0,
+    available: 0,
+  },
+  trends: {
+    total: { value: '0%', direction: 'up' },
+    pending: { value: '0%', direction: 'up' },
+    available: { value: '0%', direction: 'up' },
+  },
+  status: [],
+  insights: [],
+  revenue: [],
+  revenueMetrics: {
+    mrr: { value: 0, change: '0%' },
+    averageOrderValue: { value: 0, currency: 'USD' },
+    refundRatio: { value: 0, change: '0%' },
+    netRevenuePace: { value: 0, currency: 'USD', timeframe: '30d', progress: 0 },
+  },
+  performance: [],
+  quickActions: [],
+  activities: [],
+  alerts: [],
+  conversions: [],
+}
+
+const safeOverview = computed(() => overview.value ?? emptyOverview)
 
 // Always fetch on mount to ensure API call is made
 onMounted(async () => {
@@ -41,11 +71,11 @@ const handleAction = (action: 'create-link' | 'open-gateway' | 'open-payouts') =
   }
 }
 
-const transactionInsights = computed(() => overview.value.insights ?? [])
-const quickActions = computed(() => overview.value.quickActions ?? [])
-const recentActivity = computed(() => overview.value.activities ?? [])
-const paymentAlerts = computed(() => overview.value.alerts ?? [])
-const conversionMetrics = computed(() => overview.value.conversions ?? [])
+const transactionInsights = computed(() => safeOverview.value.insights ?? [])
+const quickActions = computed(() => safeOverview.value.quickActions ?? [])
+const recentActivity = computed(() => safeOverview.value.activities ?? [])
+const paymentAlerts = computed(() => safeOverview.value.alerts ?? [])
+const conversionMetrics = computed(() => safeOverview.value.conversions ?? [])
 const hasOverviewError = computed(() => Boolean(overviewError.value))
 </script>
 
@@ -99,31 +129,31 @@ const hasOverviewError = computed(() => Boolean(overviewError.value))
     </BaseAlert>
 
     <PaymentSummaryCards
-      :summary="overview.summary"
-      :trends="overview.trends"
+      :summary="safeOverview.summary"
+      :trends="safeOverview.trends"
       :is-loading="isLoadingOverview"
     />
 
     <div class="space-y-6">
       <PaymentTransactionStatus
-        :status="overview.status"
+        :status="safeOverview.status"
         :insights="transactionInsights"
         :total="statusTotal"
         :is-loading="isLoadingOverview"
       />
       <PaymentRevenueChart
         :datasets="revenueByPeriod"
-        :metrics="overview.revenueMetrics"
+        :metrics="safeOverview.revenueMetrics"
         :is-loading="isLoadingOverview"
       />
     </div>
 
     <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
-      <PaymentTopPerformance
-        class="xl:col-span-2"
-        :items="overview.performance"
-        :is-loading="isLoadingOverview"
-      />
+        <PaymentTopPerformance
+          class="xl:col-span-2"
+          :items="safeOverview.performance"
+          :is-loading="isLoadingOverview"
+        />
       <div class="space-y-6 xl:col-span-1">
         <PaymentQuickActions
           :actions="quickActions"

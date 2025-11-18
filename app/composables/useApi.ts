@@ -85,15 +85,27 @@ export const useApi = () => {
       return typeof internalBase === 'string' ? internalBase : '/api'
     }
 
-    // For gateway, use Nuxt server proxy route (which handles authentication)
-    // This ensures authentication is handled server-side with cookies
-    return '/api/gateway'
+    // For gateway, use Ocelot Gateway directly (CORS is configured)
+    const gatewayBase = (config.public as Record<string, any>).apiGatewayBaseUrl ?? 'http://localhost:5100'
+    return typeof gatewayBase === 'string' ? gatewayBase : 'http://localhost:5100'
   }
 
   const getAuthHeaders = async (requiresAuth: boolean): Promise<Record<string, string>> => {
-    // Authentication is now handled server-side via /api/gateway proxy
-    // Cookies are automatically sent with credentials: 'include'
-    return {}
+    if (!requiresAuth) {
+      return {}
+    }
+
+    const headers: Record<string, string> = {}
+
+    // Get access token from sessionStorage (set by OAuth callback)
+    if (import.meta.client) {
+      const token = sessionStorage.getItem('snaplink:access_token')
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+    }
+
+    return headers
   }
 
   const handleError = (error: unknown, context: ApiErrorContext, quiet?: boolean): never => {

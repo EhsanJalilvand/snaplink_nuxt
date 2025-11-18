@@ -15,47 +15,35 @@ interface PaymentNotificationState extends PaymentNotificationPayload {
   lastFetchedAt?: number
 }
 
-const FALLBACK_PAYLOAD: PaymentNotificationPayload = {
+const initialState = (): PaymentNotificationState => ({
   channels: {
-    email: true,
-    push: true,
+    email: false,
+    push: false,
     sms: false,
-    webhook: true,
+    webhook: false,
   },
   events: {
-    success: true,
-    failed: true,
-    refund: true,
+    success: false,
+    failed: false,
+    refund: false,
     dispute: false,
   },
   templates: {
-    success: `Hi {{customer.name}},
-
-Payment {{payment.id}} for {{payment.amount}} {{payment.currency}} is complete.
-
-Thanks for trusting SnapLink.`,
-    failed: `Heads up team,
-
-Payment {{payment.id}} for {{payment.amount}} {{payment.currency}} failed due to {{payment.error}}.
-
-Review in the payment console.`,
+    success: '',
+    failed: '',
   },
   previewContext: {
     customer: {
-      name: 'Ava Stone',
-      email: 'ava@snaplink.app',
+      name: '',
+      email: '',
     },
     payment: {
-      id: 'TX-8453',
-      amount: '420.00',
-      currency: 'USD',
-      error: 'Insufficient funds',
+      id: '',
+      amount: '',
+      currency: '',
+      error: '',
     },
   },
-}
-
-const initialState = (): PaymentNotificationState => ({
-  ...structuredClone(FALLBACK_PAYLOAD),
   isLoading: false,
   error: null,
   lastFetchedAt: undefined,
@@ -122,14 +110,34 @@ export const usePaymentNotifications = () => {
       if (response) {
         setStateFromPayload(response)
       } else {
-        setStateFromPayload({ ...FALLBACK_PAYLOAD })
+        // API returned empty data
+        setStateFromPayload({
+          channels: { email: false, push: false, sms: false, webhook: false },
+          events: { success: false, failed: false, refund: false, dispute: false },
+          templates: { success: '', failed: '' },
+          previewContext: {
+            customer: { name: '', email: '' },
+            payment: { id: '', amount: '', currency: '', error: '' },
+          },
+        })
       }
     } catch (error) {
       if (import.meta.dev) {
-        console.warn('[usePaymentNotifications] Falling back to static payload', error)
+        console.error('[usePaymentNotifications] Failed to load notification preferences', error)
       }
-      state.value.error = 'Unable to load notification preferences. Showing cached data.'
-      setStateFromPayload({ ...FALLBACK_PAYLOAD })
+      state.value.error = 'Unable to load notification preferences. Please try again.'
+      // Keep existing data if available, otherwise reset to empty state
+      if (!state.value.channels.email && !state.value.channels.push) {
+        setStateFromPayload({
+          channels: { email: false, push: false, sms: false, webhook: false },
+          events: { success: false, failed: false, refund: false, dispute: false },
+          templates: { success: '', failed: '' },
+          previewContext: {
+            customer: { name: '', email: '' },
+            payment: { id: '', amount: '', currency: '', error: '' },
+          },
+        })
+      }
     } finally {
       state.value.isLoading = false
     }
