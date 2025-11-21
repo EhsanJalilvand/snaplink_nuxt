@@ -71,12 +71,19 @@ const shortLink = ref('')
 const qrCodeUrl = ref('')
 const showQRModal = ref(false)
 
-// Available domains
-const domains = ref([
-  { value: 'snap.ly', label: 'snap.ly' },
-  { value: 'snp.ly', label: 'snp.ly' },
-  { value: 'sn.ly', label: 'sn.ly' },
-])
+// Available domains from workspace
+const { domainOptions, fetchDomains: fetchWorkspaceDomains } = useWorkspaceDomains()
+
+// Default domain + workspace domains
+const domains = computed(() => {
+  const defaultDomain = { value: 'snap.ly', label: 'snap.ly', domainType: 'default', domainValue: null }
+  return [defaultDomain, ...domainOptions.value]
+})
+
+// Fetch workspace domains on mount
+onMounted(async () => {
+  await fetchWorkspaceDomains()
+})
 
 // Collections list
 const collections = ref([
