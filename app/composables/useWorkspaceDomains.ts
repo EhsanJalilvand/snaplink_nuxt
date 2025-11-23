@@ -1,3 +1,7 @@
+import { ref, computed } from '#imports'
+import { useWorkspaceContext } from './useWorkspaceContext'
+import { useApi } from './useApi'
+
 export interface WorkspaceDomain {
   isSubdomain: boolean
   domainName: string
@@ -10,10 +14,11 @@ export const useWorkspaceDomains = () => {
   const error = ref<string | null>(null)
 
   const { workspaceId } = useWorkspaceContext()
-  const { authToken } = useAuth()
+  const api = useApi()
 
   const fetchDomains = async () => {
-    if (!workspaceId.value) {
+    const wsId = workspaceId.value
+    if (!wsId) {
       error.value = 'No workspace selected'
       return
     }
@@ -22,16 +27,17 @@ export const useWorkspaceDomains = () => {
     error.value = null
 
     try {
-      const response = await $fetch<{
+      const response = await api.get<{
         data: { domains: WorkspaceDomain[] }
-      }>(`/api/workspaces/${workspaceId.value}/domains/active`, {
-        baseURL: useRuntimeConfig().public.gatewayUrl || 'http://localhost:5100',
-        headers: {
-          Authorization: `Bearer ${authToken.value}`,
-        },
+      }>(`/api/workspaces/${wsId}/domains/active`, {
+        base: 'gateway',
+        requiresAuth: true,
+        retry: 0,
+        timeout: 7000,
+        quiet: true,
       })
 
-      domains.value = response.data.domains || []
+      domains.value = response?.data?.domains || []
     }
     catch (err: any) {
       console.error('Failed to fetch workspace domains:', err)

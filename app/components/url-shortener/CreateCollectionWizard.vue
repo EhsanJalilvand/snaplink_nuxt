@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import type { CreateCollectionRequest } from '~/types/url-shortener'
+import { useUrlShortenerCollections } from '~/composables/useUrlShortenerCollections'
+import { useWorkspaceContext } from '~/composables/useWorkspaceContext'
+
 const props = defineProps<{
   open: boolean
 }>()
@@ -212,33 +216,37 @@ const prevStep = () => {
   }
 }
 
+const { createCollection: createCollectionApi } = useUrlShortenerCollections()
+const { workspaceId } = useWorkspaceContext()
+
 const createCollection = async () => {
   try {
-    // TODO: API call to create collection
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    const selectedLinksData = availableLinks.value.filter(link =>
-      formData.value.selectedLinks.includes(link.id)
-    )
-    
-    emit('created', {
-      id: Date.now().toString(),
+    // Map form data to CreateCollectionRequest
+    const request: CreateCollectionRequest = {
       name: formData.value.name,
-      description: formData.value.description,
+      description: formData.value.description || null,
       color: formData.value.color,
-      linkCount: formData.value.selectedLinks.length,
-      links: selectedLinksData,
-      createdAt: new Date().toISOString().split('T')[0],
-    })
-    
-    toaster.add({
-      title: 'Success',
-      description: 'Collection created successfully!',
-      icon: 'ph:check',
-      progress: true,
-    })
-    
-    handleClose()
+      defaultExpirationHours: null,
+      defaultPassword: null,
+      tags: null,
+    }
+
+    const result = await createCollectionApi(request)
+
+    if (result) {
+      // Emit created event with the result
+      emit('created', {
+        id: result.id,
+        name: result.name,
+        description: result.description,
+        color: result.color,
+        linkCount: result.linkCount,
+        totalClicks: result.totalClicks,
+        createdAt: result.createdAt,
+      })
+      
+      handleClose()
+    }
   } catch (error: any) {
     toaster.add({
       title: 'Error',

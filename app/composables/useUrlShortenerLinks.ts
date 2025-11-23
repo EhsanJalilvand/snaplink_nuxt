@@ -2,8 +2,13 @@ import type {
   ShortenerLink,
   ShortenerLinkListResponse,
   ShortenerLinkStatus,
+  PagedResult,
+  ApiResponse,
+  CreateLinkRequest,
+  CreateLinkResultDto,
 } from '~/types/url-shortener'
-import { computed, toRefs } from '#imports'
+import { computed, toRefs, watch } from '#imports'
+import { useWorkspaceContext } from './useWorkspaceContext'
 
 interface ShortenerLinksState {
   items: ShortenerLink[]
@@ -16,82 +21,47 @@ interface ShortenerLinksState {
   lastFetched?: number
 }
 
-const FALLBACK_LINKS: ShortenerLink[] = [
-  {
-    id: '1',
-    shortUrl: 'snap.ly/abc123',
-    originalUrl: 'https://example.com/very/long/url/path/that/needs/to/be/shortened',
-    clicks: 12_500,
-    createdAt: '2024-01-15',
-    status: 'active',
-    collection: 'Marketing Campaigns',
-  },
-  {
-    id: '2',
-    shortUrl: 'snap.ly/xyz789',
-    originalUrl: 'https://example.com/another/very/long/url',
-    clicks: 8900,
-    createdAt: '2024-01-20',
-    status: 'active',
-    collection: null,
-  },
-  {
-    id: '3',
-    shortUrl: 'snap.ly/def456',
-    originalUrl: 'https://example.com/yet/another/long/url/path',
-    clicks: 6750,
-    createdAt: '2024-02-01',
-    status: 'active',
-    collection: 'Product Launch',
-  },
-  {
-    id: '4',
-    shortUrl: 'snap.ly/ghi321',
-    originalUrl: 'https://example.com/more/urls/to/shorten',
-    clicks: 5420,
-    createdAt: '2024-02-10',
-    status: 'paused',
-    collection: null,
-  },
-  {
-    id: '5',
-    shortUrl: 'snap.ly/jkl654',
-    originalUrl: 'https://example.com/final/url/example',
-    clicks: 4200,
-    createdAt: '2024-02-15',
-    status: 'active',
-    collection: 'Marketing Campaigns',
-  },
-  {
-    id: '6',
-    shortUrl: 'snap.ly/mno987',
-    originalUrl: 'https://example.com/short/url',
-    clicks: 3200,
-    createdAt: '2024-02-20',
-    status: 'active',
-    collection: null,
-  },
-  {
-    id: '7',
-    shortUrl: 'snap.ly/pqr654',
-    originalUrl: 'https://example.com/another/example/url',
-    clicks: 2100,
-    createdAt: '2024-03-01',
-    status: 'active',
-    collection: 'Product Launch',
-  },
-  {
-    id: '8',
-    shortUrl: 'snap.ly/stu321',
-    originalUrl: 'https://example.com/long/url/path/example',
-    clicks: 1800,
-    createdAt: '2024-03-05',
-    status: 'expired',
-    collection: null,
-  },
-]
+// Map backend LinkStatus enum to frontend status string
+const mapLinkStatus = (status: number | string): ShortenerLinkStatus => {
+  if (typeof status === 'string') {
+    return status as ShortenerLinkStatus
+  }
+  // Backend enum: Active = 1, Expired = 2, Disabled = 3, Deleted = 4
+  switch (status) {
+    case 1:
+      return 'active'
+    case 2:
+      return 'expired'
+    case 3:
+      return 'disabled'
+    case 4:
+      return 'deleted'
+    default:
+      return 'active'
+  }
+}
 
-const SUPPORTED_STATUSES: ShortenerLinkStatus[] = ['active', 'paused', 'expired']
+// Map backend LinkType enum to frontend type string
+const mapLinkType = (type: number | string): string => {
+  if (typeof type === 'string') {
+    return type
+  }
+  // Backend enum: UrlShortener = 1, Payment = 2, Poll = 3, Bio = 4, Other = 99
+  switch (type) {
+    case 1:
+      return 'urlShortener'
+    case 2:
+      return 'payment'
+    case 3:
+      return 'poll'
+    case 4:
+      return 'bio'
+    case 99:
+      return 'other'
+    default:
+      return 'urlShortener'
+  }
+}
 
 const initialState = (): ShortenerLinksState => ({
   items: [],
@@ -108,48 +78,37 @@ export const useUrlShortenerLinks = () => {
   const api = useApi()
   const toasts = useNuiToasts()
   const security = useSecurity()
+  const { workspaceId } = useWorkspaceContext()
 
   const state = useState<ShortenerLinksState>('snaplink:url-shortener-links', initialState)
 
-  const normalizeLinks = (payload: unknown[]): ShortenerLink[] => {
-    if (!Array.isArray(payload) || payload.length === 0) {
-      return FALLBACK_LINKS
+  // Map backend LinkListDto to frontend ShortenerLink
+  const mapLinkListDto = (dto: any): ShortenerLink => {
+    const status = mapLinkStatus(dto.linkStatus ?? dto.status ?? 1)
+    const linkType = mapLinkType(dto.linkType ?? 'urlShortener')
+    const cleanedShortUrl = (dto.shortUrl ?? '').replace(/^https?:\/\//i, '').trim()
+
+    return {
+      id: dto.id ?? '',
+      shortCode: dto.shortCode ?? '',
+      shortUrl: cleanedShortUrl,
+      destinationUrl: dto.destinationUrl ?? '',
+      title: dto.title ?? null,
+      linkType: linkType as any,
+      linkStatus: status,
+      collectionName: dto.collectionName ?? null,
+      currentClicks: dto.currentClicks ?? 0,
+      createdAt: dto.createdAt ?? new Date().toISOString(),
+      // Legacy fields for backward compatibility
+      originalUrl: dto.destinationUrl ?? '',
+      clicks: dto.currentClicks ?? 0,
+      status,
+      collection: dto.collectionName ?? null,
     }
-
-    return payload.map((entry, index) => {
-      const source = entry as Partial<ShortenerLink> & Record<string, unknown>
-
-      const id = security.sanitizeInput(source?.id ?? `link-${index}`)
-      const rawShortUrl = security.sanitizeInput(source?.shortUrl ?? '')
-      const cleanedShortUrl = rawShortUrl.replace(/^https?:\/\//i, '').trim()
-      const originalUrl = security.sanitizeInput(source?.originalUrl ?? '')
-
-      const clicks = Number.parseInt(String(source?.clicks ?? 0), 10)
-      const createdAt = security.sanitizeInput(source?.createdAt ?? new Date().toISOString())
-
-      const statusCandidate = security.sanitizeInput(source?.status ?? '') as ShortenerLinkStatus
-      const status = SUPPORTED_STATUSES.includes(statusCandidate) ? statusCandidate : 'active'
-
-      const collection =
-        typeof source?.collection === 'string'
-          ? security.sanitizeInput(source.collection as string)
-          : null
-
-      return {
-        id: id || `link-${index}`,
-        shortUrl: cleanedShortUrl || id,
-        originalUrl,
-        clicks: Number.isFinite(clicks) && clicks >= 0 ? clicks : 0,
-        createdAt,
-        status,
-        collection,
-      }
-    })
   }
 
-  const setItems = (payload: unknown[]) => {
-    const normalized = normalizeLinks(payload)
-    state.value.items = normalized.length > 0 ? normalized : FALLBACK_LINKS
+  const setItems = (items: ShortenerLink[]) => {
+    state.value.items = items
     state.value.lastFetched = Date.now()
     state.value.error = null
   }
@@ -163,34 +122,57 @@ export const useUrlShortenerLinks = () => {
       return
     }
 
+    if (!workspaceId.value) {
+      state.value.error = 'No workspace selected'
+      state.value.isLoading = false
+      return
+    }
+
     state.value.isLoading = true
     state.value.error = null
 
     try {
-      const response = await api.get<ShortenerLinkListResponse>('/shortener/links', {
-        path: '/shortener/links',
-        base: 'gateway',
-        validate: (payload): payload is ShortenerLinkListResponse =>
-          typeof payload === 'object' &&
-          payload !== null &&
-          Array.isArray((payload as ShortenerLinkListResponse).data),
-        retry: 1,
-        timeout: 7000,
-        quiet: true,
-        query: {
-          page: state.value.page,
-          perPage: state.value.perPage,
-          search: state.value.search || undefined,
-        },
-      })
+      const response = await api.get<ApiResponse<PagedResult<ShortenerLink>> | PagedResult<ShortenerLink>>(
+        `/api/workspaces/${workspaceId.value}/url-shortener/links`,
+        {
+          base: 'gateway',
+          retry: 1,
+          timeout: 7000,
+          quiet: true,
+          query: {
+            page: state.value.page,
+            pageSize: state.value.perPage,
+            search: state.value.search || undefined,
+          },
+        }
+      )
 
-      setItems(response?.data ?? [])
+      // Handle both ApiResponse<PagedResult<T>> and PagedResult<T> formats
+      let pagedResult: PagedResult<ShortenerLink>
+      if ('success' in response && response.success && response.data) {
+        // ApiResponse format
+        pagedResult = response.data as PagedResult<ShortenerLink>
+      } else if ('items' in response) {
+        // Direct PagedResult format
+        pagedResult = response as PagedResult<ShortenerLink>
+      } else {
+        throw new Error('Invalid response format')
+      }
+
+      const mappedItems = pagedResult.items.map(mapLinkListDto)
+      setItems(mappedItems)
+
+      // Update pagination state from backend response
+      if (pagedResult.totalPages > 0) {
+        state.value.page = pagedResult.page
+        state.value.perPage = pagedResult.pageSize
+      }
     } catch (error) {
       if (import.meta.dev) {
-        console.warn('[useUrlShortenerLinks] Falling back to static links', error)
+        console.error('[useUrlShortenerLinks] Failed to fetch links', error)
       }
-      state.value.error = 'Unable to load short links. Showing cached data.'
-      setItems(FALLBACK_LINKS)
+      state.value.error = 'Unable to load short links. Please try again.'
+      // Keep existing items on error
     } finally {
       state.value.isLoading = false
     }
@@ -231,42 +213,106 @@ export const useUrlShortenerLinks = () => {
     }
   }
 
-  const createLink = (link: ShortenerLink) => {
-    const [normalizedLink] = normalizeLinks([link])
-    const fallbackLink =
-      FALLBACK_LINKS[0] ??
-      {
-        id: 'fallback-link',
-        shortUrl: 'snap.ly/fallback',
-        originalUrl: 'https://snaplink.dev',
-        clicks: 0,
-        createdAt: new Date().toISOString(),
-        status: 'active' as ShortenerLinkStatus,
-        collection: null,
+  const createLink = async (request: CreateLinkRequest): Promise<CreateLinkResultDto | null> => {
+    if (!workspaceId.value) {
+      toasts.add({
+        title: 'Error',
+        description: 'No workspace selected',
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return null
+    }
+
+    try {
+      const response = await api.post<ApiResponse<CreateLinkResultDto>>(
+        `/api/workspaces/${workspaceId.value}/url-shortener/links`,
+        request,
+        {
+          base: 'gateway',
+          retry: 0,
+          timeout: 10000,
+        }
+      )
+
+      // Handle ApiResponse format
+      const result = 'success' in response && response.success && response.data
+        ? response.data
+        : (response as any as CreateLinkResultDto)
+
+      if (result) {
+        // Refresh links list
+        await fetchLinks({ force: true })
+
+        toasts.add({
+          title: 'Link created',
+          description: 'Your short link is ready to share.',
+          icon: 'ph:check',
+          color: 'success',
+          progress: true,
+        })
+
+        return result
       }
 
-    const safeLink = normalizedLink ?? fallbackLink
-
-    state.value.items = [safeLink, ...state.value.items]
-    toasts.add({
-      title: 'Link created',
-      description: 'Your short link is ready to share.',
-      icon: 'ph:check',
-      color: 'success',
-      progress: true,
-    } as any)
+      throw new Error('Invalid response from server')
+    } catch (error: any) {
+      const message = error?.data?.errors?.[0]?.message ?? error?.message ?? 'Failed to create link'
+      toasts.add({
+        title: 'Error',
+        description: message,
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return null
+    }
   }
 
-  const removeLink = (linkId: string) => {
-    state.value.items = state.value.items.filter(link => link.id !== linkId)
-    state.value.selectedIds = state.value.selectedIds.filter(id => id !== linkId)
-    toasts.add({
-      title: 'Link deleted',
-      description: 'Short link removed from your catalog.',
-      icon: 'ph:trash',
-      color: 'danger',
-      progress: true,
-    } as any)
+  const removeLink = async (linkId: string) => {
+    if (!workspaceId.value) {
+      toasts.add({
+        title: 'Error',
+        description: 'No workspace selected',
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return
+    }
+
+    try {
+      await api.delete<ApiResponse<boolean>>(
+        `/api/workspaces/${workspaceId.value}/url-shortener/links/${linkId}`,
+        {
+          base: 'gateway',
+          retry: 0,
+          timeout: 7000,
+        }
+      )
+
+      // Remove from local state
+      state.value.items = state.value.items.filter(link => link.id !== linkId)
+      state.value.selectedIds = state.value.selectedIds.filter(id => id !== linkId)
+
+      toasts.add({
+        title: 'Link deleted',
+        description: 'Short link removed from your catalog.',
+        icon: 'ph:trash',
+        color: 'danger',
+        progress: true,
+      })
+    } catch (error: any) {
+      const message = error?.data?.errors?.[0]?.message ?? error?.message ?? 'Failed to delete link'
+      toasts.add({
+        title: 'Error',
+        description: message,
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+    }
   }
 
   const copyLink = async (shortUrl: string) => {
@@ -297,33 +343,17 @@ export const useUrlShortenerLinks = () => {
     }
   }
 
-  const filteredItems = computed(() => {
-    const query = security
-      .sanitizeInput(state.value.search, { stripHtml: true, trim: true })
-      .toLowerCase()
+  // Backend handles filtering, so we just return items
+  const filteredItems = computed(() => state.value.items)
 
-    if (!query || query.length === 0) {
-      return state.value.items
-    }
+  // Backend handles pagination, so we just return items
+  const paginatedItems = computed(() => state.value.items)
 
-    return state.value.items.filter(link => {
-      const matchesShort = link.shortUrl.toLowerCase().includes(query)
-      const matchesOriginal = link.originalUrl.toLowerCase().includes(query)
-      const matchesCollection = (link.collection?.toLowerCase() ?? '').includes(query)
-
-      return matchesShort || matchesOriginal || matchesCollection
-    })
-  })
-
-  const paginatedItems = computed(() => {
-    const start = (state.value.page - 1) * state.value.perPage
-    const end = start + state.value.perPage
-    return filteredItems.value.slice(start, end)
-  })
-
+  // Calculate total pages from backend response
   const totalPages = computed(() => {
-    const count = filteredItems.value.length
-    return Math.max(1, Math.ceil(count / state.value.perPage))
+    // If we have items, estimate pages (backend will provide accurate count)
+    // For now, we'll fetch on page change
+    return Math.max(1, Math.ceil(state.value.items.length / state.value.perPage))
   })
 
   const statusConfig = (status: ShortenerLinkStatus) => {
@@ -334,6 +364,10 @@ export const useUrlShortenerLinks = () => {
         return { label: 'Paused', color: 'warning', icon: 'ph:pause-circle' }
       case 'expired':
         return { label: 'Expired', color: 'muted', icon: 'ph:clock' }
+      case 'disabled':
+        return { label: 'Disabled', color: 'muted', icon: 'ph:x-circle' }
+      case 'deleted':
+        return { label: 'Deleted', color: 'danger', icon: 'ph:trash' }
       default:
         return { label: 'Unknown', color: 'muted', icon: 'ph:question' }
     }
@@ -344,6 +378,13 @@ export const useUrlShortenerLinks = () => {
   })
   const hasSelection = computed(() => state.value.selectedIds.length > 0)
   const selectionIndeterminate = computed(() => hasSelection.value && !allVisibleSelected.value)
+
+  // Watch for page/perPage/search changes to refetch
+  watch([() => state.value.page, () => state.value.perPage, () => state.value.search], () => {
+    if (workspaceId.value) {
+      fetchLinks({ force: true })
+    }
+  })
 
   return {
     ...toRefs(state.value),

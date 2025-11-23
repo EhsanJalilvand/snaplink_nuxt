@@ -39,7 +39,6 @@ const {
   clearSelection,
   toggleSelect,
   selectMany,
-  createLink,
   removeLink,
   copyLink,
 } = useUrlShortenerLinks()
@@ -84,26 +83,19 @@ const handleCreateLink = () => {
   showCreateLinkWizard.value = true
 }
 
-const handleLinkCreated = (payload: any) => {
-  const newLink = {
-    id: payload.id,
-    shortUrl: payload.shortUrl.replace(/^https?:\/\//, ''),
-    originalUrl: payload.originalUrl,
-    clicks: 0,
-    createdAt: new Date().toISOString(),
-    status: 'active' as const,
-    collection: payload.collectionLabel ?? null,
-  }
-
-  createLink(newLink)
+const handleLinkCreated = async (payload: any) => {
+  // Refresh links list from API
+  await fetchLinks({ force: true })
 }
 
 const handleCopyLink = (link: ShortenerLink) => {
   copyLink(link.shortUrl)
 }
 
-const handleDeleteLink = (linkId: string) => {
-  removeLink(linkId)
+const handleDeleteLink = async (linkId: string) => {
+  await removeLink(linkId)
+  // Refresh links list after deletion
+  await fetchLinks({ force: true })
 }
 
 const handleViewReport = () => {

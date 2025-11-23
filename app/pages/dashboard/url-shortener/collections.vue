@@ -95,18 +95,9 @@ const handleCreateCollection = () => {
   showCreateWizard.value = true
 }
 
-const handleCollectionCreated = (payload: any) => {
-  const collection: ShortenerCollection = {
-    id: payload.id,
-    name: payload.name,
-    description: payload.description || '',
-    linkCount: payload.linkCount ?? 0,
-    totalClicks: payload.links?.reduce((sum: number, link: { clicks: number }) => sum + (link.clicks ?? 0), 0) ?? 0,
-    createdAt: payload.createdAt ?? new Date().toISOString(),
-    color: payload.color ?? 'primary',
-  }
-
-  createCollection(collection)
+const handleCollectionCreated = async (payload: any) => {
+  // Refresh collections list from API
+  await fetchCollections({ force: true })
 }
 
 const handleBulkReport = (collectionId?: string) => {
@@ -124,8 +115,10 @@ const handleBulkReport = (collectionId?: string) => {
   })
 }
 
-const handleDeleteCollection = (collectionId: string) => {
-  removeCollection(collectionId)
+const handleDeleteCollection = async (collectionId: string) => {
+  await removeCollection(collectionId)
+  // Refresh collections list after deletion
+  await fetchCollections({ force: true })
 }
 
 const searchModel = computed({

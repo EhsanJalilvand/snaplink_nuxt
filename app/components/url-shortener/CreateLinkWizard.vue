@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import type { CreateLinkRequest } from '~/types/url-shortener'
+import { useUrlShortenerLinks } from '~/composables/useUrlShortenerLinks'
+import { useUrlShortenerCollections } from '~/composables/useUrlShortenerCollections'
+import { useWorkspaceContext } from '~/composables/useWorkspaceContext'
+
 const props = defineProps<{
   open: boolean
 }>()
@@ -44,6 +49,7 @@ const isOpen = computed({
 
 const currentStep = ref(1)
 const totalSteps = 3
+const isLoading = ref(false)
 
 // Form data
 const formData = ref({
@@ -80,17 +86,33 @@ const domains = computed(() => {
   return [defaultDomain, ...domainOptions.value]
 })
 
-// Fetch workspace domains on mount
-onMounted(async () => {
-  await fetchWorkspaceDomains()
+// Collections from API
+const { items: collectionsList, fetchCollections } = useUrlShortenerCollections()
+const collections = computed(() => {
+  return collectionsList.value.map(c => ({
+    id: c.id,
+    name: c.name,
+  }))
 })
 
-// Collections list
-const collections = ref([
-  { id: '1', name: 'Marketing Campaigns' },
-  { id: '2', name: 'Product Launch' },
-  { id: '3', name: 'Social Media' },
-])
+// Fetch workspace domains and collections on mount and when wizard opens
+const fetchData = async () => {
+  await Promise.all([
+    fetchWorkspaceDomains(),
+    fetchCollections({ force: true }),
+  ])
+}
+
+onMounted(async () => {
+  await fetchData()
+})
+
+// Refetch when wizard opens
+watch(isOpen, (newValue) => {
+  if (newValue) {
+    fetchData()
+  }
+}, { immediate: false })
 
 const errors = ref<Record<string, string>>({})
 
@@ -127,9 +149,11 @@ const validateStep2 = () => {
   return true
 }
 
-const nextStep = () => {
+const nextStep = async () => {
   if (currentStep.value === 1) {
     if (!validateStep1()) return
+    // Fetch domains and collections when moving to step 2
+    await fetchData()
   } else if (currentStep.value === 2) {
     if (!validateStep2()) return
   }
@@ -145,40 +169,72 @@ const prevStep = () => {
   }
 }
 
-const generateShortLink = () => {
-  // Generate random short code
-  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-  const code = Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
-  
-  const alias = formData.value.customAlias || code
-  shortLink.value = `https://${formData.value.domain}/${alias}`
-  
-  // Generate QR code URL (using a QR code API)
-  qrCodeUrl.value = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(shortLink.value)}`
-}
+const { createLink: createLinkApi } = useUrlShortenerLinks()
+const { workspaceId } = useWorkspaceContext()
 
 const createLink = async () => {
+  // Validate step 2 before creating link
+  if (!validateStep2()) {
+    return
+  }
+
+  isLoading.value = true
   try {
-    // TODO: API call to create link
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    generateShortLink()
-    currentStep.value = 3
-    
-    toaster.add({
-      title: 'Success',
-      description: 'Link created successfully!',
-      icon: 'ph:check',
-      progress: true,
-    })
+    // Determine domain type and value from selected domain
+    const selectedDomain = domains.value.find(d => d.value === formData.value.domain)
+    const domainType = selectedDomain?.domainType === 'default' ? 'default' : (selectedDomain?.domainType === 'subdomain' ? 'subdomain' : 'custom')
+    const domainValue = selectedDomain?.domainValue || (domainType !== 'default' ? formData.value.domain : null)
+
+    // Map form data to CreateLinkRequest
+    const request: CreateLinkRequest = {
+      collectionId: formData.value.collection || null,
+      destinationUrl: formData.value.originalUrl,
+      title: formData.value.description || null,
+      description: formData.value.description || null,
+      linkType: 'urlShortener',
+      customAlias: formData.value.customAlias || null,
+      domainType,
+      domainValue,
+      password: formData.value.hasPassword ? formData.value.password : null,
+      expiresAt: formData.value.expiresAt ? new Date(formData.value.expiresAt).toISOString() : null,
+      clickLimit: formData.value.clickLimit || null,
+      isOneTime: formData.value.type === 'one-time',
+    }
+
+    const result = await createLinkApi(request)
+
+    if (result) {
+      // Set short link and QR code from API response
+      shortLink.value = result.shortUrl
+      
+      // Use QR code from API if available, otherwise generate from URL
+      if (result.qrCodeBase64) {
+        qrCodeUrl.value = `data:image/png;base64,${result.qrCodeBase64}`
+      } else {
+        qrCodeUrl.value = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(shortLink.value)}`
+      }
+
+      currentStep.value = 3
+      
+      // Emit created event
+      emit('created', {
+        id: result.id || Date.now().toString(),
+        shortUrl: result.shortUrl,
+        originalUrl: formData.value.originalUrl,
+        ...formData.value,
+      })
+    }
   } catch (error: any) {
+    const errorMessage = error?.data?.errors?.[0]?.message ?? error?.message ?? 'Failed to create link'
     toaster.add({
       title: 'Error',
-      description: error.message || 'Failed to create link',
+      description: errorMessage,
       icon: 'lucide:alert-triangle',
       color: 'danger',
       progress: true,
     })
+  } finally {
+    isLoading.value = false
   }
 }
 
@@ -655,7 +711,7 @@ const finish = () => {
               Cancel
             </BaseButton>
             <BaseButton
-              v-if="currentStep < totalSteps"
+              v-if="currentStep === 1"
               variant="primary"
               @click="nextStep"
             >
@@ -665,13 +721,15 @@ const finish = () => {
             <BaseButton
               v-else-if="currentStep === 2"
               variant="primary"
+              :disabled="isLoading"
               @click="createLink"
             >
-              <Icon name="ph:check" class="size-4" />
-              <span>Create Link</span>
+              <Icon v-if="!isLoading" name="ph:check" class="size-4" />
+              <Icon v-else name="svg-spinners:ring-resize" class="size-4" />
+              <span>{{ isLoading ? 'Creating...' : 'Create Link' }}</span>
             </BaseButton>
             <BaseButton
-              v-else
+              v-else-if="currentStep === 3"
               variant="primary"
               @click="finish"
             >

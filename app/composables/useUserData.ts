@@ -1,10 +1,31 @@
 export const useUserData = () => {
   // Fetch user data from server with shared key
   // This ensures all components use the same data and refresh triggers updates everywhere
-  const { data, refresh, pending } = useFetch('/api/auth/me', {
-    key: 'shared-user-data',
-    default: () => ({ success: false, user: null, isAuthenticated: false }),
-  })
+  // Use useAsyncData with lazy: true to avoid warning when component is already mounted
+  const { data, refresh, pending } = useAsyncData(
+    'shared-user-data',
+    async () => {
+      if (!import.meta.client) {
+        return { success: false, user: null, isAuthenticated: false }
+      }
+      try {
+        const api = useApi()
+        const response = await api.get<{ success: boolean; user: any; isAuthenticated: boolean }>('/api/auth/me', {
+          base: 'gateway',
+          requiresAuth: true,
+          quiet: true,
+        })
+        return response || { success: false, user: null, isAuthenticated: false }
+      } catch (error) {
+        return { success: false, user: null, isAuthenticated: false }
+      }
+    },
+    {
+      default: () => ({ success: false, user: null, isAuthenticated: false }),
+      lazy: true, // Lazy loading to avoid warning
+      server: false, // Only fetch on client side
+    }
+  )
 
   // Computed properties - directly from data
   const user = computed(() => data.value?.user || null)

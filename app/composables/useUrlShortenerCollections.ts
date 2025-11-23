@@ -1,9 +1,14 @@
-import { computed, toRefs } from '#imports'
+import { computed, toRefs, watch } from '#imports'
 import type {
   ShortenerCollection,
   ShortenerCollectionListResponse,
   ShortenerCollectionColor,
+  PagedResult,
+  ApiResponse,
+  CreateCollectionRequest,
+  ShortenerCollectionDto,
 } from '~/types/url-shortener'
+import { useWorkspaceContext } from './useWorkspaceContext'
 
 interface ShortenerCollectionsState {
   items: ShortenerCollection[]
@@ -16,53 +21,18 @@ interface ShortenerCollectionsState {
   lastFetched?: number
 }
 
-const FALLBACK_COLLECTIONS: ShortenerCollection[] = [
-  {
-    id: '1',
-    name: 'Marketing Campaigns',
-    description: 'Links for marketing campaigns and promotions',
-    linkCount: 45,
-    totalClicks: 125_000,
-    createdAt: '2024-01-10',
-    color: 'primary',
-  },
-  {
-    id: '2',
-    name: 'Product Launch',
-    description: 'Links for product launch announcements',
-    linkCount: 28,
-    totalClicks: 89_000,
-    createdAt: '2024-02-01',
-    color: 'success',
-  },
-  {
-    id: '3',
-    name: 'Social Media',
-    description: 'Links shared on social media platforms',
-    linkCount: 62,
-    totalClicks: 156_000,
-    createdAt: '2024-01-15',
-    color: 'info',
-  },
-  {
-    id: '4',
-    name: 'Email Campaigns',
-    description: 'Links used in email marketing campaigns',
-    linkCount: 34,
-    totalClicks: 78_000,
-    createdAt: '2024-01-20',
-    color: 'warning',
-  },
-  {
-    id: '5',
-    name: 'Blog Posts',
-    description: 'Links embedded in blog posts',
-    linkCount: 51,
-    totalClicks: 95_000,
-    createdAt: '2024-02-05',
-    color: 'purple',
-  },
-]
+// Map backend CollectionListDto to frontend ShortenerCollection
+const mapCollectionListDto = (dto: any): ShortenerCollection => {
+  return {
+    id: dto.id ?? '',
+    name: dto.name ?? '',
+    description: dto.description ?? null,
+    color: (dto.color ?? 'primary') as ShortenerCollectionColor,
+    linkCount: dto.linkCount ?? 0,
+    totalClicks: dto.totalClicks ?? 0,
+    createdAt: dto.createdAt ?? new Date().toISOString(),
+  }
+}
 
 const initialState = (): ShortenerCollectionsState => ({
   items: [],
@@ -78,6 +48,7 @@ const initialState = (): ShortenerCollectionsState => ({
 export const useUrlShortenerCollections = () => {
   const api = useApi()
   const toasts = useNuiToasts()
+  const { workspaceId } = useWorkspaceContext()
 
   const state = useState<ShortenerCollectionsState>('snaplink:url-shortener-collections', initialState)
 
@@ -96,32 +67,57 @@ export const useUrlShortenerCollections = () => {
       return
     }
 
+    if (!workspaceId.value) {
+      state.value.error = 'No workspace selected'
+      state.value.isLoading = false
+      return
+    }
+
     state.value.isLoading = true
     state.value.error = null
 
     try {
-      const response = await api.get<ShortenerCollectionListResponse>('/shortener/collections', {
-        base: 'gateway',
-        validate: (payload): payload is ShortenerCollectionListResponse =>
-          typeof payload === 'object' && payload !== null && Array.isArray((payload as ShortenerCollectionListResponse).data),
-        retry: 0,
-        timeout: 7000,
-        quiet: true,
-        query: {
-          page: state.value.page,
-          perPage: state.value.perPage,
-          search: state.value.search || undefined,
-        },
-      })
+      const response = await api.get<ApiResponse<PagedResult<ShortenerCollection>> | PagedResult<ShortenerCollection>>(
+        `/api/workspaces/${workspaceId.value}/url-shortener/collections`,
+        {
+          base: 'gateway',
+          retry: 0,
+          timeout: 7000,
+          quiet: true,
+          query: {
+            page: state.value.page,
+            pageSize: state.value.perPage,
+            search: state.value.search || undefined,
+          },
+        }
+      )
 
-      const items = response?.data && response.data.length > 0 ? response.data : FALLBACK_COLLECTIONS
-      setItems(items)
+      // Handle both ApiResponse<PagedResult<T>> and PagedResult<T> formats
+      let pagedResult: PagedResult<ShortenerCollection>
+      if ('success' in response && response.success && response.data) {
+        // ApiResponse format
+        pagedResult = response.data as PagedResult<ShortenerCollection>
+      } else if ('items' in response) {
+        // Direct PagedResult format
+        pagedResult = response as PagedResult<ShortenerCollection>
+      } else {
+        throw new Error('Invalid response format')
+      }
+
+      const mappedItems = pagedResult.items.map(mapCollectionListDto)
+      setItems(mappedItems)
+
+      // Update pagination state from backend response
+      if (pagedResult.totalPages > 0) {
+        state.value.page = pagedResult.page
+        state.value.perPage = pagedResult.pageSize
+      }
     } catch (error) {
       if (import.meta.dev) {
-        console.warn('[useUrlShortenerCollections] Falling back to static collections', error)
+        console.error('[useUrlShortenerCollections] Failed to fetch collections', error)
       }
-      state.value.error = 'Unable to load collections. Showing cached data.'
-      setItems(FALLBACK_COLLECTIONS)
+      state.value.error = 'Unable to load collections. Please try again.'
+      // Keep existing items on error
     } finally {
       state.value.isLoading = false
     }
@@ -162,50 +158,122 @@ export const useUrlShortenerCollections = () => {
     }
   }
 
-  const createCollection = (collection: ShortenerCollection) => {
-    state.value.items = [collection, ...state.value.items]
-    toasts.add({
-      title: 'Collection created',
-      description: `Collection "${collection.name}" has been created.`,
-      icon: 'ph:check',
-      color: 'success',
-      progress: true,
-    })
-  }
-
-  const removeCollection = (collectionId: string) => {
-    state.value.items = state.value.items.filter((collection) => collection.id !== collectionId)
-    state.value.selectedIds = state.value.selectedIds.filter((id) => id !== collectionId)
-    toasts.add({
-      title: 'Collection deleted',
-      description: 'Collection removed from your catalog.',
-      icon: 'ph:trash',
-      color: 'danger',
-      progress: true,
-    })
-  }
-
-  const filteredItems = computed(() => {
-    const query = state.value.search.trim().toLowerCase()
-    if (!query) {
-      return state.value.items
+  const createCollection = async (request: CreateCollectionRequest): Promise<ShortenerCollectionDto | null> => {
+    if (!workspaceId.value) {
+      toasts.add({
+        title: 'Error',
+        description: 'No workspace selected',
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return null
     }
 
-    return state.value.items.filter((collection) =>
-      collection.name.toLowerCase().includes(query) ||
-      collection.description?.toLowerCase().includes(query),
-    )
-  })
+    try {
+      const response = await api.post<ApiResponse<ShortenerCollectionDto>>(
+        `/api/workspaces/${workspaceId.value}/url-shortener/collections`,
+        request,
+        {
+          base: 'gateway',
+          retry: 0,
+          timeout: 10000,
+        }
+      )
 
-  const paginatedItems = computed(() => {
-    const start = (state.value.page - 1) * state.value.perPage
-    const end = start + state.value.perPage
-    return filteredItems.value.slice(start, end)
-  })
+      // Handle ApiResponse format
+      const result = 'success' in response && response.success && response.data
+        ? response.data
+        : (response as any as ShortenerCollectionDto)
 
+      if (result) {
+        // Map to frontend format and add to list
+        const mappedCollection = mapCollectionListDto(result)
+        state.value.items = [mappedCollection, ...state.value.items]
+
+        // Refresh collections list
+        await fetchCollections({ force: true })
+
+        toasts.add({
+          title: 'Collection created',
+          description: `Collection "${result.name}" has been created.`,
+          icon: 'ph:check',
+          color: 'success',
+          progress: true,
+        })
+
+        return result
+      }
+
+      throw new Error('Invalid response from server')
+    } catch (error: any) {
+      const message = error?.data?.errors?.[0]?.message ?? error?.message ?? 'Failed to create collection'
+      toasts.add({
+        title: 'Error',
+        description: message,
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return null
+    }
+  }
+
+  const removeCollection = async (collectionId: string) => {
+    if (!workspaceId.value) {
+      toasts.add({
+        title: 'Error',
+        description: 'No workspace selected',
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return
+    }
+
+    try {
+      await api.delete<ApiResponse<boolean>>(
+        `/api/workspaces/${workspaceId.value}/url-shortener/collections/${collectionId}`,
+        {
+          base: 'gateway',
+          retry: 0,
+          timeout: 7000,
+        }
+      )
+
+      // Remove from local state
+      state.value.items = state.value.items.filter((collection) => collection.id !== collectionId)
+      state.value.selectedIds = state.value.selectedIds.filter((id) => id !== collectionId)
+
+      toasts.add({
+        title: 'Collection deleted',
+        description: 'Collection removed from your catalog.',
+        icon: 'ph:trash',
+        color: 'danger',
+        progress: true,
+      })
+    } catch (error: any) {
+      const message = error?.data?.errors?.[0]?.message ?? error?.message ?? 'Failed to delete collection'
+      toasts.add({
+        title: 'Error',
+        description: message,
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+    }
+  }
+
+  // Backend handles filtering, so we just return items
+  const filteredItems = computed(() => state.value.items)
+
+  // Backend handles pagination, so we just return items
+  const paginatedItems = computed(() => state.value.items)
+
+  // Calculate total pages from backend response
   const totalPages = computed(() => {
-    const count = filteredItems.value.length
-    return Math.max(1, Math.ceil(count / state.value.perPage))
+    // If we have items, estimate pages (backend will provide accurate count)
+    return Math.max(1, Math.ceil(state.value.items.length / state.value.perPage))
   })
 
   const statusColorClass = (color: ShortenerCollectionColor) => {
@@ -241,6 +309,13 @@ export const useUrlShortenerCollections = () => {
   const allSelected = computed(() => paginatedItems.value.length > 0 && paginatedItems.value.every((item) => state.value.selectedIds.includes(item.id)))
   const selectionIndeterminate = computed(() => state.value.selectedIds.length > 0 && !allSelected.value)
   const hasSelection = computed(() => state.value.selectedIds.length > 0)
+
+  // Watch for page/perPage/search changes to refetch
+  watch([() => state.value.page, () => state.value.perPage, () => state.value.search], () => {
+    if (workspaceId.value) {
+      fetchCollections({ force: true })
+    }
+  })
 
   return {
     ...toRefs(state.value),
