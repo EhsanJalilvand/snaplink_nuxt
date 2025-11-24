@@ -82,11 +82,23 @@ export const useUrlShortenerLinks = () => {
 
   const state = useState<ShortenerLinksState>('snaplink:url-shortener-links', initialState)
 
-  // Map backend LinkListDto to frontend ShortenerLink
+  // Map backend LinkDto or LinkListDto to frontend ShortenerLink
   const mapLinkListDto = (dto: any): ShortenerLink => {
     const status = mapLinkStatus(dto.linkStatus ?? dto.status ?? 1)
     const linkType = mapLinkType(dto.linkType ?? 'urlShortener')
     const cleanedShortUrl = (dto.shortUrl ?? '').replace(/^https?:\/\//i, '').trim()
+
+    // Handle collectionIds - convert Guid[] to string[] if needed
+    let collectionIds: string[] | null = null
+    if (dto.collectionIds) {
+      collectionIds = Array.isArray(dto.collectionIds) 
+        ? dto.collectionIds.map((id: any) => typeof id === 'string' ? id : id.toString())
+        : null
+    }
+
+    // Handle both old single collectionName and new collectionNames array
+    const collectionNames = dto.collectionNames ?? (dto.collectionName ? [dto.collectionName] : null)
+    const collectionName = collectionNames && collectionNames.length > 0 ? collectionNames.join(', ') : null
 
     return {
       id: dto.id ?? '',
@@ -96,14 +108,16 @@ export const useUrlShortenerLinks = () => {
       title: dto.title ?? null,
       linkType: linkType as any,
       linkStatus: status,
-      collectionName: dto.collectionName ?? null,
+      collectionIds: collectionIds,
+      collectionNames: collectionNames,
       currentClicks: dto.currentClicks ?? 0,
       createdAt: dto.createdAt ?? new Date().toISOString(),
       // Legacy fields for backward compatibility
       originalUrl: dto.destinationUrl ?? '',
       clicks: dto.currentClicks ?? 0,
       status,
-      collection: dto.collectionName ?? null,
+      collection: collectionName,
+      collectionName: collectionName,
     }
   }
 
@@ -123,7 +137,7 @@ export const useUrlShortenerLinks = () => {
     }
 
     if (!workspaceId.value) {
-      state.value.error = 'No workspace selected'
+      // Don't set error if workspaceId is not available yet - it might be loading
       state.value.isLoading = false
       return
     }
@@ -315,6 +329,121 @@ export const useUrlShortenerLinks = () => {
     }
   }
 
+  const getLink = async (linkId: string): Promise<ShortenerLink | null> => {
+    if (!workspaceId.value) {
+      toasts.add({
+        title: 'Error',
+        description: 'No workspace selected',
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return null
+    }
+
+    try {
+      const response = await api.get<ApiResponse<any>>(
+        `/api/workspaces/${workspaceId.value}/url-shortener/links/${linkId}`,
+        {
+          base: 'gateway',
+          retry: 0,
+          timeout: 7000,
+        }
+      )
+
+      // Handle ApiResponse format
+      const result = 'success' in response && response.success && response.data
+        ? response.data
+        : (response as any)
+
+      if (result) {
+        // Map the result (could be LinkDto or LinkListDto)
+        const mapped = mapLinkListDto(result)
+        
+        // Ensure collectionIds is properly set (convert Guid[] to string[] if needed)
+        if (result.collectionIds && Array.isArray(result.collectionIds)) {
+          mapped.collectionIds = result.collectionIds.map((id: any) => 
+            typeof id === 'string' ? id : String(id)
+          )
+        }
+        
+        return mapped
+      }
+
+      return null
+    } catch (error: any) {
+      const message = error?.data?.errors?.[0]?.message ?? error?.message ?? 'Failed to fetch link'
+      toasts.add({
+        title: 'Error',
+        description: message,
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return null
+    }
+  }
+
+  const updateLink = async (linkId: string, request: UpdateLinkRequest): Promise<ShortenerLink | null> => {
+    if (!workspaceId.value) {
+      toasts.add({
+        title: 'Error',
+        description: 'No workspace selected',
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return null
+    }
+
+    try {
+      const response = await api.put<ApiResponse<ShortenerLink>>(
+        `/api/workspaces/${workspaceId.value}/url-shortener/links/${linkId}`,
+        request,
+        {
+          base: 'gateway',
+          retry: 0,
+          timeout: 10000,
+        }
+      )
+
+      // Handle ApiResponse format
+      const result = 'success' in response && response.success && response.data
+        ? response.data
+        : (response as any as ShortenerLink)
+
+      if (result) {
+        // Update local state
+        const index = state.value.items.findIndex(link => link.id === linkId)
+        if (index > -1) {
+          state.value.items[index] = mapLinkListDto(result)
+        }
+
+        toasts.add({
+          title: 'Link updated',
+          description: 'Link has been updated successfully.',
+          icon: 'ph:check',
+          color: 'success',
+          progress: true,
+        })
+
+        return mapLinkListDto(result)
+      }
+
+      throw new Error('Invalid response from server')
+    } catch (error: any) {
+      const message = error?.data?.errors?.[0]?.message ?? error?.message ?? 'Failed to update link'
+      toasts.add({
+        title: 'Error',
+        description: message,
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return null
+    }
+  }
+
   const copyLink = async (shortUrl: string) => {
     const normalized = security.validateUrl(`https://${shortUrl}`, {
       allowedProtocols: ['http', 'https'],
@@ -403,6 +532,8 @@ export const useUrlShortenerLinks = () => {
     toggleSelect,
     selectMany,
     createLink,
+    getLink,
+    updateLink,
     removeLink,
     copyLink,
   }

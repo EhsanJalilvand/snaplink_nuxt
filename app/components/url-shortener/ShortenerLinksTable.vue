@@ -99,10 +99,12 @@ const handleDelete = (id: string) => emit('delete', id)
         <TairoFlexTableCell type="grow" data-content="Link">
           <div class="space-y-1">
             <div class="flex items-center gap-2">
-              <BaseHeading as="h4" size="sm" weight="semibold" class="text-muted-900 dark:text-muted-100">
-                {{ link.shortUrl }}
-              </BaseHeading>
-              <BaseButton size="sm" variant="ghost" @click="handleCopy(link)">
+              <NuxtLink :to="`/dashboard/url-shortener/links/${link.id}/edit`" class="hover:underline">
+                <BaseHeading as="h4" size="sm" weight="semibold" class="text-muted-900 dark:text-muted-100">
+                  {{ link.shortUrl }}
+                </BaseHeading>
+              </NuxtLink>
+              <BaseButton size="sm" variant="ghost" @click.stop="handleCopy(link)">
                 <Icon name="ph:copy" class="size-3" />
               </BaseButton>
             </div>
@@ -122,9 +124,30 @@ const handleDelete = (id: string) => emit('delete', id)
         </TairoFlexTableCell>
 
         <TairoFlexTableCell type="stable" data-content="Collection">
-          <BaseChip v-if="link.collection" size="sm" variant="pastel" color="primary">
-            {{ link.collection }}
-          </BaseChip>
+          <div v-if="link.collectionNames && link.collectionNames.length > 0" class="flex flex-wrap gap-1">
+            <BaseChip
+              v-for="(collectionName, index) in link.collectionNames.slice(0, 2)"
+              :key="index"
+              size="sm"
+              variant="pastel"
+              color="primary"
+            >
+              {{ collectionName }}
+            </BaseChip>
+            <BaseChip
+              v-if="link.collectionNames.length > 2"
+              size="sm"
+              variant="pastel"
+              color="muted"
+            >
+              +{{ link.collectionNames.length - 2 }}
+            </BaseChip>
+          </div>
+          <div v-else-if="link.collection" class="flex flex-wrap gap-1">
+            <BaseChip size="sm" variant="pastel" color="primary">
+              {{ link.collection }}
+            </BaseChip>
+          </div>
           <BaseText v-else size="xs" class="text-muted-400 dark:text-muted-500">
             —
           </BaseText>
@@ -145,8 +168,14 @@ const handleDelete = (id: string) => emit('delete', id)
 
         <TairoFlexTableCell type="shrink" data-content="Actions">
           <div class="flex items-center gap-1">
-            <BaseButton size="sm" variant="ghost" icon class="rounded-full" :to="`/dashboard/url-shortener/links/${link.id}`">
-              <Icon name="ph:eye" class="size-4" />
+            <BaseButton 
+              size="sm" 
+              variant="ghost" 
+              icon 
+              class="rounded-full" 
+              @click="() => navigateTo(`/dashboard/url-shortener/links/${link.id}/edit`)"
+            >
+              <Icon name="ph:pencil" class="size-4" />
             </BaseButton>
             <BaseButton size="sm" variant="ghost" icon color="danger" class="rounded-full" @click="handleDelete(link.id)">
               <Icon name="ph:trash" class="size-4" />

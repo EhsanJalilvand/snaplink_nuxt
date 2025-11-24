@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import type { CreateCollectionRequest } from '~/types/url-shortener'
+import type { CreateCollectionRequest, ShortenerLink } from '~/types/url-shortener'
 import { useUrlShortenerCollections } from '~/composables/useUrlShortenerCollections'
+import { useUrlShortenerLinks } from '~/composables/useUrlShortenerLinks'
 import { useWorkspaceContext } from '~/composables/useWorkspaceContext'
+import { useApi } from '~/composables/useApi'
+import { watch } from '#imports'
 
 const props = defineProps<{
   open: boolean
@@ -14,6 +17,9 @@ const emit = defineEmits<{
 }>()
 
 const toaster = useNuiToasts()
+const api = useApi()
+const { workspaceId } = useWorkspaceContext()
+const { items: linksList, fetchLinks, getLink, updateLink } = useUrlShortenerLinks()
 
 const isOpen = computed({
   get: () => props.open,
@@ -31,12 +37,14 @@ const isOpen = computed({
       }
       errors.value = {}
       searchQuery.value = ''
+      isLoadingLinks.value = false
     }
   },
 })
 
 const currentStep = ref(1)
 const totalSteps = 3
+const isLoadingLinks = ref(false)
 
 // Form data
 const formData = ref({
@@ -46,73 +54,14 @@ const formData = ref({
   selectedLinks: [] as string[],
 })
 
-// Available links - TODO: Replace with API call
-const availableLinks = ref([
-  {
-    id: '1',
-    shortUrl: 'snap.ly/abc123',
-    originalUrl: 'https://example.com/very/long/url/path/that/needs/to/be/shortened',
-    clicks: 12500,
-    createdAt: '2024-01-15',
-    status: 'active',
-  },
-  {
-    id: '2',
-    shortUrl: 'snap.ly/xyz789',
-    originalUrl: 'https://another-example.com/product/page',
-    clicks: 8900,
-    createdAt: '2024-01-20',
-    status: 'active',
-  },
-  {
-    id: '3',
-    shortUrl: 'snap.ly/def456',
-    originalUrl: 'https://third-example.com/blog/post',
-    clicks: 15600,
-    createdAt: '2024-02-01',
-    status: 'active',
-  },
-  {
-    id: '4',
-    shortUrl: 'snap.ly/ghi789',
-    originalUrl: 'https://fourth-example.com/landing/page',
-    clicks: 6700,
-    createdAt: '2024-02-05',
-    status: 'active',
-  },
-  {
-    id: '5',
-    shortUrl: 'snap.ly/jkl012',
-    originalUrl: 'https://fifth-example.com/about',
-    clicks: 11200,
-    createdAt: '2024-02-10',
-    status: 'active',
-  },
-  {
-    id: '6',
-    shortUrl: 'snap.ly/mno345',
-    originalUrl: 'https://sixth-example.com/contact',
-    clicks: 4500,
-    createdAt: '2024-02-15',
-    status: 'active',
-  },
-  {
-    id: '7',
-    shortUrl: 'snap.ly/pqr678',
-    originalUrl: 'https://seventh-example.com/services',
-    clicks: 9800,
-    createdAt: '2024-02-20',
-    status: 'active',
-  },
-  {
-    id: '8',
-    shortUrl: 'snap.ly/stu901',
-    originalUrl: 'https://eighth-example.com/pricing',
-    clicks: 13400,
-    createdAt: '2024-02-25',
-    status: 'active',
-  },
-])
+// Available links from API
+const availableLinks = computed(() => {
+  // Filter out test links - check if destinationUrl contains "test" or "example" (case insensitive)
+  return linksList.value.filter(link => {
+    const url = (link.destinationUrl || '').toLowerCase()
+    return !url.includes('test') && !url.includes('example.com')
+  })
+})
 
 const searchQuery = ref('')
 const errors = ref<Record<string, string>>({})
@@ -126,15 +75,18 @@ const colorOptions = [
 ]
 
 const filteredLinks = computed(() => {
-  if (!searchQuery.value.trim()) {
-    return availableLinks.value
+  let links = availableLinks.value
+  
+  // Apply search filter if query exists
+  if (searchQuery.value.trim()) {
+    const query = searchQuery.value.toLowerCase()
+    links = links.filter(link =>
+      (link.shortUrl || '').toLowerCase().includes(query) ||
+      (link.destinationUrl || link.originalUrl || '').toLowerCase().includes(query)
+    )
   }
   
-  const query = searchQuery.value.toLowerCase()
-  return availableLinks.value.filter(link =>
-    link.shortUrl.toLowerCase().includes(query) ||
-    link.originalUrl.toLowerCase().includes(query)
-  )
+  return links
 })
 
 const isAllLinksSelected = computed(() => {
@@ -172,6 +124,7 @@ const toggleSelectLink = (linkId: string) => {
   }
 }
 
+
 const validateStep1 = () => {
   errors.value = {}
   if (!formData.value.name.trim()) {
@@ -189,18 +142,15 @@ const validateStep1 = () => {
 
 const validateStep2 = () => {
   errors.value = {}
-  
-  if (formData.value.selectedLinks.length === 0) {
-    errors.value.selectedLinks = 'Please select at least one link'
-    return false
-  }
-  
+  // Link selection is now optional, so no validation needed
   return true
 }
 
-const nextStep = () => {
+const nextStep = async () => {
   if (currentStep.value === 1) {
     if (!validateStep1()) return
+    // Fetch links when moving to step 2
+    await fetchLinksData()
   } else if (currentStep.value === 2) {
     if (!validateStep2()) return
   }
@@ -210,6 +160,33 @@ const nextStep = () => {
   }
 }
 
+// Fetch links from API
+const fetchLinksData = async () => {
+  if (isLoadingLinks.value) return
+  
+  isLoadingLinks.value = true
+  try {
+    await fetchLinks({ force: true })
+  } catch (error: any) {
+    toaster.add({
+      title: 'Error',
+      description: error.message || 'Failed to fetch links',
+      icon: 'lucide:alert-triangle',
+      color: 'danger',
+      progress: true,
+    })
+  } finally {
+    isLoadingLinks.value = false
+  }
+}
+
+// Fetch links when wizard opens
+watch(isOpen, (newValue) => {
+  if (newValue) {
+    fetchLinksData()
+  }
+})
+
 const prevStep = () => {
   if (currentStep.value > 1) {
     currentStep.value--
@@ -217,7 +194,6 @@ const prevStep = () => {
 }
 
 const { createCollection: createCollectionApi } = useUrlShortenerCollections()
-const { workspaceId } = useWorkspaceContext()
 
 const createCollection = async () => {
   try {
@@ -234,6 +210,11 @@ const createCollection = async () => {
     const result = await createCollectionApi(request)
 
     if (result) {
+      // Add selected links to the collection if any were selected
+      if (formData.value.selectedLinks.length > 0 && result.id) {
+        await addLinksToCollection(result.id, formData.value.selectedLinks)
+      }
+
       // Emit created event with the result
       emit('created', {
         id: result.id,
@@ -258,6 +239,65 @@ const createCollection = async () => {
   }
 }
 
+// Add links to collection by updating their collectionIds
+const addLinksToCollection = async (collectionId: string, linkIds: string[]) => {
+  if (!workspaceId.value) return
+
+  try {
+    // Update each link to add the new collection to its collectionIds
+    const updatePromises = linkIds.map(async (linkId) => {
+      // Get current link data to preserve existing collections
+      const currentLink = await getLink(linkId)
+      if (!currentLink) {
+        throw new Error(`Link ${linkId} not found`)
+      }
+
+      // Get current collectionIds (ensure it's an array)
+      // Handle both collectionIds (from LinkDto) and collectionNames (from LinkListDto)
+      let currentCollectionIds: string[] = []
+      
+      if (Array.isArray(currentLink.collectionIds) && currentLink.collectionIds.length > 0) {
+        // Use collectionIds if available (from LinkDto)
+        currentCollectionIds = currentLink.collectionIds.map(id => String(id))
+      } else if (Array.isArray(currentLink.collectionNames) && currentLink.collectionNames.length > 0) {
+        // Fallback: if we have collectionNames but not collectionIds, we need to fetch the full link
+        // For now, we'll just use an empty array and let the backend handle it
+        // This shouldn't happen if getLink returns LinkDto correctly
+        currentCollectionIds = []
+      }
+
+      // Check if collection is already in the list
+      if (currentCollectionIds.includes(collectionId)) {
+        // Already in collection, skip update
+        return
+      }
+
+      // Add the new collection to existing ones (preserve all previous collections)
+      const updatedCollectionIds = [...currentCollectionIds, collectionId]
+
+      // Update link with merged collectionIds (preserving all existing collections)
+      await updateLink(linkId, {
+        collectionIds: updatedCollectionIds,
+      })
+    })
+
+    await Promise.all(updatePromises)
+    
+    // Refresh links list to show updated collections
+    await fetchLinks({ force: true })
+  } catch (error: any) {
+    // Log error but don't fail the collection creation
+    console.error('Failed to add links to collection:', error)
+    toaster.add({
+      title: 'Warning',
+      description: 'Collection created but some links could not be added',
+      icon: 'lucide:alert-triangle',
+      color: 'warning',
+      progress: true,
+    })
+  }
+}
+
 const handleClose = () => {
   isOpen.value = false
 }
@@ -273,7 +313,7 @@ const getSelectedLinksData = computed(() => {
 })
 
 const totalClicks = computed(() => {
-  return getSelectedLinksData.value.reduce((sum, link) => sum + link.clicks, 0)
+  return getSelectedLinksData.value.reduce((sum, link) => sum + (link.currentClicks || link.clicks || 0), 0)
 })
 </script>
 
@@ -394,7 +434,7 @@ const totalClicks = computed(() => {
                 Select Links
               </BaseHeading>
               <BaseParagraph size="sm" class="text-muted-500 dark:text-muted-400 mb-6">
-                Choose the links you want to add to this collection
+                Choose the links you want to add to this collection (optional)
               </BaseParagraph>
             </div>
 
@@ -429,7 +469,14 @@ const totalClicks = computed(() => {
 
             <!-- Links List -->
             <div class="space-y-2 max-h-96 overflow-y-auto">
+              <div v-if="isLoadingLinks" class="py-8 text-center">
+                <Icon name="solar:refresh-linear" class="size-12 text-muted-400 mx-auto mb-3 animate-spin" />
+                <BaseText size="sm" class="text-muted-500 dark:text-muted-400">
+                  Loading links...
+                </BaseText>
+              </div>
               <div
+                v-else
                 v-for="link in filteredLinks"
                 :key="link.id"
                 class="flex items-center gap-3 p-4 rounded-lg border transition-all cursor-pointer"
@@ -441,10 +488,17 @@ const totalClicks = computed(() => {
                 @click="toggleSelectLink(link.id)"
               >
                 <BaseCheckbox
-                  :checked="formData.selectedLinks.includes(link.id)"
+                  :model-value="formData.selectedLinks.includes(link.id)"
                   rounded="sm"
                   color="primary"
-                  @update:checked="toggleSelectLink(link.id)"
+                  @update:model-value="(value) => {
+                    const index = formData.selectedLinks.indexOf(link.id)
+                    if (value && index === -1) {
+                      formData.selectedLinks.push(link.id)
+                    } else if (!value && index > -1) {
+                      formData.selectedLinks.splice(index, 1)
+                    }
+                  }"
                   @click.stop
                 />
                 <div class="flex-1 min-w-0">
@@ -453,20 +507,20 @@ const totalClicks = computed(() => {
                       {{ link.shortUrl }}
                     </BaseText>
                     <BaseTag
-                      :color="link.status === 'active' ? 'success' : 'warning'"
+                      :color="link.linkStatus === 'active' ? 'success' : 'warning'"
                       size="xs"
                     >
-                      {{ link.status }}
+                      {{ link.linkStatus }}
                     </BaseTag>
                   </div>
                   <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400 line-clamp-1">
-                    {{ link.originalUrl }}
+                    {{ link.destinationUrl || link.originalUrl }}
                   </BaseParagraph>
                   <div class="flex items-center gap-4 mt-2">
                     <div class="flex items-center gap-1">
                       <Icon name="solar:mouse-linear" class="size-3 text-muted-400" />
                       <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
-                        {{ link.clicks.toLocaleString() }} clicks
+                        {{ (link.currentClicks || link.clicks || 0).toLocaleString() }} clicks
                       </BaseText>
                     </div>
                     <div class="flex items-center gap-1">
@@ -479,10 +533,10 @@ const totalClicks = computed(() => {
                 </div>
               </div>
 
-              <div v-if="filteredLinks.length === 0" class="py-8 text-center">
+              <div v-if="!isLoadingLinks && filteredLinks.length === 0" class="py-8 text-center">
                 <Icon name="solar:link-linear" class="size-12 text-muted-400 mx-auto mb-3" />
                 <BaseText size="sm" class="text-muted-500 dark:text-muted-400">
-                  No links found matching your search
+                  {{ availableLinks.length === 0 ? 'No links available. Create some links first.' : 'No links found matching your search' }}
                 </BaseText>
               </div>
             </div>
@@ -510,9 +564,6 @@ const totalClicks = computed(() => {
               </BaseText>
             </div>
 
-            <div v-if="errors.selectedLinks" class="text-danger-500 text-sm">
-              {{ errors.selectedLinks }}
-            </div>
           </div>
 
           <!-- Step 3: Confirmation -->
@@ -642,11 +693,11 @@ const totalClicks = computed(() => {
                       {{ link.shortUrl }}
                     </BaseText>
                     <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400 line-clamp-1">
-                      {{ link.originalUrl }}
+                      {{ link.destinationUrl || link.originalUrl }}
                     </BaseParagraph>
                   </div>
                   <BaseText size="xs" class="text-muted-500 dark:text-muted-400 shrink-0">
-                    {{ link.clicks.toLocaleString() }} clicks
+                    {{ (link.currentClicks || link.clicks || 0).toLocaleString() }} clicks
                   </BaseText>
                 </div>
               </div>

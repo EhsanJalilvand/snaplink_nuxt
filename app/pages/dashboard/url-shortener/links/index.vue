@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { callOnce, computed, watch } from '#imports'
+import { computed, watch, onMounted } from '#imports'
 import CreateLinkWizard from '~/components/url-shortener/CreateLinkWizard.vue'
 import ShortenerLinksHeader from '~/components/url-shortener/ShortenerLinksHeader.vue'
 import ShortenerLinksBulkActions from '~/components/url-shortener/ShortenerLinksBulkActions.vue'
@@ -7,6 +7,7 @@ import ShortenerLinksToolbar from '~/components/url-shortener/ShortenerLinksTool
 import ShortenerLinksTable from '~/components/url-shortener/ShortenerLinksTable.vue'
 import ShortenerLinksPagination from '~/components/url-shortener/ShortenerLinksPagination.vue'
 import { useUrlShortenerLinks } from '~/composables/useUrlShortenerLinks'
+import { useWorkspaceContext } from '~/composables/useWorkspaceContext'
 import type { ShortenerLink } from '~/types/url-shortener'
 
 definePageMeta({
@@ -16,6 +17,7 @@ definePageMeta({
 
 const route = useRoute()
 const router = useRouter()
+const { workspaceId } = useWorkspaceContext()
 
 const {
   items,
@@ -43,7 +45,19 @@ const {
   copyLink,
 } = useUrlShortenerLinks()
 
-await callOnce(() => fetchLinks())
+// Fetch links when workspaceId is available
+watch(workspaceId, (newWorkspaceId) => {
+  if (newWorkspaceId) {
+    fetchLinks({ force: true })
+  }
+}, { immediate: true })
+
+// Also fetch on mount in case workspaceId is already available
+onMounted(() => {
+  if (workspaceId.value) {
+    fetchLinks({ force: true })
+  }
+})
 
 watch(
   () => route.query.page,

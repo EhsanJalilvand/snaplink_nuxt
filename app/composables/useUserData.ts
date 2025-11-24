@@ -9,14 +9,16 @@ export const useUserData = () => {
         return { success: false, user: null, isAuthenticated: false }
       }
       try {
-        const api = useApi()
-        const response = await api.get<{ success: boolean; user: any; isAuthenticated: boolean }>('/api/auth/me', {
-          base: 'gateway',
-          requiresAuth: true,
-          quiet: true,
+        // Use $fetch directly for Nuxt server API endpoints (not through gateway)
+        const response = await $fetch<{ success: boolean; user: any; isAuthenticated: boolean }>('/api/auth/me', {
+          method: 'GET',
+          credentials: 'include', // Include cookies for session/auth
         })
         return response || { success: false, user: null, isAuthenticated: false }
       } catch (error) {
+        if (import.meta.dev) {
+          console.error('[useUserData] Failed to fetch user data:', error)
+        }
         return { success: false, user: null, isAuthenticated: false }
       }
     },

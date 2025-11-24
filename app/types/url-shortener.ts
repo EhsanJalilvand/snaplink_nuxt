@@ -23,14 +23,25 @@ export interface ShortenerLink {
   title?: string | null
   linkType: ShortenerLinkType
   linkStatus: ShortenerLinkStatus
-  collectionName?: string | null
+  collectionIds?: string[] | null
+  collectionNames?: string[] | null
   currentClicks: number
   createdAt: string
+  // Additional fields from LinkDto (for edit page)
+  description?: string | null
+  domainType?: string | null
+  domainValue?: string | null
+  customAlias?: string | null
+  isPublic?: boolean | null
+  isOneTime?: boolean | null
+  expiresAt?: string | null
+  clickLimit?: number | null
   // Legacy fields for backward compatibility
   originalUrl?: string
   clicks?: number
   status?: ShortenerLinkStatus
   collection?: string | null
+  collectionName?: string | null // For backward compatibility
 }
 
 // Backend PagedResult structure
@@ -162,7 +173,7 @@ export interface ShortenerOverviewResponse {
 
 // Backend CreateLinkRequest
 export interface CreateLinkRequest {
-  collectionId?: string | null
+  collectionIds?: string[] | null
   destinationUrl: string
   title?: string | null
   description?: string | null
@@ -174,6 +185,7 @@ export interface CreateLinkRequest {
   expiresAt?: string | null
   clickLimit?: number | null
   isOneTime?: boolean | null
+  isPublic?: boolean | null
   utmParameters?: {
     source?: string | null
     medium?: string | null
@@ -187,4 +199,19 @@ export interface CreateLinkRequest {
     category?: string | null
     language?: string | null
   } | null
+}
+
+// Backend UpdateLinkRequest
+export interface UpdateLinkRequest {
+  title?: string | null
+  description?: string | null
+  password?: string | null
+  expiresAt?: string | null
+  clickLimit?: number | null
+  isPublic?: boolean | null
+  isOneTime?: boolean | null
+  domainType?: string | null
+  domainValue?: string | null
+  customAlias?: string | null
+  collectionIds?: string[] | null
 }

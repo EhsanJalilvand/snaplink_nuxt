@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { callOnce, computed, watch } from '#imports'
+import { computed, watch, onMounted } from '#imports'
 import CreateCollectionWizard from '~/components/url-shortener/CreateCollectionWizard.vue'
 import ShortenerCollectionsHeader from '~/components/url-shortener/ShortenerCollectionsHeader.vue'
 import ShortenerCollectionsBulkActions from '~/components/url-shortener/ShortenerCollectionsBulkActions.vue'
@@ -7,6 +7,7 @@ import ShortenerCollectionsToolbar from '~/components/url-shortener/ShortenerCol
 import ShortenerCollectionsTable from '~/components/url-shortener/ShortenerCollectionsTable.vue'
 import ShortenerCollectionsPagination from '~/components/url-shortener/ShortenerCollectionsPagination.vue'
 import { useUrlShortenerCollections } from '~/composables/useUrlShortenerCollections'
+import { useWorkspaceContext } from '~/composables/useWorkspaceContext'
 import type { ShortenerCollection } from '~/types/url-shortener'
 
 definePageMeta({
@@ -16,6 +17,7 @@ definePageMeta({
 
 const route = useRoute()
 const router = useRouter()
+const { workspaceId } = useWorkspaceContext()
 
 const {
   items,
@@ -43,7 +45,19 @@ const {
   removeCollection,
 } = useUrlShortenerCollections()
 
-await callOnce(() => fetchCollections())
+// Fetch collections when workspaceId is available
+watch(workspaceId, (newWorkspaceId) => {
+  if (newWorkspaceId) {
+    fetchCollections({ force: true })
+  }
+}, { immediate: true })
+
+// Also fetch on mount in case workspaceId is already available
+onMounted(() => {
+  if (workspaceId.value) {
+    fetchCollections({ force: true })
+  }
+})
 
 watch(
   () => route.query.page,

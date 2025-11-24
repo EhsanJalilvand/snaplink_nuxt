@@ -68,7 +68,7 @@ export const useUrlShortenerCollections = () => {
     }
 
     if (!workspaceId.value) {
-      state.value.error = 'No workspace selected'
+      // Don't set error if workspaceId is not available yet - it might be loading
       state.value.isLoading = false
       return
     }
@@ -309,6 +309,21 @@ export const useUrlShortenerCollections = () => {
   const allSelected = computed(() => paginatedItems.value.length > 0 && paginatedItems.value.every((item) => state.value.selectedIds.includes(item.id)))
   const selectionIndeterminate = computed(() => state.value.selectedIds.length > 0 && !allSelected.value)
   const hasSelection = computed(() => state.value.selectedIds.length > 0)
+
+  // Watch for workspaceId changes to refetch collections
+  watch(workspaceId, (newWorkspaceId) => {
+    if (newWorkspaceId) {
+      // Clear existing items when workspace changes
+      state.value.items = []
+      state.value.selectedIds = []
+      state.value.page = 1
+      fetchCollections({ force: true })
+    } else {
+      // Clear items when no workspace is selected
+      state.value.items = []
+      state.value.selectedIds = []
+    }
+  })
 
   // Watch for page/perPage/search changes to refetch
   watch([() => state.value.page, () => state.value.perPage, () => state.value.search], () => {

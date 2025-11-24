@@ -33,7 +33,7 @@ const isOpen = computed({
         password: '',
         domain: 'snap.ly',
         customAlias: '',
-        collection: null,
+        collectionIds: [],
         description: '',
         tags: [],
         clickLimit: null,
@@ -63,8 +63,10 @@ const formData = ref({
   hasPassword: false,
   password: '',
   domain: 'snap.ly',
+  domainType: 'default' as string,
+  domainValue: null as string | null,
   customAlias: '',
-  collection: null as string | null,
+  collectionIds: [] as string[],
   description: '',
   tags: [] as string[],
   clickLimit: null as number | null,
@@ -187,7 +189,7 @@ const createLink = async () => {
 
     // Map form data to CreateLinkRequest
     const request: CreateLinkRequest = {
-      collectionId: formData.value.collection || null,
+      collectionIds: formData.value.collectionIds.length > 0 ? formData.value.collectionIds : null,
       destinationUrl: formData.value.originalUrl,
       title: formData.value.description || null,
       description: formData.value.description || null,
@@ -199,6 +201,7 @@ const createLink = async () => {
       expiresAt: formData.value.expiresAt ? new Date(formData.value.expiresAt).toISOString() : null,
       clickLimit: formData.value.clickLimit || null,
       isOneTime: formData.value.type === 'one-time',
+      isPublic: formData.value.visibility === 'public',
     }
 
     const result = await createLinkApi(request)
@@ -235,6 +238,15 @@ const createLink = async () => {
     })
   } finally {
     isLoading.value = false
+  }
+}
+
+const toggleCollection = (collectionId: string) => {
+  const index = formData.value.collectionIds.indexOf(collectionId)
+  if (index > -1) {
+    formData.value.collectionIds.splice(index, 1)
+  } else {
+    formData.value.collectionIds.push(collectionId)
   }
 }
 
@@ -540,25 +552,33 @@ const finish = () => {
                 </BaseParagraph>
               </TairoFormGroup>
 
-              <!-- Collection -->
-              <TairoFormGroup label="Collection (Optional)">
-                <TairoSelect
-                  v-model="formData.collection"
-                  icon="solar:folder-linear"
-                  rounded="lg"
-                  placeholder="Select a collection"
-                >
-                  <BaseSelectItem :value="null">
-                    None
-                  </BaseSelectItem>
-                  <BaseSelectItem
+              <!-- Collections (Multi-select) -->
+              <TairoFormGroup label="Collections (Optional)">
+                <div class="space-y-2 max-h-48 overflow-y-auto border border-muted-200 dark:border-muted-700 rounded-lg p-3">
+                  <div
                     v-for="collection in collections"
                     :key="collection.id"
-                    :value="collection.id"
+                    class="flex items-center gap-3 p-2 rounded-lg hover:bg-muted-50 dark:hover:bg-muted-800/50 cursor-pointer transition-colors"
+                    @click="toggleCollection(collection.id)"
                   >
-                    {{ collection.name }}
-                  </BaseSelectItem>
-                </TairoSelect>
+                    <BaseCheckbox
+                      v-model="formData.collectionIds"
+                      :value="collection.id"
+                      rounded="sm"
+                      color="primary"
+                      @click.stop
+                    />
+                    <BaseText size="sm" class="text-muted-800 dark:text-muted-100">
+                      {{ collection.name }}
+                    </BaseText>
+                  </div>
+                  <div v-if="collections.length === 0" class="text-center py-4 text-sm text-muted-500 dark:text-muted-400">
+                    No collections available. Create one first.
+                  </div>
+                </div>
+                <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400 mt-2">
+                  Select one or more collections to organize your link
+                </BaseParagraph>
               </TairoFormGroup>
 
               <!-- Description -->
