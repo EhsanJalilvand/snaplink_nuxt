@@ -99,9 +99,22 @@ export const useApi = () => {
 
     // Get access token from sessionStorage (set by OAuth callback)
     if (import.meta.client) {
-      const token = sessionStorage.getItem('snaplink:access_token')
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`
+      try {
+        const token = sessionStorage.getItem('snaplink:access_token')
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`
+          if (import.meta.dev) {
+            console.log('[useApi] Authorization header added', { hasToken: true, tokenLength: token.length })
+          }
+        } else {
+          if (import.meta.dev) {
+            console.warn('[useApi] No access token found in sessionStorage')
+          }
+        }
+      } catch (error) {
+        if (import.meta.dev) {
+          console.error('[useApi] Failed to get token from sessionStorage', error)
+        }
       }
     }
 

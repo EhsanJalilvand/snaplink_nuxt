@@ -113,12 +113,15 @@ export default defineNuxtConfig({
       ssr: false, // Client-side rendering for callback
     },
     '/dashboard/**': {
+      ssr: false, // Disable SSR to prevent hydration mismatches
       swr: 3600,
     },
     '/links/**': {
+      ssr: false,
       swr: 3600,
     },
     '/analytics/**': {
+      ssr: false,
       swr: 3600,
     },
   },

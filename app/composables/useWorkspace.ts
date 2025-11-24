@@ -80,6 +80,10 @@ export const useWorkspace = () => {
   })
 
   const currentWorkspaceLabel = computed(() => {
+    // Only compute on client-side to prevent hydration mismatch
+    if (!import.meta.client) {
+      return 'Select a workspace'
+    }
     // First try to get name from loaded workspace
     if (currentWorkspace.value?.name) {
       return currentWorkspace.value.name

@@ -48,8 +48,9 @@ const handleDelete = (id: string) => emit('delete', id)
 </script>
 
 <template>
-  <div>
-    <div v-if="isLoading" class="space-y-2">
+  <ClientOnly>
+    <div>
+      <div v-if="isLoading" class="space-y-2">
       <div
         v-for="index in 6"
         :key="`links-skeleton-${index}`"
@@ -184,5 +185,15 @@ const handleDelete = (id: string) => emit('delete', id)
         </TairoFlexTableCell>
       </TairoFlexTableRow>
     </TairoFlexTable>
-  </div>
+    </div>
+    <template #fallback>
+      <div class="space-y-2">
+        <div
+          v-for="index in 6"
+          :key="`links-skeleton-${index}`"
+          class="h-16 rounded-xl border border-muted-200/70 bg-muted-100/60 animate-pulse dark:border-muted-700/60 dark:bg-muted-900/30"
+        />
+      </div>
+    </template>
+  </ClientOnly>
 </template>

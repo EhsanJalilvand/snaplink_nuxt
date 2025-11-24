@@ -8,6 +8,19 @@ export interface Workspace {
   createdAt?: string
 }
 
+export type WorkspaceMemberRole = 'Owner' | 'Admin' | 'Member' | 'Viewer'
+
+export interface WorkspaceMemberSummary {
+  id: string
+  userId: string
+  displayName: string
+  email: string
+  role: WorkspaceMemberRole
+  avatarUrl?: string | null
+  status?: string | null
+  roleLabel?: string
+}
+
 export interface WorkspaceListResponse {
   data: Workspace[]
 }

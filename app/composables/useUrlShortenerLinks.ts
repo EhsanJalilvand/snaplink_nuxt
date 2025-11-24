@@ -100,6 +100,17 @@ export const useUrlShortenerLinks = () => {
     const collectionNames = dto.collectionNames ?? (dto.collectionName ? [dto.collectionName] : null)
     const collectionName = collectionNames && collectionNames.length > 0 ? collectionNames.join(', ') : null
 
+    let visibilityMemberIds: string[] | null = null
+    if (dto.visibilityMemberIds && Array.isArray(dto.visibilityMemberIds)) {
+      visibilityMemberIds = dto.visibilityMemberIds.map((id: any) =>
+        typeof id === 'string' ? id : String(id),
+      )
+    }
+
+    const visibilityRoles = dto.visibilityRoles && Array.isArray(dto.visibilityRoles)
+      ? dto.visibilityRoles.map((role: any) => String(role))
+      : null
+
     return {
       id: dto.id ?? '',
       shortCode: dto.shortCode ?? '',
@@ -110,6 +121,9 @@ export const useUrlShortenerLinks = () => {
       linkStatus: status,
       collectionIds: collectionIds,
       collectionNames: collectionNames,
+      isPublic: typeof dto.isPublic === 'boolean' ? dto.isPublic : true,
+      visibilityRoles,
+      visibilityMemberIds,
       currentClicks: dto.currentClicks ?? 0,
       createdAt: dto.createdAt ?? new Date().toISOString(),
       // Legacy fields for backward compatibility
@@ -512,6 +526,19 @@ export const useUrlShortenerLinks = () => {
   watch([() => state.value.page, () => state.value.perPage, () => state.value.search], () => {
     if (workspaceId.value) {
       fetchLinks({ force: true })
+    }
+  })
+
+  // Watch for workspaceId changes to clear and refetch
+  watch(workspaceId, (newWorkspaceId, oldWorkspaceId) => {
+    if (newWorkspaceId && newWorkspaceId !== oldWorkspaceId) {
+      state.value.items = []
+      state.value.selectedIds = []
+      state.value.lastFetched = undefined
+      state.value.error = null
+      if (newWorkspaceId) {
+        fetchLinks({ force: true })
+      }
     }
   })
 

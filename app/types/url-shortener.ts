@@ -25,6 +25,9 @@ export interface ShortenerLink {
   linkStatus: ShortenerLinkStatus
   collectionIds?: string[] | null
   collectionNames?: string[] | null
+  isPublic?: boolean | null
+  visibilityRoles?: string[] | null
+  visibilityMemberIds?: string[] | null
   currentClicks: number
   createdAt: string
   // Additional fields from LinkDto (for edit page)
@@ -32,7 +35,6 @@ export interface ShortenerLink {
   domainType?: string | null
   domainValue?: string | null
   customAlias?: string | null
-  isPublic?: boolean | null
   isOneTime?: boolean | null
   expiresAt?: string | null
   clickLimit?: number | null
@@ -186,6 +188,8 @@ export interface CreateLinkRequest {
   clickLimit?: number | null
   isOneTime?: boolean | null
   isPublic?: boolean | null
+  visibilityRoles?: string[] | null
+  visibilityMemberIds?: string[] | null
   utmParameters?: {
     source?: string | null
     medium?: string | null
@@ -209,9 +213,102 @@ export interface UpdateLinkRequest {
   expiresAt?: string | null
   clickLimit?: number | null
   isPublic?: boolean | null
+  visibilityRoles?: string[] | null
+  visibilityMemberIds?: string[] | null
   isOneTime?: boolean | null
   domainType?: string | null
   domainValue?: string | null
   customAlias?: string | null
   collectionIds?: string[] | null
+}
+
+export type SmartLinkConditionType =
+  | 'GeoCountry'
+  | 'GeoRegion'
+  | 'GeoCity'
+  | 'DeviceType'
+  | 'OperatingSystem'
+  | 'Browser'
+  | 'Referrer'
+  | 'Schedule'
+  | 'CustomExpression'
+
+export interface SmartLinkRule {
+  id?: string
+  smartLinkId?: string
+  targetLinkId: string
+  conditionType: SmartLinkConditionType
+  condition: Record<string, any>
+  priority: number
+  isActive: boolean
+  summary?: string
+}
+
+export interface SmartLink {
+  id: string
+  workspaceId: string
+  name: string
+  shortCode: string
+  shortUrl: string
+  domainType: string
+  domainValue?: string | null
+  customAlias?: string | null
+  description?: string | null
+  defaultLinkId?: string | null
+  isOneTime: boolean
+  expiresAt?: string | null
+  clickLimit?: number | null
+  hasPassword: boolean
+  currentClicks: number
+  collectionIds?: string[] | null
+  aiMetadata?: Record<string, any> | null
+  createdAt: string
+  updatedAt: string
+  createdBy: string
+  rules: SmartLinkRule[]
+}
+
+export interface CreateSmartLinkRuleInput {
+  targetLinkId: string
+  conditionType: SmartLinkConditionType
+  condition: Record<string, any>
+  priority: number
+  isActive: boolean
+}
+
+export interface SmartLinkAiSuggestion {
+  id: string
+  title: string
+  description: string
+  recommendation: string
+  score: number
+  selected?: boolean
+}
+
+export interface SmartLinkAiInsightsRequest {
+  goal: string
+  kpi: string
+  notes?: string | null
+  defaultLinkId?: string | null
+  rules: CreateSmartLinkRuleInput[]
+}
+
+export interface SmartLinkAiInsightsResponse {
+  suggestions: SmartLinkAiSuggestion[]
+}
+
+export interface CreateSmartLinkRequest {
+  name: string
+  description?: string | null
+  domainType?: string | null
+  domainValue?: string | null
+  customAlias?: string | null
+  defaultLinkId?: string | null
+  isOneTime?: boolean | null
+  expiresAt?: string | null
+  clickLimit?: number | null
+  password?: string | null
+  collectionIds?: string[] | null
+  rules: CreateSmartLinkRuleInput[]
+  aiMetadata?: Record<string, any> | null
 }

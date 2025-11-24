@@ -51,7 +51,7 @@ export const useWorkspaceDomains = () => {
 
   const domainOptions = computed(() => {
     return domains.value.map(d => ({
-      value: d.isSubdomain ? 'subdomain' : 'custom',
+      value: d.domainName,
       label: d.domainName,
       domainType: d.isSubdomain ? 'subdomain' : 'custom',
       domainValue: d.domainName,

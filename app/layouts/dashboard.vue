@@ -160,6 +160,11 @@ const menu: MenuItem[] = [
         to: '/dashboard/url-shortener/links',
       },
       {
+        label: 'SmartLinks',
+        icon: 'solar:shuffle-linear',
+        to: '/dashboard/url-shortener/smart-links',
+      },
+      {
         label: 'Collections',
         icon: 'solar:folder-linear',
         to: '/dashboard/url-shortener/collections',
@@ -461,7 +466,12 @@ function handlePrimaryNavClick(item: MenuItem) {
             class="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-primary-100 bg-primary-50/80 px-4 py-1.5 text-sm font-medium text-primary-700 shadow-sm dark:border-primary-500/30 dark:bg-primary-500/10 dark:text-primary-200"
           >
             <Icon name="solar:layers-linear" class="size-4" />
-            <span>{{ currentWorkspaceLabel }}</span>
+            <ClientOnly>
+              <span>{{ currentWorkspaceLabel }}</span>
+              <template #fallback>
+                <span>Select a workspace</span>
+              </template>
+            </ClientOnly>
           </div>
         </div>
 
