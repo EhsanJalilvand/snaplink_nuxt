@@ -19,7 +19,7 @@ const toaster = useNuiToasts()
 console.log('[Edit Link Page] Initializing...', { route: route.path, params: route.params })
 
 const { workspaceId } = useWorkspaceContext()
-const { getLink, updateLink } = useUrlShortenerLinks()
+const { getLink, updateLink, copyLink } = useUrlShortenerLinks()
 const { items: collectionsList, fetchCollections } = useUrlShortenerCollections()
 const { domainOptions, fetchDomains } = useWorkspaceDomains()
 const { members: workspaceMembers, fetchMembers: fetchWorkspaceMembers, isLoading: isLoadingMembers } = useWorkspaceMembers()
@@ -32,6 +32,7 @@ const linkId = computed(() => {
 const isLoading = ref(false)
 const isSaving = ref(false)
 const link = ref<ShortenerLink | null>(null)
+const existingPassword = ref(false)
 
 console.log('[Edit Link Page] workspaceId:', workspaceId.value)
 
@@ -55,6 +56,31 @@ const formData = ref<UpdateLinkRequest>({
 const errors = ref<Record<string, string>>({})
 const showPassword = ref(false)
 const memberSearch = ref('')
+const formatDateTimeLocal = (isoString: string | null | undefined): string | null => {
+  if (!isoString) {
+    return null
+  }
+  const date = new Date(isoString)
+  if (Number.isNaN(date.getTime())) {
+    return null
+  }
+  const pad = (value: number) => value.toString().padStart(2, '0')
+  const year = date.getFullYear()
+  const month = pad(date.getMonth() + 1)
+  const day = pad(date.getDate())
+  const hours = pad(date.getHours())
+  const minutes = pad(date.getMinutes())
+  return `${year}-${month}-${day}T${hours}:${minutes}`
+}
+
+const toIsoString = (value: string | null | undefined): string | null => {
+  if (!value) {
+    return null
+  }
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}
+
 const tabs = [
   { key: 'basics', label: 'Basics', description: 'Original + title' },
   { key: 'visibility', label: 'Visibility', description: 'Roles & teammates' },
@@ -139,13 +165,14 @@ const fetchLinkData = async () => {
     
     if (linkData) {
       link.value = linkData
+        existingPassword.value = linkData.hasPassword === true
       
       // Populate form
       formData.value = {
         title: linkData.title || null,
         description: linkData.description || null,
         password: null, // Don't populate password
-        expiresAt: linkData.expiresAt || null,
+          expiresAt: formatDateTimeLocal(linkData.expiresAt ?? null),
         clickLimit: linkData.clickLimit || null,
         isPublic: linkData.isPublic ?? true,
         visibilityRoles: linkData.visibilityRoles ?? [],
@@ -296,7 +323,16 @@ const handleSave = async () => {
 
   isSaving.value = true
   try {
-    const result = await updateLink(linkId.value, formData.value)
+    const payload: UpdateLinkRequest = {
+      ...formData.value,
+      expiresAt: toIsoString(formData.value.expiresAt),
+      password: formData.value.password?.trim() ? formData.value.password : null,
+      customAlias: formData.value.customAlias?.trim() ? formData.value.customAlias.trim() : null,
+      description: formData.value.description?.trim() ? formData.value.description.trim() : null,
+      title: formData.value.title?.trim() ? formData.value.title.trim() : null,
+    }
+
+    const result = await updateLink(linkId.value, payload)
     if (result) {
       toaster.add({
         title: 'Success',
@@ -324,6 +360,39 @@ const handleSave = async () => {
 const handleCancel = () => {
   router.push('/dashboard/url-shortener/links')
 }
+
+const isLinkActive = computed(() => link.value?.linkStatus?.toLowerCase() === 'active')
+
+const toggleLinkStatus = async () => {
+  if (!link.value) {
+    return
+  }
+
+  const desiredState = !isLinkActive.value
+
+  try {
+    const result = await updateLink(linkId.value, { isActive: desiredState })
+    if (result) {
+      link.value = result
+      await fetchLinkData()
+      toaster.add({
+        title: desiredState ? 'Link activated' : 'Link paused',
+        description: desiredState ? 'Link is now live.' : 'Visitors will no longer be redirected.',
+        icon: desiredState ? 'ph:play' : 'ph:pause',
+        color: desiredState ? 'success' : 'warning',
+        progress: true,
+      })
+    }
+  } catch (error: any) {
+    toaster.add({
+      title: 'Error',
+      description: error.message || 'Unable to update link status',
+      icon: 'lucide:alert-triangle',
+      color: 'danger',
+      progress: true,
+    })
+  }
+}
 </script>
 
 <template>
@@ -339,9 +408,6 @@ const handleCancel = () => {
         >
           Edit Link
         </BaseHeading>
-        <BaseParagraph size="sm" class="text-muted-500 dark:text-muted-400">
-          Update your short link settings and preferences
-        </BaseParagraph>
       </div>
       <div class="flex items-center gap-2">
         <BaseButton
@@ -385,6 +451,71 @@ const handleCancel = () => {
 
     <!-- Form -->
     <div v-else-if="link" class="space-y-6">
+      <!-- Hero URLs & Stats -->
+      <div class="space-y-6 pb-4 border-b border-muted-200 dark:border-muted-800">
+        <div class="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-10">
+          <div class="flex-1 space-y-1">
+            <BaseParagraph size="xs" class="uppercase tracking-[0.3em] text-muted-500 dark:text-muted-400">
+              Destination URL
+            </BaseParagraph>
+            <div class="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
+              <BaseText
+                size="lg"
+                weight="semibold"
+                class="text-muted-900 dark:text-white leading-relaxed break-words"
+              >
+                {{ link.destinationUrl }}
+              </BaseText>
+              <BaseButton
+                variant="outline"
+                size="sm"
+                class="shrink-0"
+                @click="() => window.open(link.destinationUrl, '_blank')"
+              >
+                <Icon name="ph:arrow-up-right" class="size-4" />
+                <span>Open</span>
+              </BaseButton>
+            </div>
+          </div>
+
+          <div class="flex-1 space-y-1">
+            <BaseParagraph size="xs" class="uppercase tracking-[0.3em] text-muted-500 dark:text-muted-400">
+              Short URL
+            </BaseParagraph>
+            <div class="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
+              <BaseHeading
+                as="p"
+                size="2xl"
+                weight="bold"
+                class="text-primary-600 dark:text-primary-300 truncate"
+                :title="link.shortUrl"
+              >
+                {{ link.shortUrl }}
+              </BaseHeading>
+              <BaseButton
+                class="shrink-0 min-w-[130px] bg-transparent shadow-none border-none"
+                size="sm"
+                variant="ghost"
+                :style="isLinkActive
+                  ? { color: '#dc2626' }
+                  : { color: '#16a34a' }"
+                @click="toggleLinkStatus"
+                :aria-pressed="isLinkActive"
+              >
+                <Icon :name="isLinkActive ? 'ph:power-bold' : 'ph:play-circle-bold'" class="size-5" />
+                <span>{{ isLinkActive ? 'Disable' : 'Enable' }}</span>
+              </BaseButton>
+              <BaseParagraph
+                size="xs"
+                class="text-muted-500 dark:text-muted-400 ms-auto"
+              >
+                Created {{ new Date(link.createdAt).toLocaleDateString() }}
+              </BaseParagraph>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Tabs -->
       <BaseCard class="p-4">
         <div class="flex flex-wrap gap-3">
@@ -418,29 +549,6 @@ const handleCancel = () => {
             </BaseParagraph>
           </div>
 
-          <TairoFormGroup label="Destination URL">
-            <TairoInput
-              :model-value="link.destinationUrl"
-              type="url"
-              disabled
-              icon="solar:link-linear"
-              rounded="lg"
-            />
-            <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400 mt-2">
-              The destination URL cannot be changed
-            </BaseParagraph>
-          </TairoFormGroup>
-
-          <TairoFormGroup label="Short URL">
-            <TairoInput
-              :model-value="link.shortUrl"
-              type="text"
-              disabled
-              icon="solar:link-2-linear"
-              rounded="lg"
-            />
-          </TairoFormGroup>
-
           <TairoFormGroup label="Title">
             <TairoInput
               v-model="formData.title"
@@ -458,6 +566,19 @@ const handleCancel = () => {
               rows="4"
               class="w-full px-4 py-3 rounded-lg border border-muted-300 dark:border-muted-600 bg-white dark:bg-muted-800 text-muted-800 dark:text-muted-100 placeholder:text-muted-400 dark:placeholder:text-muted-500 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:focus:ring-primary-400 focus:border-transparent transition-all duration-200 resize-none"
             />
+          </TairoFormGroup>
+
+          <TairoFormGroup label="Custom Alias" :error="errors.customAlias">
+            <TairoInput
+              v-model="formData.customAlias"
+              type="text"
+              placeholder="my-campaign-link"
+              icon="solar:pen-linear"
+              rounded="lg"
+            />
+            <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400 mt-2">
+              Leave empty to use the generated short code.
+            </BaseParagraph>
           </TairoFormGroup>
         </div>
       </BaseCard>
@@ -715,7 +836,7 @@ const handleCancel = () => {
               Password protection
             </BaseHeading>
             <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400">
-              Set a password to protect this link (leave empty to keep current)
+              {{ existingPassword ? 'Link is currently password protected. Enter a new password to replace it.' : 'Set a password to protect this link (leave empty to keep current)' }}
             </BaseParagraph>
           </div>
           <BaseButton variant="ghost" icon @click="showPassword = !showPassword">
@@ -757,10 +878,11 @@ const handleCancel = () => {
         </BaseParagraph>
       </div>
 
-      <div class="space-y-4">
+      <div class="space-y-3">
         <BaseParagraph size="sm" weight="medium" class="text-muted-600 dark:text-muted-300">
           Default domain
         </BaseParagraph>
+        <div class="grid gap-3 md:grid-cols-2">
         <BaseCard
           v-if="defaultDomainOption"
           class="p-4 border-2 transition-all cursor-pointer"
@@ -779,6 +901,7 @@ const handleCancel = () => {
             />
           </div>
         </BaseCard>
+        </div>
       </div>
 
       <div class="space-y-3">
@@ -852,19 +975,6 @@ const handleCancel = () => {
           No custom domains connected yet.
         </div>
       </div>
-
-      <TairoFormGroup label="Custom Alias" :error="errors.customAlias">
-        <TairoInput
-          v-model="formData.customAlias"
-          type="text"
-          placeholder="my-campaign-link"
-          icon="solar:pen-linear"
-          rounded="lg"
-        />
-        <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400 mt-2">
-          Leave empty to use the generated short code
-        </BaseParagraph>
-      </TairoFormGroup>
     </BaseCard>
 
     <!-- Organization Tab -->
@@ -902,40 +1012,6 @@ const handleCancel = () => {
       </div>
     </BaseCard>
 
-    <!-- Stats -->
-    <BaseCard class="p-6">
-      <div class="space-y-4">
-        <BaseHeading as="h3" size="md" weight="semibold" class="text-muted-900 dark:text-white">
-          Link Statistics
-        </BaseHeading>
-        <div class="space-y-3">
-          <div class="flex items-center justify-between">
-            <BaseText size="sm" class="text-muted-600 dark:text-muted-400">
-              Total Clicks
-            </BaseText>
-            <BaseText size="sm" weight="semibold" class="text-muted-900 dark:text-muted-100">
-              {{ link.currentClicks.toLocaleString() }}
-            </BaseText>
-          </div>
-          <div class="flex items-center justify-between">
-            <BaseText size="sm" class="text-muted-600 dark:text-muted-400">
-              Status
-            </BaseText>
-            <BaseChip :color="link.linkStatus === 'active' ? 'success' : 'warning'" size="sm">
-              {{ link.linkStatus }}
-            </BaseChip>
-          </div>
-          <div class="flex items-center justify-between">
-            <BaseText size="sm" class="text-muted-600 dark:text-muted-400">
-              Created
-            </BaseText>
-            <BaseText size="sm" class="text-muted-900 dark:text-muted-100">
-              {{ new Date(link.createdAt).toLocaleDateString() }}
-            </BaseText>
-          </div>
-        </div>
-      </div>
-    </BaseCard>
   </div>
   </div>
 </template>

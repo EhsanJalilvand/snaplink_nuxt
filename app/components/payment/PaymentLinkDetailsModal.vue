@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import type { PaymentLink } from '~/types/payment-links'
 import GatewayStatusBadge from './GatewayStatusBadge.vue'
+import { useQRCode } from '~/composables/useQRCode'
+
+const { getQRCodeUrl } = useQRCode()
 
 interface Props {
   link: PaymentLink | null
@@ -238,7 +241,7 @@ const copyReference = async () => {
                 </BaseHeading>
                 <div class="flex justify-center">
                   <img
-                    :src="`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://${link.reference}`"
+                    :src="getQRCodeUrl(`https://${link.reference}`, 200)"
                     alt="QR Code"
                     class="rounded-lg border border-muted-200 p-2 dark:border-muted-700"
                   >

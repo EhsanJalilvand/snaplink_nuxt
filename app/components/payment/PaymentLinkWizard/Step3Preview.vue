@@ -20,13 +20,17 @@ const emit = defineEmits<{
   'update:modelValue': [value: PaymentLinkPreview]
 }>()
 
+import { useQRCode } from '~/composables/useQRCode'
+
+const { getQRCodeUrl } = useQRCode()
+
 const linkUrl = computed(() => {
   const code = Math.random().toString(36).substring(2, 8).toUpperCase()
   return `https://snap.link/pay/${code}`
 })
 
 const qrCodeUrl = computed(() => {
-  return `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(linkUrl.value)}`
+  return getQRCodeUrl(linkUrl.value, 280)
 })
 
 const formatCurrency = (amount: number, currency: string) => {

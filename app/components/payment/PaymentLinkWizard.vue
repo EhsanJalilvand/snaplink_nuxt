@@ -122,10 +122,12 @@ const resetWizard = () => {
   }
 }
 
+const { getQRCodeUrl } = useQRCode()
+
 const generatePreview = () => {
   const code = Math.random().toString(36).substring(2, 8).toUpperCase()
   linkPreview.value.url = `https://snap.link/pay/${code}`
-  linkPreview.value.qr = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(linkPreview.value.url)}`
+  linkPreview.value.qr = getQRCodeUrl(linkPreview.value.url, 280)
 }
 
 const completeWizard = () => {

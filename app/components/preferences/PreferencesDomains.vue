@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { ref } from '#imports'
 import { usePreferencesDomains } from '~/composables/usePreferencesDomains'
 
 const props = defineProps<{
@@ -10,40 +9,19 @@ const {
   settings,
   isLoading,
   isSaving,
-  isValidating,
   error,
   saveSettings,
-  validateDomain,
   updateSetting,
 } = usePreferencesDomains(props.workspaceId)
 
-const subdomainError = ref<string | null>(null)
-const customDomainError = ref<string | null>(null)
-
-const handleSubdomainChange = async (value: string) => {
+const handleSubdomainChange = (value: string) => {
   updateSetting('subdomain', value || undefined)
-  subdomainError.value = null
-
-  if (value) {
-    const validation = await validateDomain(value, settings.value.customDomain)
-    if (!validation.isValid) {
-      subdomainError.value = validation.errorMessage || 'Invalid subdomain'
-    }
-  }
+  updateSetting('domainVerified', false)
 }
 
-const handleCustomDomainChange = async (value: string) => {
+const handleCustomDomainChange = (value: string) => {
   updateSetting('customDomain', value || undefined)
-  customDomainError.value = null
-
-  if (value) {
-    const validation = await validateDomain(settings.value.subdomain, value)
-    if (!validation.isValid) {
-      customDomainError.value = validation.errorMessage || 'Invalid domain'
-    } else {
-      updateSetting('domainVerified', validation.isVerified)
-    }
-  }
+  updateSetting('domainVerified', false)
 }
 
 const handleSave = async () => {
@@ -98,7 +76,7 @@ const handleSave = async () => {
               icon="solar:global-linear"
                 size="lg"
                 class="flex-1"
-              :disabled="isLoading || isValidating"
+              :disabled="isLoading"
               @update:model-value="handleSubdomainChange"
               />
               <div class="px-3 h-12 border border-muted-200 dark:border-muted-700 rounded-md bg-muted-50 dark:bg-muted-900 flex items-center">
@@ -107,14 +85,6 @@ const handleSave = async () => {
           </div>
             <div class="mt-2">
           <BaseText
-            v-if="subdomainError"
-            size="xs"
-            class="text-danger-500"
-          >
-            {{ subdomainError }}
-          </BaseText>
-          <BaseText
-            v-else
             size="xs"
             class="text-muted-500 dark:text-muted-400"
           >
@@ -138,7 +108,7 @@ const handleSave = async () => {
             icon="solar:global-linear"
                 size="lg"
                 class="flex-1"
-            :disabled="isLoading || isValidating"
+            :disabled="isLoading"
             @update:model-value="handleCustomDomainChange"
           />
               <div class="px-3 h-12 border border-transparent rounded-md flex items-center opacity-0 pointer-events-none">
@@ -147,14 +117,7 @@ const handleSave = async () => {
             </div>
             <div class="mt-2">
           <BaseText
-            v-if="customDomainError"
-            size="xs"
-            class="text-danger-500"
-          >
-            {{ customDomainError }}
-          </BaseText>
-          <BaseText
-            v-else-if="settings.customDomain && settings.domainVerified"
+            v-if="settings.customDomain && settings.domainVerified"
             size="xs"
             class="text-success-500"
           >
@@ -184,8 +147,8 @@ const handleSave = async () => {
     <div class="flex justify-end">
       <BaseButton
         variant="primary"
-        :loading="isSaving || isValidating"
-        :disabled="isSaving || isLoading || isValidating"
+        :loading="isSaving"
+        :disabled="isSaving || isLoading"
         @click="handleSave"
       >
         <Icon name="ph:check" class="size-4" />

@@ -24,7 +24,7 @@ interface ShortenerLinksState {
 // Map backend LinkStatus enum to frontend status string
 const mapLinkStatus = (status: number | string): ShortenerLinkStatus => {
   if (typeof status === 'string') {
-    return status as ShortenerLinkStatus
+    return status.toLowerCase() as ShortenerLinkStatus
   }
   // Backend enum: Active = 1, Expired = 2, Disabled = 3, Deleted = 4
   switch (status) {
@@ -116,14 +116,22 @@ export const useUrlShortenerLinks = () => {
       shortCode: dto.shortCode ?? '',
       shortUrl: cleanedShortUrl,
       destinationUrl: dto.destinationUrl ?? '',
+      description: dto.description ?? null,
       title: dto.title ?? null,
       linkType: linkType as any,
       linkStatus: status,
+      domainType: dto.domainType ?? 'default',
+      domainValue: dto.domainValue ?? null,
+      customAlias: dto.customAlias ?? null,
+      isOneTime: typeof dto.isOneTime === 'boolean' ? dto.isOneTime : false,
+      expiresAt: dto.expiresAt ?? null,
+      clickLimit: typeof dto.clickLimit === 'number' ? dto.clickLimit : null,
       collectionIds: collectionIds,
       collectionNames: collectionNames,
       isPublic: typeof dto.isPublic === 'boolean' ? dto.isPublic : true,
       visibilityRoles,
       visibilityMemberIds,
+      hasPassword: dto.hasPassword === true,
       currentClicks: dto.currentClicks ?? 0,
       createdAt: dto.createdAt ?? new Date().toISOString(),
       // Legacy fields for backward compatibility

@@ -167,6 +167,10 @@ export const useAuth = () => {
         state.user = response.user
         state.isAuthenticated = true
         
+        if (import.meta.client && response.access_token) {
+          sessionStorage.setItem('snaplink:access_token', response.access_token)
+        }
+        
         // Get returnTo from sessionStorage
         const returnTo = sessionStorage.getItem('oauth2_return_to') || '/dashboard'
         sessionStorage.removeItem('oauth2_return_to')

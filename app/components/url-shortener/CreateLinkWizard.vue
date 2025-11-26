@@ -44,7 +44,6 @@ const isOpen = computed({
       }
       errors.value = {}
       shortLink.value = ''
-      qrCodeUrl.value = ''
     }
   },
 })
@@ -77,7 +76,6 @@ const formData = ref({
 
 // Generated short link
 const shortLink = ref('')
-const qrCodeUrl = ref('')
 const showQRModal = ref(false)
 
 // Available domains from workspace
@@ -323,15 +321,8 @@ const createLink = async () => {
     const result = await createLinkApi(request)
 
     if (result) {
-      // Set short link and QR code from API response
+      // Set short link from API response
       shortLink.value = result.shortUrl
-      
-      // Use QR code from API if available, otherwise generate from URL
-      if (result.qrCodeBase64) {
-        qrCodeUrl.value = `data:image/png;base64,${result.qrCodeBase64}`
-      } else {
-        qrCodeUrl.value = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(shortLink.value)}`
-      }
 
       currentStep.value = 6
       
@@ -410,12 +401,6 @@ const copyLink = () => {
   })
 }
 
-const downloadQRCode = () => {
-  const link = document.createElement('a')
-  link.href = qrCodeUrl.value
-  link.download = 'qrcode.png'
-  link.click()
-}
 
 const shareToSocial = (platform: string) => {
   const text = `Check out this link: ${shortLink.value}`
@@ -998,10 +983,10 @@ const finish = () => {
                   @click="toggleCollection(collection.id)"
                 >
                   <BaseCheckbox
-                    v-model="formData.collectionIds"
-                    :value="collection.id"
+                    :model-value="formData.collectionIds.includes(collection.id)"
                     rounded="sm"
                     color="primary"
+                    @update:model-value="() => toggleCollection(collection.id)"
                     @click.stop
                   />
                   <BaseText size="sm" class="text-muted-800 dark:text-muted-100">
@@ -1177,82 +1162,11 @@ const finish = () => {
   </DialogRoot>
 
   <!-- QR Code Modal -->
-  <DialogRoot v-model:open="showQRModal">
-    <DialogPortal>
-      <DialogOverlay 
-        class="bg-muted-800/70 dark:bg-muted-900/80 fixed inset-0 z-50"
-        @click="showQRModal = false"
-      />
-      <DialogContent
-        class="fixed top-[50%] start-[50%] max-h-[90vh] w-[90vw] max-w-md translate-x-[-50%] translate-y-[-50%] rounded-lg overflow-hidden border border-muted-200 dark:border-muted-700 bg-white dark:bg-muted-800 focus:outline-none z-[100] transition-all duration-200 ease-out flex flex-col"
-        @pointer-down-outside="showQRModal = false"
-        @escape-key-down="showQRModal = false"
-      >
-        <!-- Header -->
-        <div class="flex items-center justify-between w-full p-6 border-b border-muted-200 dark:border-muted-700">
-          <div>
-            <DialogTitle
-              class="font-heading text-muted-900 text-xl font-bold leading-6 dark:text-white mb-2"
-            >
-              QR Code
-            </DialogTitle>
-            <DialogDescription class="text-sm text-muted-500 dark:text-muted-400">
-              Scan this QR code to access your link
-            </DialogDescription>
-          </div>
-          <BaseButton
-            size="sm"
-            variant="ghost"
-            @click="showQRModal = false"
-          >
-            <Icon name="lucide:x" class="size-4" />
-          </BaseButton>
-        </div>
-
-        <!-- Content -->
-        <div class="flex-1 overflow-y-auto p-6">
-          <div class="flex flex-col items-center gap-6">
-            <!-- QR Code Image -->
-            <div class="relative">
-              <div class="p-6 bg-white dark:bg-muted-900 rounded-2xl shadow-lg border-2 border-muted-200 dark:border-muted-700">
-                <img
-                  v-if="qrCodeUrl"
-                  :src="qrCodeUrl"
-                  alt="QR Code"
-                  class="size-64 rounded-lg"
-                />
-              </div>
-            </div>
-
-            <!-- Short Link Display -->
-            <div class="w-full">
-              <BaseText size="xs" weight="medium" class="text-muted-500 dark:text-muted-400 mb-2">
-                Short Link
-              </BaseText>
-              <div class="px-4 py-3 rounded-lg bg-muted-50 dark:bg-muted-800/50 border border-muted-200 dark:border-muted-700 text-muted-800 dark:text-muted-100 font-mono text-sm break-all">
-                {{ shortLink }}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Footer -->
-        <div class="flex items-center justify-end w-full p-6 border-t border-muted-200 dark:border-muted-700 gap-3">
-          <BaseButton
-            variant="outline"
-            @click="showQRModal = false"
-          >
-            Close
-          </BaseButton>
-          <BaseButton
-            variant="primary"
-            @click="downloadQRCode"
-          >
-            <Icon name="ph:download" class="size-4" />
-            <span>Download QR Code</span>
-          </BaseButton>
-        </div>
-      </DialogContent>
-    </DialogPortal>
-  </DialogRoot>
+  <QRCodeModal
+    :open="showQRModal"
+    :url="shortLink"
+    download-file-name="qrcode"
+    description="Scan this QR code to access your link"
+    @update:open="(value) => { showQRModal = value }"
+  />
 </template>

@@ -38,6 +38,7 @@ export interface ShortenerLink {
   isOneTime?: boolean | null
   expiresAt?: string | null
   clickLimit?: number | null
+  hasPassword?: boolean | null
   // Legacy fields for backward compatibility
   originalUrl?: string
   clicks?: number
@@ -213,6 +214,7 @@ export interface UpdateLinkRequest {
   expiresAt?: string | null
   clickLimit?: number | null
   isPublic?: boolean | null
+  isActive?: boolean | null
   visibilityRoles?: string[] | null
   visibilityMemberIds?: string[] | null
   isOneTime?: boolean | null

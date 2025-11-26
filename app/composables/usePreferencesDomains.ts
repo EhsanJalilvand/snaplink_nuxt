@@ -3,13 +3,19 @@ import { useApi } from './useApi'
 import { useNuiToasts } from '#imports'
 import { useSecurity } from './useSecurity'
 import { useWorkspace } from './useWorkspace'
-import type { DomainSettings, DomainValidationResult } from '~/types/preferences'
+import type { DomainSettings } from '~/types/preferences'
+
+interface WorkspaceProfile {
+  name: string
+  slug: string
+  description?: string | null
+}
 
 interface DomainState {
   settings: DomainSettings
+  workspace?: WorkspaceProfile
   isLoading: boolean
   isSaving: boolean
-  isValidating: boolean
   error: string | null
 }
 
@@ -19,9 +25,9 @@ const initialState = (): DomainState => ({
     customDomain: undefined,
     domainVerified: false,
   },
+  workspace: undefined,
   isLoading: false,
   isSaving: false,
-  isValidating: false,
   error: null,
 })
 
@@ -54,12 +60,22 @@ export const usePreferencesDomains = (workspaceId?: string | null) => {
         quiet: true,
       })
 
-      if (response?.data) {
+      const workspace = response?.data
+
+      if (workspace) {
         state.value.settings = {
-          subdomain: response.data.subdomain,
-          customDomain: response.data.customDomain,
-          domainVerified: response.data.domainVerified || false,
+          subdomain: workspace.subdomain,
+          customDomain: workspace.customDomain,
+          domainVerified: workspace.domainVerified || false,
         }
+
+        state.value.workspace = {
+          name: workspace.name ?? '',
+          slug: workspace.slug ?? '',
+          description: workspace.description ?? '',
+        }
+      } else {
+        state.value.workspace = undefined
       }
     } catch (error) {
       if (import.meta.dev) {
@@ -71,32 +87,19 @@ export const usePreferencesDomains = (workspaceId?: string | null) => {
     }
   }
 
-  const validateDomain = async (subdomain?: string, customDomain?: string): Promise<DomainValidationResult> => {
-    if (!effectiveWorkspaceId.value) {
-      throw new Error('Workspace ID is required')
+  const ensureWorkspaceProfile = async (): Promise<WorkspaceProfile | null> => {
+    if (!state.value.workspace && effectiveWorkspaceId.value) {
+      await fetchSettings()
     }
+    return state.value.workspace ?? null
+  }
 
-    state.value.isValidating = true
-    try {
-      const response = await api.post<{ data: DomainValidationResult }>(
-        `/workspaces/${effectiveWorkspaceId.value}/domains/validate`,
-        { subdomain, customDomain },
-        {
-          base: 'gateway',
-          requiresAuth: true,
-        }
-      )
-
-      return response?.data || { isValid: false, isVerified: false, errorMessage: 'Validation failed' }
-    } catch (error) {
-      return {
-        isValid: false,
-        isVerified: false,
-        errorMessage: (error as Error)?.message || 'Validation failed',
-      }
-    } finally {
-      state.value.isValidating = false
-    }
+  const slugify = (value: string) => {
+    return value
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || value
   }
 
   const saveSettings = async () => {
@@ -104,17 +107,22 @@ export const usePreferencesDomains = (workspaceId?: string | null) => {
       return
     }
 
-    // Validate before saving
-    const validation = await validateDomain(state.value.settings.subdomain, state.value.settings.customDomain)
-    if (!validation.isValid) {
+    const workspaceProfile = await ensureWorkspaceProfile()
+    if (!workspaceProfile || !workspaceProfile.name?.trim()) {
+      state.value.error = 'Workspace information is unavailable. Refresh and try again.'
       toasts.add({
-        title: 'Validation failed',
-        description: validation.errorMessage || 'Domain validation failed',
+        title: 'Unable to save',
+        description: 'Workspace profile could not be loaded. Please refresh and try again.',
         icon: 'ph:warning',
+        color: 'warning',
         progress: true,
       })
       return
     }
+
+    const normalizedName = workspaceProfile.name.trim()
+    const normalizedSlug = workspaceProfile.slug?.trim() || slugify(normalizedName)
+    const normalizedDescription = workspaceProfile.description ?? ''
 
     state.value.isSaving = true
     state.value.error = null
@@ -123,7 +131,9 @@ export const usePreferencesDomains = (workspaceId?: string | null) => {
       await api.put(
         `/workspaces/${effectiveWorkspaceId.value}`,
         {
-          name: '', // Will be ignored if empty
+          name: normalizedName,
+          slug: normalizedSlug,
+          description: normalizedDescription,
           subdomain: state.value.settings.subdomain,
           customDomain: state.value.settings.customDomain,
         },
@@ -133,7 +143,10 @@ export const usePreferencesDomains = (workspaceId?: string | null) => {
         }
       )
 
-      state.value.settings.domainVerified = validation.isVerified
+      // Domain verification now handled asynchronously by backend team
+      if (state.value.settings.customDomain) {
+        state.value.settings.domainVerified = false
+      }
       toasts.add({
         title: 'Domains updated',
         description: 'Domain settings saved successfully.',
@@ -179,13 +192,12 @@ export const usePreferencesDomains = (workspaceId?: string | null) => {
 
   return {
     settings: computed(() => state.value.settings),
+    workspace: computed(() => state.value.workspace),
     isLoading: computed(() => state.value.isLoading),
     isSaving: computed(() => state.value.isSaving),
-    isValidating: computed(() => state.value.isValidating),
     error: computed(() => state.value.error),
     fetchSettings,
     saveSettings,
-    validateDomain,
     updateSetting,
   }
 }
