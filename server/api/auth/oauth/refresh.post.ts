@@ -10,6 +10,10 @@ export default defineEventHandler(async (event) => {
     // Get refresh token from cookie
     const refreshToken = getCookie(event, 'hydra_refresh_token')
     
+    if (import.meta.dev) {
+      console.log('[auth/oauth/refresh.post.ts] Refresh token check:', refreshToken ? 'Found' : 'Not found')
+    }
+    
     if (!refreshToken) {
       throw createError({
         statusCode: 401,

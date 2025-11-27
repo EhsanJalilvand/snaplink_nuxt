@@ -238,12 +238,25 @@ export type SmartLinkConditionType =
 export interface SmartLinkRule {
   id?: string
   smartLinkId?: string
-  targetLinkId: string
+  targetUrl: string
   conditionType: SmartLinkConditionType
   condition: Record<string, any>
   priority: number
   isActive: boolean
   summary?: string
+}
+
+export interface PixelEvent {
+  pixelType: string
+  pixelId: string
+  eventType: string
+}
+
+export interface WebhookConfig {
+  url: string
+  method: string
+  headers: Record<string, string>
+  bodyTemplate?: string | null
 }
 
 export interface SmartLink {
@@ -256,7 +269,7 @@ export interface SmartLink {
   domainValue?: string | null
   customAlias?: string | null
   description?: string | null
-  defaultLinkId?: string | null
+  fallbackUrl?: string | null
   isOneTime: boolean
   expiresAt?: string | null
   clickLimit?: number | null
@@ -264,6 +277,11 @@ export interface SmartLink {
   currentClicks: number
   collectionIds?: string[] | null
   aiMetadata?: Record<string, any> | null
+  pixelEvents?: PixelEvent[] | null
+  webhookUrl?: string | null
+  webhookMethod?: string | null
+  webhookHeaders?: Record<string, string> | null
+  webhookBodyTemplate?: string | null
   createdAt: string
   updatedAt: string
   createdBy: string
@@ -271,7 +289,7 @@ export interface SmartLink {
 }
 
 export interface CreateSmartLinkRuleInput {
-  targetLinkId: string
+  targetUrl: string
   conditionType: SmartLinkConditionType
   condition: Record<string, any>
   priority: number
@@ -291,7 +309,7 @@ export interface SmartLinkAiInsightsRequest {
   goal: string
   kpi: string
   notes?: string | null
-  defaultLinkId?: string | null
+  fallbackUrl?: string | null
   rules: CreateSmartLinkRuleInput[]
 }
 
@@ -305,7 +323,7 @@ export interface CreateSmartLinkRequest {
   domainType?: string | null
   domainValue?: string | null
   customAlias?: string | null
-  defaultLinkId?: string | null
+  fallbackUrl?: string | null
   isOneTime?: boolean | null
   expiresAt?: string | null
   clickLimit?: number | null
@@ -313,4 +331,33 @@ export interface CreateSmartLinkRequest {
   collectionIds?: string[] | null
   rules: CreateSmartLinkRuleInput[]
   aiMetadata?: Record<string, any> | null
+  pixelEvents?: PixelEvent[] | null
+  webhookUrl?: string | null
+  webhookMethod?: string | null
+  webhookHeaders?: Record<string, string> | null
+  webhookBodyTemplate?: string | null
+  visibility?: 'public' | 'private'
+  visibilityRoles?: string[]
+  visibilityMemberIds?: string[]
+}
+
+export interface SmartLinkAiChatMessage {
+  id: string
+  role: 'ai' | 'user'
+  content: string
+  timestamp: Date
+}
+
+export interface SmartLinkAiChatRequest {
+  conversationId?: string | null
+  message: string
+  context?: Record<string, any>
+}
+
+export interface SmartLinkAiChatResponse {
+  conversationId: string
+  message: string
+  rules?: CreateSmartLinkRuleInput[]
+  formData?: Record<string, any>
+  showPreview?: boolean
 }

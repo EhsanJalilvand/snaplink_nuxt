@@ -160,6 +160,11 @@ const menu: MenuItem[] = [
         to: '/dashboard/url-shortener/links',
       },
       {
+        label: 'Bulk Links',
+        icon: 'solar:layers-linear',
+        to: '/dashboard/url-shortener/bulk-links',
+      },
+      {
         label: 'SmartLinks',
         icon: 'solar:shuffle-linear',
         to: '/dashboard/url-shortener/smart-links',

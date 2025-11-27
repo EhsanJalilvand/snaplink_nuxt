@@ -7,7 +7,7 @@ definePageMeta({
 
 const route = useRoute()
 const router = useRouter()
-const { handleOAuth2Callback, isLoading, error } = useAuth()
+const { handleOAuth2Callback, isLoading, error, checkAuth } = useAuth()
 
 onMounted(async () => {
   try {
@@ -68,7 +68,13 @@ onMounted(async () => {
         sessionStorage.setItem('snaplink:access_token', response.access_token)
       }
       
-      // Refresh user data to get updated state
+      // Wait a bit for cookies to be set in browser
+      await new Promise(resolve => setTimeout(resolve, 200))
+      
+      // Update auth state by calling checkAuth (this also updates useAuth state)
+      await checkAuth()
+      
+      // Also refresh user data to ensure all components are updated
       const { refreshUser } = useUserData()
       await refreshUser()
       

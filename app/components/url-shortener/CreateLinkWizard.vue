@@ -596,8 +596,8 @@ const finish = () => {
                     class="text-left rounded-lg border px-4 py-3 transition-all"
                     :class="
                       formData.visibilityRoles.includes(option.value)
-                        ? 'border-primary-600 dark:border-primary-400 bg-primary-50/70 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
-                        : 'border-muted-300 dark:border-muted-600 text-muted-700 dark:text-muted-200 hover:border-primary-400/60'
+                        ? 'border-emerald-600 dark:border-emerald-400 bg-emerald-50/70 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'
+                        : 'border-muted-300 dark:border-muted-600 text-muted-700 dark:text-muted-200 hover:border-emerald-400/60'
                     "
                     @click="toggleVisibilityRole(option.value)"
                   >
@@ -608,7 +608,7 @@ const finish = () => {
                       <Icon
                         v-if="formData.visibilityRoles.includes(option.value)"
                         name="ph:check-circle"
-                        class="size-4 text-primary-500"
+                        class="size-4 text-emerald-500"
                       />
                     </div>
                     <BaseParagraph size="xs" class="opacity-75 mt-1">

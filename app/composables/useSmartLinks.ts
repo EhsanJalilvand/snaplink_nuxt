@@ -14,6 +14,10 @@ interface SmartLinksState {
   items: SmartLink[]
   isLoading: boolean
   error: string | null
+  search: string
+  perPage: number
+  page: number
+  selectedIds: string[]
   lastFetched?: number
 }
 
@@ -21,6 +25,10 @@ const initialState = (): SmartLinksState => ({
   items: [],
   isLoading: false,
   error: null,
+  search: '',
+  perPage: 10,
+  page: 1,
+  selectedIds: [],
   lastFetched: undefined,
 })
 
@@ -84,7 +92,7 @@ const mapRuleDto = (dto: any): SmartLinkRule => {
   const rule: SmartLinkRule = {
     id: dto.id ?? undefined,
     smartLinkId: dto.smartLinkId ?? undefined,
-    targetLinkId: dto.targetLinkId ?? '',
+    targetUrl: dto.targetUrl ?? '',
     conditionType: dto.conditionType ?? 'GeoCountry',
     condition,
     priority: dto.priority ?? 100,
@@ -111,7 +119,7 @@ const mapSmartLinkDto = (dto: any): SmartLink => {
     domainValue: dto.domainValue ?? null,
     customAlias: dto.customAlias ?? null,
     description: dto.description ?? null,
-    defaultLinkId: dto.defaultLinkId ?? null,
+    fallbackUrl: dto.fallbackUrl ?? null,
     isOneTime: Boolean(dto.isOneTime),
     expiresAt: dto.expiresAt ?? null,
     clickLimit: dto.clickLimit ?? null,
@@ -119,6 +127,20 @@ const mapSmartLinkDto = (dto: any): SmartLink => {
     currentClicks: dto.currentClicks ?? 0,
     collectionIds: dto.collectionIds ? dto.collectionIds.map((id: any) => String(id)) : null,
     aiMetadata,
+    pixelEvents: (() => {
+      const parsed = parseJsonField(dto.pixelEvents)
+      if (parsed && typeof parsed === 'object' && 'pixels' in parsed && Array.isArray(parsed.pixels)) {
+        return parsed.pixels as any[]
+      }
+      if (Array.isArray(parsed)) {
+        return parsed as any[]
+      }
+      return null
+    })(),
+    webhookUrl: dto.webhookUrl ?? null,
+    webhookMethod: dto.webhookMethod ?? null,
+    webhookHeaders: parseJsonField(dto.webhookHeaders) as any,
+    webhookBodyTemplate: dto.webhookBodyTemplate ?? null,
     createdAt: dto.createdAt ?? new Date().toISOString(),
     updatedAt: dto.updatedAt ?? dto.createdAt ?? new Date().toISOString(),
     createdBy: dto.createdBy ?? 'system',
@@ -230,6 +252,11 @@ export const useSmartLinks = () => {
           ...rule,
           condition: rule.condition ?? {},
         })) ?? [],
+        pixelEvents: request.pixelEvents?.length ? request.pixelEvents : null,
+        webhookUrl: request.webhookUrl || null,
+        webhookMethod: request.webhookUrl ? (request.webhookMethod || 'POST') : null,
+        webhookHeaders: request.webhookUrl && request.webhookHeaders && Object.keys(request.webhookHeaders).length > 0 ? request.webhookHeaders : null,
+        webhookBodyTemplate: request.webhookUrl && request.webhookBodyTemplate ? request.webhookBodyTemplate : null,
       }
 
       const response = await api.post<ApiResponse<{ id: string; shortUrl: string }>>(
@@ -291,6 +318,30 @@ export const useSmartLinks = () => {
       : (response as SmartLinkAiInsightsResponse)
   }
 
+  const chatWithAi = async (payload: {
+    conversationId?: string | null
+    message: string
+    context?: any
+  }) => {
+    if (!workspaceId.value) {
+      throw new Error('Workspace not selected')
+    }
+
+    const response = await api.post<ApiResponse<any>>(
+      `/api/workspaces/${workspaceId.value}/url-shortener/smart-links/ai/chat`,
+      payload,
+      {
+        base: 'gateway',
+        retry: 0,
+        timeout: 30000,
+      },
+    )
+
+    return 'data' in response && response.data
+      ? response.data
+      : response
+  }
+
   const clearSmartLinks = () => {
     state.value.items = []
     state.value.lastFetched = undefined
@@ -307,15 +358,107 @@ export const useSmartLinks = () => {
     }
   })
 
+  const setSearch = (value: string) => {
+    state.value.search = value
+    state.value.page = 1 // Reset to first page on search
+  }
+
+  const setPerPage = (value: number) => {
+    state.value.perPage = value
+    state.value.page = 1 // Reset to first page on perPage change
+  }
+
+  const setPage = (value: number) => {
+    state.value.page = value
+  }
+
+  const toggleSelect = (id: string) => {
+    const index = state.value.selectedIds.indexOf(id)
+    if (index > -1) {
+      state.value.selectedIds.splice(index, 1)
+    } else {
+      state.value.selectedIds.push(id)
+    }
+  }
+
+  const selectMany = (ids: string[], selected: boolean) => {
+    if (selected) {
+      ids.forEach(id => {
+        if (!state.value.selectedIds.includes(id)) {
+          state.value.selectedIds.push(id)
+        }
+      })
+    } else {
+      state.value.selectedIds = state.value.selectedIds.filter(id => !ids.includes(id))
+    }
+  }
+
+  const clearSelection = () => {
+    state.value.selectedIds = []
+  }
+
+  const filteredItems = computed(() => {
+    if (!state.value.search.trim()) {
+      return state.value.items
+    }
+    const searchLower = state.value.search.toLowerCase()
+    return state.value.items.filter(link =>
+      link.name?.toLowerCase().includes(searchLower) ||
+      link.shortUrl?.toLowerCase().includes(searchLower) ||
+      link.shortCode?.toLowerCase().includes(searchLower) ||
+      link.description?.toLowerCase().includes(searchLower) ||
+      link.customAlias?.toLowerCase().includes(searchLower)
+    )
+  })
+
+  const totalPages = computed(() => {
+    return Math.ceil(filteredItems.value.length / state.value.perPage)
+  })
+
+  const paginatedItems = computed(() => {
+    const start = (state.value.page - 1) * state.value.perPage
+    const end = start + state.value.perPage
+    return filteredItems.value.slice(start, end)
+  })
+
+  const allVisibleSelected = computed(() => {
+    if (paginatedItems.value.length === 0) return false
+    return paginatedItems.value.every(link => state.value.selectedIds.includes(link.id))
+  })
+
+  const selectionIndeterminate = computed(() => {
+    const selectedCount = paginatedItems.value.filter(link => state.value.selectedIds.includes(link.id)).length
+    return selectedCount > 0 && selectedCount < paginatedItems.value.length
+  })
+
+  const hasSelection = computed(() => state.value.selectedIds.length > 0)
+
   return {
     items: computed(() => state.value.items),
     isLoading: computed(() => state.value.isLoading),
     error: computed(() => state.value.error),
+    search: computed(() => state.value.search),
+    perPage: computed(() => state.value.perPage),
+    page: computed(() => state.value.page),
+    selectedIds: computed(() => state.value.selectedIds),
+    filteredItems,
+    paginatedItems,
+    totalPages,
+    allVisibleSelected,
+    selectionIndeterminate,
+    hasSelection,
     fetchSmartLinks,
     createSmartLink,
     getSmartLink,
     generateSmartLinkAiInsights,
+    chatWithAi,
     clearSmartLinks,
+    setSearch,
+    setPerPage,
+    setPage,
+    toggleSelect,
+    selectMany,
+    clearSelection,
   }
 }
 

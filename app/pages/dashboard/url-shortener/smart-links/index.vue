@@ -1,170 +1,260 @@
 <script setup lang="ts">
+import { computed, watch, onMounted } from '#imports'
 import SmartLinkWizard from '~/components/url-shortener/SmartLinkWizard.vue'
+import SmartLinkAiWizard from '~/components/url-shortener/SmartLinkAiWizard.vue'
 import SmartLinksTable from '~/components/url-shortener/SmartLinksTable.vue'
+import ShortenerLinksToolbar from '~/components/url-shortener/ShortenerLinksToolbar.vue'
+import ShortenerLinksPagination from '~/components/url-shortener/ShortenerLinksPagination.vue'
 import { useSmartLinks } from '~/composables/useSmartLinks'
-import { useUrlShortenerLinks } from '~/composables/useUrlShortenerLinks'
-import { useUrlShortenerCollections } from '~/composables/useUrlShortenerCollections'
 import { useWorkspaceContext } from '~/composables/useWorkspaceContext'
+import type { SmartLink } from '~/types/url-shortener'
 
 definePageMeta({
   title: 'SmartLinks',
   layout: 'dashboard',
 })
 
+const route = useRoute()
+const router = useRouter()
 const { workspaceId } = useWorkspaceContext()
+
 const {
-  items: smartLinks,
+  items,
   isLoading,
   error,
+  search,
+  perPage,
+  page,
+  selectedIds,
+  filteredItems,
+  paginatedItems,
+  totalPages,
+  allVisibleSelected,
+  selectionIndeterminate,
+  hasSelection,
   fetchSmartLinks,
+  setSearch,
+  setPerPage,
+  setPage,
+  clearSelection,
+  toggleSelect,
+  selectMany,
 } = useSmartLinks()
 
-const {
-  items: linkItems,
-  fetchLinks,
-  copyLink,
-} = useUrlShortenerLinks()
-
-const {
-  items: collectionItems,
-  fetchCollections,
-} = useUrlShortenerCollections()
-
-const toasts = useNuiToasts()
-const showWizard = ref(false)
-
-const collectionLookup = computed(() => {
-  return collectionItems.value.reduce<Record<string, string>>((acc, collection) => {
-    acc[collection.id] = collection.name
-    return acc
-  }, {})
-})
-
-const linkLookup = computed(() => {
-  return linkItems.value.reduce<Record<string, string>>((acc, link) => {
-    acc[link.id] = link.shortUrl || link.destinationUrl
-    return acc
-  }, {})
-})
-
-const hydrate = async () => {
-  if (!workspaceId.value) {
-    return
+// Fetch smart links when workspaceId is available
+watch(workspaceId, (newWorkspaceId) => {
+  if (newWorkspaceId) {
+    fetchSmartLinks({ force: true })
   }
-  await Promise.all([
-    fetchSmartLinks({ force: true }),
-    fetchLinks({ force: true }),
-    fetchCollections({ force: true }),
-  ])
-}
-
-watch(workspaceId, () => {
-  hydrate()
 }, { immediate: true })
 
-const handleCreated = async () => {
-  showWizard.value = false
+// Also fetch on mount in case workspaceId is already available
+onMounted(() => {
+  if (workspaceId.value) {
+    fetchSmartLinks({ force: true })
+  }
+})
+
+watch(
+  () => route.query.page,
+  (value) => {
+    const parsed = Number.parseInt((value as string) ?? '1', 10)
+    if (!Number.isNaN(parsed) && parsed > 0 && parsed !== page.value) {
+      setPage(parsed)
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => route.query.perPage,
+  (value) => {
+    const parsed = Number.parseInt((value as string) ?? `${perPage.value}`, 10)
+    if (!Number.isNaN(parsed) && parsed > 0 && parsed !== perPage.value) {
+      setPerPage(parsed)
+    }
+  },
+  { immediate: true },
+)
+
+watch([page, perPage], ([currentPage, currentPerPage]) => {
+  router.replace({
+    query: {
+      ...route.query,
+      page: currentPage > 1 ? currentPage : undefined,
+      perPage: currentPerPage !== 10 ? currentPerPage : undefined,
+    },
+  })
+})
+
+const showSmartLinkWizard = ref(false)
+const showSmartLinkAiWizard = ref(false)
+
+const handleCreateSmartLink = () => {
+  showSmartLinkWizard.value = true
+}
+
+const handleCreateSmartLinkWithAI = () => {
+  showSmartLinkAiWizard.value = true
+}
+
+const handleSmartLinkCreated = async () => {
+  // Refresh smart links list from API
   await fetchSmartLinks({ force: true })
 }
 
-const handleCopy = async (shortUrl: string) => {
-  if (!shortUrl) {
-    return
+const handleCopyLink = (link: SmartLink) => {
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(link.shortUrl)
+    const toaster = useNuiToasts()
+    toaster.add({
+      title: 'Copied',
+      description: 'SmartLink copied to clipboard.',
+      color: 'success',
+      icon: 'ph:copy-simple',
+    })
   }
+}
 
-  copyLink(shortUrl)
-  toasts.add({
-    title: 'Copied',
-    description: 'SmartLink copied to clipboard.',
-    color: 'success',
-    icon: 'ph:copy-simple',
+const handleViewReport = () => {
+  const ids = hasSelection.value ? selectedIds.value : paginatedItems.value.slice(0, 3).map((item) => item.id)
+  router.push({
+    path: '/dashboard/url-shortener/reports',
+    query: {
+      type: 'smart-links',
+      ids: ids.join(','),
+    },
   })
 }
 
-const openWizard = () => {
-  showWizard.value = true
-}
+const periodSearch = computed({
+  get: () => search.value,
+  set: (value: string) => setSearch(value),
+})
 
-const refreshSmartLinks = () => {
-  fetchSmartLinks({ force: true })
+const perPageModel = computed({
+  get: () => perPage.value,
+  set: (value: number) => setPerPage(value),
+})
+
+const currentPage = computed({
+  get: () => page.value,
+  set: (value: number) => setPage(value),
+})
+
+const handleToggleAll = (selected: boolean) => {
+  selectMany(paginatedItems.value.map((item) => item.id), selected)
 }
 </script>
 
 <template>
   <div class="space-y-6 py-6">
-    <BaseCard class="p-6">
-      <div class="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-        <div class="flex-1 space-y-2">
-          <BaseTag color="primary" rounded="full" size="sm">
-            AI routing
-          </BaseTag>
-          <BaseHeading as="h2" size="xl" weight="bold">
-            Launch SmartLinks for every campaign
-          </BaseHeading>
-          <BaseParagraph size="sm" class="text-muted-500 dark:text-muted-400 max-w-2xl">
-            Route visitors to tailored destinations based on geo, device, schedule, or any custom signal. AI watches performance and suggests optimizations automatically.
-          </BaseParagraph>
-          <div class="flex flex-wrap gap-4 text-sm text-muted-500 dark:text-muted-400">
-            <div class="flex items-center gap-2">
-              <Icon name="solar:map-point-wave-linear" class="size-4 text-primary-500" />
-              Geo/device targeting
-            </div>
-            <div class="flex items-center gap-2">
-              <Icon name="solar:bot-linear" class="size-4 text-primary-500" />
-              AI suggestions
-            </div>
-            <div class="flex items-center gap-2">
-              <Icon name="solar:shield-check-linear" class="size-4 text-primary-500" />
-              Password & limits
-            </div>
-          </div>
-        </div>
-        <div class="flex items-center gap-3">
-          <BaseButton
-            variant="outline"
-            color="primary"
-            @click="refreshSmartLinks"
-          >
-            <Icon name="solar:refresh-linear" class="size-4" />
-            Refresh
-          </BaseButton>
-          <BaseButton
-            color="primary"
-            size="lg"
-            @click="openWizard"
-          >
-            <Icon name="ph:plus" class="size-5" />
-            Create SmartLink
-          </BaseButton>
-        </div>
+    <div class="flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <BaseHeading
+          as="h1"
+          size="2xl"
+          weight="bold"
+          class="text-muted-800 dark:text-muted-100"
+        >
+          SmartLinks
+        </BaseHeading>
       </div>
-    </BaseCard>
+      <div class="flex items-center gap-2">
+        <BaseButton variant="outline" :disabled="selectedIds.length === 0" @click="handleViewReport">
+          <Icon name="ph:chart-line" class="size-4" />
+          <span>Generate Bulk Report</span>
+        </BaseButton>
+        <BaseButton variant="outline" @click="handleCreateSmartLink">
+          <Icon name="ph:plus" class="size-4" />
+          <span>Create SmartLink</span>
+        </BaseButton>
+        <BaseButton variant="primary" @click="handleCreateSmartLinkWithAI">
+          <Icon name="ph:sparkle" class="size-4" />
+          <span>Create SmartLink With AI</span>
+        </BaseButton>
+      </div>
+    </div>
+
+    <BaseAlert
+      v-if="selectedIds.length > 0"
+      color="info"
+      variant="pastel"
+      class="rounded-2xl"
+    >
+      <div class="flex items-center justify-between">
+        <span class="text-sm text-muted-600 dark:text-muted-300">
+          {{ selectedIds.length }} SmartLink{{ selectedIds.length > 1 ? 's' : '' }} selected
+        </span>
+        <BaseButton
+          size="xs"
+          variant="ghost"
+          @click="clearSelection"
+        >
+          Clear
+        </BaseButton>
+      </div>
+    </BaseAlert>
 
     <BaseAlert
       v-if="error"
       color="warning"
       variant="pastel"
-      class="rounded-xl"
+      class="rounded-2xl"
     >
       <template #title>
         Using cached SmartLinks
       </template>
-      {{ error }}
+      <p class="text-sm text-muted-600 dark:text-muted-300">
+        {{ error }}
+      </p>
     </BaseAlert>
 
+    <ShortenerLinksToolbar
+      v-model:search="periodSearch"
+      v-model:per-page="perPageModel"
+    />
+
+    <div v-if="filteredItems.length === 0 && !isLoading" class="py-12">
+      <BasePlaceholderPage
+        title="No SmartLinks found"
+        subtitle="Create your first SmartLink to start dynamic routing."
+      >
+        <template #image>
+          <Icon name="solar:shuffle-linear" class="size-16 text-muted-400" />
+        </template>
+        <BaseButton variant="primary" @click="handleCreateSmartLink">
+          <Icon name="ph:plus" class="size-4" />
+          <span>Create Your First SmartLink</span>
+        </BaseButton>
+      </BasePlaceholderPage>
+    </div>
+
     <SmartLinksTable
-      :smart-links="smartLinks"
+      v-else
+      :smart-links="paginatedItems"
+      :selected-ids="selectedIds"
       :is-loading="isLoading"
-      :collection-lookup="collectionLookup"
-      :link-lookup="linkLookup"
-      @copy="handleCopy"
+      :all-selected="allVisibleSelected"
+      :indeterminate="selectionIndeterminate"
+      @toggle-all="handleToggleAll"
+      @toggle-select="toggleSelect"
+      @copy="handleCopyLink"
+    />
+
+    <ShortenerLinksPagination
+      v-if="filteredItems.length > 0"
+      v-model:page="currentPage"
+      :total-pages="totalPages"
     />
 
     <SmartLinkWizard
-      v-model:open="showWizard"
-      @created="handleCreated"
+      v-model:open="showSmartLinkWizard"
+      @created="handleSmartLinkCreated"
+    />
+    <SmartLinkAiWizard
+      v-model:open="showSmartLinkAiWizard"
+      @created="handleSmartLinkCreated"
     />
   </div>
 </template>
-
-

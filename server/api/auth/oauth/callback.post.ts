@@ -112,6 +112,14 @@ export default defineEventHandler(async (event) => {
         path: '/',
         maxAge: 60 * 60 * 24 * 30, // 30 days
       })
+      
+      if (import.meta.dev) {
+        console.log('[auth/oauth/callback.post.ts] Refresh token stored successfully')
+      }
+    } else {
+      if (import.meta.dev) {
+        console.warn('[auth/oauth/callback.post.ts] No refresh token received from Hydra')
+      }
     }
 
     // Clear OAuth2 cookies
