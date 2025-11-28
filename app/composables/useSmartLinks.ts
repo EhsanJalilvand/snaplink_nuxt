@@ -145,6 +145,9 @@ const mapSmartLinkDto = (dto: any): SmartLink => {
     updatedAt: dto.updatedAt ?? dto.createdAt ?? new Date().toISOString(),
     createdBy: dto.createdBy ?? 'system',
     rules: Array.isArray(dto.rules) ? dto.rules.map(mapRuleDto) : [],
+    isPublic: dto.isPublic !== false,
+    visibilityRoles: dto.visibilityRoles && Array.isArray(dto.visibilityRoles) ? dto.visibilityRoles.map((r: any) => String(r)) : null,
+    visibilityMemberIds: dto.visibilityMemberIds && Array.isArray(dto.visibilityMemberIds) ? dto.visibilityMemberIds.map((id: any) => String(id)) : null,
   }
 }
 
@@ -342,6 +345,119 @@ export const useSmartLinks = () => {
       : response
   }
 
+  const updateSmartLink = async (smartLinkId: string, request: {
+    name?: string
+    description?: string
+    fallbackUrl?: string
+    isOneTime?: boolean
+    expiresAt?: string | null
+    clickLimit?: number | null
+    password?: string | null
+    domainType?: string
+    domainValue?: string | null
+    customAlias?: string | null
+    collectionIds?: string[]
+    isPublic?: boolean
+    visibilityRoles?: string[]
+    visibilityMemberIds?: string[]
+  }): Promise<SmartLink | null> => {
+    if (!workspaceId.value) {
+      toasts.add({
+        title: 'No workspace selected',
+        description: 'Please choose a workspace first.',
+        icon: 'ph:warning',
+        color: 'warning',
+      })
+      return null
+    }
+
+    try {
+      const response = await api.put<ApiResponse<SmartLink>>(
+        `/api/workspaces/${workspaceId.value}/url-shortener/smart-links/${smartLinkId}`,
+        request,
+        {
+          base: 'gateway',
+          retry: 0,
+          timeout: 10000,
+        },
+      )
+
+      // Handle ApiResponse format
+      const dto = response?.data ?? response
+      const result = dto ? mapSmartLinkDto(dto) : null
+
+      if (result) {
+        // Update local state
+        const index = state.value.items.findIndex(link => link.id === smartLinkId)
+        if (index > -1) {
+          state.value.items[index] = result
+        }
+
+        toasts.add({
+          title: 'SmartLink updated',
+          description: 'SmartLink has been updated successfully.',
+          icon: 'ph:check',
+          color: 'success',
+          progress: true,
+        })
+
+        return result
+      }
+
+      throw new Error('Invalid response from server')
+    }
+    catch (error: any) {
+      const message = error?.data?.errors?.[0]?.message ?? error?.message ?? 'Failed to update SmartLink'
+      toasts.add({
+        title: 'Error',
+        description: message,
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return null
+    }
+  }
+
+  const deleteSmartLink = async (smartLinkId: string): Promise<boolean> => {
+    if (!workspaceId.value) {
+      toasts.add({
+        title: 'No workspace selected',
+        description: 'Please choose a workspace first.',
+        icon: 'ph:warning',
+        color: 'warning',
+      })
+      return false
+    }
+
+    try {
+      await api.delete(
+        `/api/workspaces/${workspaceId.value}/url-shortener/smart-links/${smartLinkId}`,
+        {
+          base: 'gateway',
+          retry: 0,
+          timeout: 10000,
+        },
+      )
+
+      // Remove from local state
+      state.value.items = state.value.items.filter(link => link.id !== smartLinkId)
+
+      return true
+    }
+    catch (error: any) {
+      const message = error?.data?.errors?.[0]?.message ?? error?.message ?? 'Failed to delete SmartLink'
+      toasts.add({
+        title: 'Error',
+        description: message,
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return false
+    }
+  }
+
   const clearSmartLinks = () => {
     state.value.items = []
     state.value.lastFetched = undefined
@@ -450,6 +566,8 @@ export const useSmartLinks = () => {
     fetchSmartLinks,
     createSmartLink,
     getSmartLink,
+    updateSmartLink,
+    deleteSmartLink,
     generateSmartLinkAiInsights,
     chatWithAi,
     clearSmartLinks,

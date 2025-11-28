@@ -286,6 +286,9 @@ export interface SmartLink {
   updatedAt: string
   createdBy: string
   rules: SmartLinkRule[]
+  isPublic?: boolean
+  visibilityRoles?: string[] | null
+  visibilityMemberIds?: string[] | null
 }
 
 export interface CreateSmartLinkRuleInput {

@@ -116,6 +116,33 @@ const handleCopyLink = (link: SmartLink) => {
   }
 }
 
+const handleDeleteSmartLink = async (id: string) => {
+  const toaster = useNuiToasts()
+  const { deleteSmartLink } = useSmartLinks()
+  
+  try {
+    const success = await deleteSmartLink(id)
+    if (success) {
+      toaster.add({
+        title: 'Deleted',
+        description: 'SmartLink has been deleted successfully.',
+        color: 'success',
+        icon: 'ph:check',
+        progress: true,
+      })
+      await fetchSmartLinks({ force: true })
+    }
+  } catch (error: any) {
+    toaster.add({
+      title: 'Error',
+      description: error.message || 'Failed to delete SmartLink',
+      color: 'danger',
+      icon: 'ph:warning',
+      progress: true,
+    })
+  }
+}
+
 const handleViewReport = () => {
   const ids = hasSelection.value ? selectedIds.value : paginatedItems.value.slice(0, 3).map((item) => item.id)
   router.push({
@@ -240,6 +267,7 @@ const handleToggleAll = (selected: boolean) => {
       @toggle-all="handleToggleAll"
       @toggle-select="toggleSelect"
       @copy="handleCopyLink"
+      @delete="handleDeleteSmartLink"
     />
 
     <ShortenerLinksPagination

@@ -27,9 +27,7 @@ export const useWorkspaceDomains = () => {
     error.value = null
 
     try {
-      const response = await api.get<{
-        data: { domains: WorkspaceDomain[] }
-      }>(`/api/workspaces/${wsId}/domains/active`, {
+      const response = await api.get<any>(`/api/workspaces/${wsId}/domains/active`, {
         base: 'gateway',
         requiresAuth: true,
         retry: 0,
@@ -37,7 +35,22 @@ export const useWorkspaceDomains = () => {
         quiet: true,
       })
 
-      domains.value = response?.data?.domains || []
+      // Handle different response structures
+      if (response?.data?.domains && Array.isArray(response.data.domains)) {
+        domains.value = response.data.domains
+      } else if (response?.data && Array.isArray(response.data)) {
+        domains.value = response.data
+      } else if (response?.domains && Array.isArray(response.domains)) {
+        domains.value = response.domains
+      } else if (Array.isArray(response)) {
+        domains.value = response
+      } else {
+        domains.value = []
+      }
+      
+      if (import.meta.dev) {
+        console.log('[useWorkspaceDomains] Fetched domains:', domains.value)
+      }
     }
     catch (err: any) {
       console.error('Failed to fetch workspace domains:', err)

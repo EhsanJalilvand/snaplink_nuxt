@@ -20,6 +20,7 @@ import { useWorkspaceDomains } from '~/composables/useWorkspaceDomains'
 import { useWorkspaceContext } from '~/composables/useWorkspaceContext'
 import { useWorkspaceMembers } from '~/composables/useWorkspaceMembers'
 import { useQRCode } from '~/composables/useQRCode'
+import { onClickOutside } from '@vueuse/core'
 
 type SmartLinkRuleForm = {
   uid: string
@@ -59,6 +60,8 @@ const { members: workspaceMembers, fetchMembers: fetchWorkspaceMembers, isLoadin
 const { getQRCodeUrl } = useQRCode()
 
 const expandedRules = ref<Set<string>>(new Set())
+const openCityDropdowns = ref<Set<string>>(new Set())
+const openRegionDropdowns = ref<Set<string>>(new Set())
 
 const toggleRuleExpanded = (ruleUid: string) => {
   if (expandedRules.value.has(ruleUid)) {
@@ -127,19 +130,43 @@ const formData = ref({
   webhookBodyTemplate: '',
 })
 
-const geoCountries = ref<Array<{ code: string; name: string; cities: string[] }>>([
-  { code: 'US', name: 'United States', cities: ['New York', 'Los Angeles', 'San Francisco', 'Chicago', 'Miami'] },
-  { code: 'CA', name: 'Canada', cities: ['Toronto', 'Vancouver', 'Montreal', 'Calgary'] },
-  { code: 'DE', name: 'Germany', cities: ['Berlin', 'Munich', 'Hamburg'] },
-  { code: 'IR', name: 'Iran', cities: ['Tehran', 'Isfahan', 'Shiraz', 'Tabriz'] },
-  { code: 'AE', name: 'United Arab Emirates', cities: ['Dubai', 'Abu Dhabi', 'Sharjah'] },
+const geoCountries = ref<Array<{ code: string; name: string; cities: Array<{ id?: string; name: string; region?: string | null }> }>>([
+  { code: 'US', name: 'United States', cities: [
+    { name: 'New York', region: 'New York' },
+    { name: 'Los Angeles', region: 'California' },
+    { name: 'San Francisco', region: 'California' },
+    { name: 'Chicago', region: 'Illinois' },
+    { name: 'Miami', region: 'Florida' }
+  ]},
+  { code: 'CA', name: 'Canada', cities: [
+    { name: 'Toronto', region: 'Ontario' },
+    { name: 'Vancouver', region: 'British Columbia' },
+    { name: 'Montreal', region: 'Quebec' },
+    { name: 'Calgary', region: 'Alberta' }
+  ]},
+  { code: 'DE', name: 'Germany', cities: [
+    { name: 'Berlin', region: 'Berlin' },
+    { name: 'Munich', region: 'Bavaria' },
+    { name: 'Hamburg', region: 'Hamburg' }
+  ]},
+  { code: 'IR', name: 'Iran', cities: [
+    { name: 'Tehran', region: 'Tehran' },
+    { name: 'Isfahan', region: 'Isfahan' },
+    { name: 'Shiraz', region: 'Fars' },
+    { name: 'Tabriz', region: 'East Azerbaijan' }
+  ]},
+  { code: 'AE', name: 'United Arab Emirates', cities: [
+    { name: 'Dubai', region: 'Dubai' },
+    { name: 'Abu Dhabi', region: 'Abu Dhabi' },
+    { name: 'Sharjah', region: 'Sharjah' }
+  ]},
 ])
 const isGeoLoading = ref(false)
 
 const conditionTypeOptions: { label: string; value: SmartLinkConditionType; description: string }[] = [
   { label: 'Country', value: 'GeoCountry', description: 'Route visitors based on country' },
-  { label: 'Region', value: 'GeoRegion', description: 'Target specific regions or states' },
   { label: 'City', value: 'GeoCity', description: 'Hyperlocal routing' },
+  { label: 'Region', value: 'GeoRegion', description: 'Target specific regions or states' },
   { label: 'Device Type', value: 'DeviceType', description: 'Desktop, mobile or tablet' },
   { label: 'Operating System', value: 'OperatingSystem', description: 'iOS, Android, Windows, …' },
   { label: 'Browser', value: 'Browser', description: 'Chrome, Safari, Firefox, …' },
@@ -186,7 +213,13 @@ const createConditionTemplate = (type: SmartLinkConditionType): Record<string, a
     case 'GeoCountry':
       return { countries: [] as string[], search: '' }
     case 'GeoRegion':
-      return { regions: [] as string[], notes: '' }
+      return { 
+        country: null as string | null,
+        cities: [] as string[],
+        regions: [] as string[],
+        citySearch: '',
+        regionSearch: ''
+      }
     case 'GeoCity':
       return { country: null as string | null, cities: [] as string[], citySearch: '' }
     case 'DeviceType':
@@ -382,7 +415,11 @@ const fetchGeoData = async () => {
       geoCountries.value = (response.data ?? response).map((country: any) => ({
         code: country.code ?? country.iso2 ?? country.id,
         name: country.name ?? country.title,
-        cities: country.cities ?? [],
+        cities: (country.cities ?? []).map((city: any) => ({
+          id: city.id,
+          name: typeof city === 'string' ? city : (city.name ?? city),
+          region: typeof city === 'string' ? null : (city.region ?? null),
+        })),
       }))
     }
   }
@@ -442,10 +479,37 @@ const filteredCities = (countryCode: string | null, search: string) => {
   }
 
   const query = search.toLowerCase()
-  return country.cities.filter(city => city.toLowerCase().includes(query))
+  return country.cities.filter(city => 
+    city.name.toLowerCase().includes(query) || 
+    (city.region && city.region.toLowerCase().includes(query))
+  )
 }
 
-const toggleArrayValue = (array: string[], value: string) => {
+const getAvailableRegions = (countryCode: string | null, selectedCityNames: string[]) => {
+  if (!countryCode || !selectedCityNames.length) {
+    return []
+  }
+
+  const country = geoCountries.value.find(country => country.code === countryCode)
+  if (!country) {
+    return []
+  }
+
+  const selectedCities = country.cities.filter(city => selectedCityNames.includes(city.name))
+  const regions = selectedCities
+    .map(city => city.region)
+    .filter((region): region is string => region != null && region.trim() !== '')
+  
+  // Return unique regions
+  return [...new Set(regions)].sort()
+}
+
+const toggleArrayValue = (array: string[] | undefined, value: string): string[] => {
+  // Initialize array if it's undefined or null
+  if (!array) {
+    array = []
+  }
+  
   const index = array.indexOf(value)
   if (index > -1) {
     array.splice(index, 1)
@@ -453,6 +517,8 @@ const toggleArrayValue = (array: string[], value: string) => {
   else {
     array.push(value)
   }
+  
+  return array
 }
 
 const removeRule = (uid: string) => {
@@ -474,16 +540,68 @@ const addRule = () => {
 }
 
 const duplicateRule = (rule: SmartLinkRuleForm) => {
-  const clone: SmartLinkRuleForm = {
-    uid: createUid(),
-    targetUrl: rule.targetUrl,
-    conditionType: rule.conditionType,
-    condition: cloneCondition(rule.condition),
-    priority: (rules.value.length + 1) * 10,
-    isActive: rule.isActive,
+  try {
+    // Deep clone the condition using structuredClone or JSON
+    const clonedCondition = cloneCondition(rule.condition)
+    
+    // Ensure all arrays are properly cloned (not just references)
+    // This is important because cloneCondition might not deep clone nested arrays
+    if (clonedCondition.countries && Array.isArray(clonedCondition.countries)) {
+      clonedCondition.countries = [...clonedCondition.countries]
+    }
+    if (clonedCondition.cities && Array.isArray(clonedCondition.cities)) {
+      clonedCondition.cities = [...clonedCondition.cities]
+    }
+    if (clonedCondition.regions && Array.isArray(clonedCondition.regions)) {
+      clonedCondition.regions = [...clonedCondition.regions]
+    }
+    if (clonedCondition.devices && Array.isArray(clonedCondition.devices)) {
+      clonedCondition.devices = [...clonedCondition.devices]
+    }
+    if (clonedCondition.systems && Array.isArray(clonedCondition.systems)) {
+      clonedCondition.systems = [...clonedCondition.systems]
+    }
+    if (clonedCondition.browsers && Array.isArray(clonedCondition.browsers)) {
+      clonedCondition.browsers = [...clonedCondition.browsers]
+    }
+    if (clonedCondition.days && Array.isArray(clonedCondition.days)) {
+      clonedCondition.days = [...clonedCondition.days]
+    }
+    
+    // Create new rule with cloned condition
+    const clone: SmartLinkRuleForm = {
+      uid: createUid(),
+      targetUrl: rule.targetUrl || '',
+      conditionType: rule.conditionType,
+      condition: clonedCondition,
+      priority: (rules.value.length + 1) * 10,
+      isActive: rule.isActive,
+    }
+    
+    // Add to rules array
+    rules.value.push(clone)
+    updatePriorities()
+    
+    // Expand the new rule so user can see it
+    expandedRules.value.add(clone.uid)
+    
+    toaster.add({
+      title: 'Rule duplicated',
+      description: 'The rule has been duplicated successfully',
+      icon: 'ph:check',
+      color: 'success',
+      progress: true,
+    })
+  } catch (error: any) {
+    console.error('Error duplicating rule:', error)
+    toaster.add({
+      title: 'Error',
+      description: error?.message || 'Failed to duplicate rule',
+      icon: 'ph:warning',
+      color: 'danger',
+      progress: true,
+    })
   }
-  rules.value.push(clone)
-  updatePriorities()
 }
 
 const moveRuleUp = (index: number) => {
@@ -614,22 +732,45 @@ const validateRuleCondition = (rule: SmartLinkRuleForm) => {
       }
       return true
     }
+    case 'GeoRegion': {
+      const country = rule.condition.country
+      const cities = rule.condition.cities ?? []
+      const regions = rule.condition.regions ?? []
+      if (!country || !cities.length) {
+        errors.value.rules = 'Select country and cities for region-based rules'
+        return false
+      }
+      // Check if there are available regions from selected cities
+      const availableRegions = getAvailableRegions(country, cities)
+      if (availableRegions.length === 0) {
+        errors.value.rules = 'No regions available from selected cities. Please select cities that have regions.'
+        return false
+      }
+      if (!regions.length) {
+        errors.value.rules = 'Select at least one region from the available regions'
+        return false
+      }
+      return true
+    }
     case 'DeviceType': {
-      if (!rule.condition.devices?.length) {
+      const devices = rule.condition.devices ?? []
+      if (!devices.length) {
         errors.value.rules = 'Select at least one device type'
         return false
       }
       return true
     }
     case 'OperatingSystem': {
-      if (!rule.condition.systems?.length) {
+      const systems = rule.condition.systems ?? []
+      if (!systems.length) {
         errors.value.rules = 'Select operating systems to target'
         return false
       }
       return true
     }
     case 'Browser': {
-      if (!rule.condition.browsers?.length) {
+      const browsers = rule.condition.browsers ?? []
+      if (!browsers.length) {
         errors.value.rules = 'Select browsers to target'
         return false
       }
@@ -775,16 +916,70 @@ const submitSmartLink = async () => {
       currentStep.value = totalSteps
       emit('created', result)
     }
-  }
-  finally {
+  } catch (error: any) {
+    console.error('[SmartLinkWizard] Create error:', error)
+    toaster.add({
+      title: 'Error',
+      description: error?.message || 'Failed to create SmartLink',
+      icon: 'ph:warning',
+      color: 'danger',
+      progress: true,
+    })
+  } finally {
     isSubmitting.value = false
   }
 }
 
 const cleanRuleCondition = (rule: SmartLinkRuleForm) => {
   const clone = { ...rule.condition }
+  
+  // Remove UI-only fields
   delete clone.search
   delete clone.citySearch
+  
+  // Ensure arrays are not undefined (convert to empty array if needed)
+  if (clone.countries && !Array.isArray(clone.countries)) {
+    clone.countries = []
+  }
+  if (clone.cities && !Array.isArray(clone.cities)) {
+    clone.cities = []
+  }
+  if (clone.regions && !Array.isArray(clone.regions)) {
+    clone.regions = []
+  }
+  if (clone.devices && !Array.isArray(clone.devices)) {
+    clone.devices = []
+  }
+  if (clone.systems && !Array.isArray(clone.systems)) {
+    clone.systems = []
+  }
+  if (clone.browsers && !Array.isArray(clone.browsers)) {
+    clone.browsers = []
+  }
+  if (clone.days && !Array.isArray(clone.days)) {
+    clone.days = []
+  }
+  
+  // For GeoRegion, keep only regions (not cities or country) in the final condition
+  if (rule.conditionType === 'GeoRegion') {
+    const { country, cities, citySearch, ...rest } = clone
+    return { 
+      regions: Array.isArray(rest.regions) ? rest.regions : []
+    }
+  }
+  
+  // For GeoCity, keep only cities (not country or citySearch)
+  if (rule.conditionType === 'GeoCity') {
+    const { country, citySearch, ...rest } = clone
+    return rest
+  }
+  
+  // For GeoCountry, keep only countries (not search)
+  if (rule.conditionType === 'GeoCountry') {
+    const { search, ...rest } = clone
+    return rest
+  }
+  
   return clone
 }
 
@@ -826,6 +1021,30 @@ const handleClose = () => {
   isOpen.value = false
 }
 
+const copyLink = async () => {
+  if (!createdResult.value?.shortUrl) return
+  
+  try {
+    await navigator.clipboard.writeText(createdResult.value.shortUrl)
+    toaster.add({
+      title: 'Copied!',
+      description: 'SmartLink copied to clipboard',
+      icon: 'ph:check',
+      color: 'success',
+      progress: true,
+    })
+  } catch (error) {
+    console.error('Failed to copy link:', error)
+    toaster.add({
+      title: 'Error',
+      description: 'Failed to copy link to clipboard',
+      icon: 'ph:warning',
+      color: 'danger',
+      progress: true,
+    })
+  }
+}
+
 const downloadQRCode = () => {
   if (!createdResult.value?.shortUrl) return
   
@@ -835,6 +1054,64 @@ const downloadQRCode = () => {
   linkElement.download = `smartlink-qrcode-${createdResult.value.id}.png`
   linkElement.click()
 }
+
+const shareToSocial = (platform: string) => {
+  if (!createdResult.value?.shortUrl) return
+  const text = `Check out this SmartLink: ${createdResult.value.shortUrl}`
+  let url = ''
+  
+  switch (platform) {
+    case 'twitter':
+      url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`
+      break
+    case 'facebook':
+      url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(createdResult.value.shortUrl)}`
+      break
+    case 'linkedin':
+      url = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(createdResult.value.shortUrl)}`
+      break
+    case 'whatsapp':
+      url = `https://wa.me/?text=${encodeURIComponent(text)}`
+      break
+    case 'telegram':
+      url = `https://t.me/share/url?url=${encodeURIComponent(createdResult.value.shortUrl)}&text=${encodeURIComponent(text)}`
+      break
+  }
+  
+  if (url) {
+    window.open(url, '_blank', 'width=600,height=400')
+  }
+}
+
+const getDomainDisplay = (domainType: string, domainValue: string | null) => {
+  if (domainType === 'default') return 'snap.ly'
+  if (domainType === 'subdomain') return domainValue || 'subdomain'
+  if (domainType === 'custom') return domainValue || 'custom domain'
+  return domainValue || 'unknown'
+}
+
+const activeRulesCount = computed(() => {
+  return rules.value.filter(rule => rule.isActive && rule.targetUrl.trim()).length
+})
+
+const selectedCollectionsCount = computed(() => {
+  return formData.value.collectionIds.length
+})
+
+// Close dropdowns when clicking outside
+onMounted(() => {
+  const handleClickOutside = (event: MouseEvent) => {
+    const target = event.target as HTMLElement
+    if (!target.closest('.relative')) {
+      openCityDropdowns.value.clear()
+      openRegionDropdowns.value.clear()
+    }
+  }
+  document.addEventListener('click', handleClickOutside)
+  onUnmounted(() => {
+    document.removeEventListener('click', handleClickOutside)
+  })
+})
 </script>
 
 <template>
@@ -1091,8 +1368,8 @@ const downloadQRCode = () => {
                           class="flex items-center gap-3 text-sm cursor-pointer hover:bg-muted-50 dark:hover:bg-muted-700/50 p-2 rounded transition-colors"
                         >
                           <BaseCheckbox
-                            :model-value="rule.condition.countries?.includes(country.code)"
-                            @update:model-value="toggleArrayValue(rule.condition.countries, country.code)"
+                            :model-value="(rule.condition.countries || []).includes(country.code)"
+                            @update:model-value="() => { if (!rule.condition.countries) rule.condition.countries = []; toggleArrayValue(rule.condition.countries, country.code) }"
                             @click.stop
                           />
                           <span class="flex-1">{{ country.name }}</span>
@@ -1102,38 +1379,167 @@ const downloadQRCode = () => {
                     </div>
 
                     <div v-else-if="rule.conditionType === 'GeoCity'" class="space-y-4">
-                      <TairoFormGroup label="Country">
-                        <TairoSelect v-model="rule.condition.country" rounded="lg" size="sm">
-                          <BaseSelectItem
-                            v-for="country in geoCountries"
-                            :key="country.code"
-                            :value="country.code"
-                          >
-                            {{ country.name }}
-                          </BaseSelectItem>
-                        </TairoSelect>
-                      </TairoFormGroup>
-                      <TairoFormGroup label="Filter city">
-                        <TairoInput
-                          v-model="rule.condition.citySearch"
-                          placeholder="Search city"
-                          rounded="lg"
-                          size="sm"
-                        />
-                      </TairoFormGroup>
-                      <div class="max-h-48 overflow-y-auto border border-muted-200 dark:border-muted-700 rounded-lg p-3 space-y-2 bg-white dark:bg-muted-800">
-                        <label
-                          v-for="city in filteredCities(rule.condition.country, rule.condition.citySearch)"
-                          :key="city"
-                          class="flex items-center gap-3 text-sm cursor-pointer hover:bg-muted-50 dark:hover:bg-muted-700/50 p-2 rounded transition-colors"
-                        >
-                          <BaseCheckbox
-                            :model-value="rule.condition.cities?.includes(city)"
-                            @update:model-value="toggleArrayValue(rule.condition.cities, city)"
-                            @click.stop
-                          />
-                          <span>{{ city }}</span>
-                        </label>
+                      <div class="grid grid-cols-2 gap-4">
+                        <TairoFormGroup label="Country">
+                          <TairoSelect v-model="rule.condition.country" rounded="lg" size="sm">
+                            <BaseSelectItem
+                              v-for="country in geoCountries"
+                              :key="country.code"
+                              :value="country.code"
+                            >
+                              {{ country.name }}
+                            </BaseSelectItem>
+                          </TairoSelect>
+                        </TairoFormGroup>
+                        <TairoFormGroup label="City">
+                          <div class="relative">
+                            <div class="pointer-events-none">
+                              <TairoSelect
+                                :model-value="(rule.condition.cities || []).length > 0 ? `${(rule.condition.cities || []).length} selected` : null"
+                                rounded="lg"
+                                size="sm"
+                                :disabled="!rule.condition.country"
+                              >
+                                <BaseSelectItem :value="null">
+                                  {{ (rule.condition.cities || []).length > 0 ? `${(rule.condition.cities || []).length} selected` : 'Select cities...' }}
+                                </BaseSelectItem>
+                              </TairoSelect>
+                            </div>
+                            <div
+                              class="absolute inset-0 cursor-pointer"
+                              @click.stop="openCityDropdowns.has(rule.uid) ? openCityDropdowns.delete(rule.uid) : openCityDropdowns.add(rule.uid)"
+                            ></div>
+                            <div
+                              v-if="openCityDropdowns.has(rule.uid)"
+                              class="absolute z-50 w-full mt-1 bg-white dark:bg-muted-800 border border-muted-200 dark:border-muted-700 rounded-lg shadow-lg"
+                              @click.stop
+                            >
+                              <div class="max-h-48 overflow-y-auto p-2 space-y-1">
+                                <label
+                                  v-for="city in filteredCities(rule.condition.country, '')"
+                                  :key="city.name"
+                                  class="flex items-center gap-3 text-sm cursor-pointer hover:bg-muted-50 dark:hover:bg-muted-700/50 p-2 rounded transition-colors"
+                                >
+                                  <BaseCheckbox
+                                    :model-value="(rule.condition.cities || []).includes(city.name)"
+                                    @update:model-value="() => { if (!rule.condition.cities) rule.condition.cities = []; toggleArrayValue(rule.condition.cities, city.name) }"
+                                    @click.stop
+                                  />
+                                  <span class="flex-1">{{ city.name }}</span>
+                                  <span v-if="city.region" class="text-xs text-muted-400">{{ city.region }}</span>
+                                </label>
+                                <div v-if="!filteredCities(rule.condition.country, '').length" class="text-xs text-muted-400 text-center py-4">
+                                  {{ !rule.condition.country ? 'Select country first' : 'No cities available' }}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </TairoFormGroup>
+                      </div>
+                    </div>
+
+                    <div v-else-if="rule.conditionType === 'GeoRegion'" class="space-y-4">
+                      <div class="grid grid-cols-3 gap-4">
+                        <TairoFormGroup label="Country">
+                          <TairoSelect v-model="rule.condition.country" rounded="lg" size="sm">
+                            <BaseSelectItem
+                              v-for="country in geoCountries"
+                              :key="country.code"
+                              :value="country.code"
+                            >
+                              {{ country.name }}
+                            </BaseSelectItem>
+                          </TairoSelect>
+                        </TairoFormGroup>
+                        <TairoFormGroup label="City">
+                          <div class="relative">
+                            <div class="pointer-events-none">
+                              <TairoSelect
+                                :model-value="(rule.condition.cities || []).length > 0 ? `${(rule.condition.cities || []).length} selected` : null"
+                                rounded="lg"
+                                size="sm"
+                                :disabled="!rule.condition.country"
+                              >
+                                <BaseSelectItem :value="null">
+                                  {{ (rule.condition.cities || []).length > 0 ? `${(rule.condition.cities || []).length} selected` : 'Select cities...' }}
+                                </BaseSelectItem>
+                              </TairoSelect>
+                            </div>
+                            <div
+                              class="absolute inset-0 cursor-pointer"
+                              @click.stop="openCityDropdowns.has(rule.uid) ? openCityDropdowns.delete(rule.uid) : openCityDropdowns.add(rule.uid)"
+                            ></div>
+                            <div
+                              v-if="openCityDropdowns.has(rule.uid)"
+                              class="absolute z-50 w-full mt-1 bg-white dark:bg-muted-800 border border-muted-200 dark:border-muted-700 rounded-lg shadow-lg"
+                              @click.stop
+                            >
+                              <div class="max-h-48 overflow-y-auto p-2 space-y-1">
+                                <label
+                                  v-for="city in filteredCities(rule.condition.country, '')"
+                                  :key="city.name"
+                                  class="flex items-center gap-3 text-sm cursor-pointer hover:bg-muted-50 dark:hover:bg-muted-700/50 p-2 rounded transition-colors"
+                                >
+                                  <BaseCheckbox
+                                    :model-value="(rule.condition.cities || []).includes(city.name)"
+                                    @update:model-value="() => { if (!rule.condition.cities) rule.condition.cities = []; toggleArrayValue(rule.condition.cities, city.name) }"
+                                    @click.stop
+                                  />
+                                  <span class="flex-1">{{ city.name }}</span>
+                                  <span v-if="city.region" class="text-xs text-muted-400">{{ city.region }}</span>
+                                </label>
+                                <div v-if="!filteredCities(rule.condition.country, '').length" class="text-xs text-muted-400 text-center py-4">
+                                  {{ !rule.condition.country ? 'Select country first' : 'No cities available' }}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </TairoFormGroup>
+                        <TairoFormGroup label="Region">
+                          <div class="relative">
+                            <div class="pointer-events-none">
+                              <TairoSelect
+                                :model-value="(rule.condition.regions || []).length > 0 ? `${(rule.condition.regions || []).length} selected` : null"
+                                rounded="lg"
+                                size="sm"
+                                :disabled="!rule.condition.country || !(rule.condition.cities || []).length"
+                              >
+                                <BaseSelectItem :value="null">
+                                  {{ (rule.condition.regions || []).length > 0 ? `${(rule.condition.regions || []).length} selected` : 'Select regions...' }}
+                                </BaseSelectItem>
+                              </TairoSelect>
+                            </div>
+                            <div
+                              class="absolute inset-0 cursor-pointer"
+                              @click.stop="openRegionDropdowns.has(rule.uid) ? openRegionDropdowns.delete(rule.uid) : openRegionDropdowns.add(rule.uid)"
+                            ></div>
+                            <div
+                              v-if="openRegionDropdowns.has(rule.uid)"
+                              class="absolute z-50 w-full mt-1 bg-white dark:bg-muted-800 border border-muted-200 dark:border-muted-700 rounded-lg shadow-lg"
+                              @click.stop
+                            >
+                              <div class="max-h-48 overflow-y-auto p-2 space-y-1">
+                                <template v-if="getAvailableRegions(rule.condition.country, rule.condition.cities || []).length > 0">
+                                  <label
+                                    v-for="region in getAvailableRegions(rule.condition.country, rule.condition.cities || [])"
+                                    :key="region"
+                                    class="flex items-center gap-3 text-sm cursor-pointer hover:bg-muted-50 dark:hover:bg-muted-700/50 p-2 rounded transition-colors"
+                                  >
+                                    <BaseCheckbox
+                                      :model-value="(rule.condition.regions || []).includes(region)"
+                                      @update:model-value="() => { if (!rule.condition.regions) rule.condition.regions = []; toggleArrayValue(rule.condition.regions, region) }"
+                                      @click.stop
+                                    />
+                                    <span class="flex-1">{{ region }}</span>
+                                  </label>
+                                </template>
+                                <div v-else class="text-xs text-muted-400 text-center py-4">
+                                  Select cities first to see available regions
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </TairoFormGroup>
                       </div>
                     </div>
 
@@ -1149,52 +1555,67 @@ const downloadQRCode = () => {
                           </button>
                         </BaseTooltip>
                       </div>
-                      <div class="flex flex-wrap gap-2">
-                        <BaseButton
+                      <div class="grid grid-cols-3 gap-3">
+                        <BaseCard
                           v-for="device in deviceOptions"
                           :key="device.value"
-                          size="sm"
-                          :variant="rule.condition.devices?.includes(device.value) ? 'solid' : 'outline'"
-                          color="primary"
-                          class="rounded-full"
-                          @click="toggleArrayValue(rule.condition.devices, device.value)"
+                          class="p-4 cursor-pointer transition-all hover:border-primary-500 dark:hover:border-primary-400"
+                          :class="{ 'border-primary-500 dark:border-primary-400 bg-primary-50 dark:bg-primary-900/20': (rule.condition.devices || []).includes(device.value) }"
+                          @click="() => { if (!rule.condition.devices) rule.condition.devices = []; toggleArrayValue(rule.condition.devices, device.value) }"
                         >
-                          {{ device.label }}
-                        </BaseButton>
+                          <div class="flex items-center gap-3">
+                            <BaseCheckbox
+                              :model-value="(rule.condition.devices || []).includes(device.value)"
+                              @update:model-value="() => { if (!rule.condition.devices) rule.condition.devices = []; toggleArrayValue(rule.condition.devices, device.value) }"
+                              @click.stop
+                            />
+                            <span class="text-sm font-medium">{{ device.label }}</span>
+                          </div>
+                        </BaseCard>
                       </div>
                     </div>
 
                     <div v-else-if="rule.conditionType === 'OperatingSystem'" class="space-y-3">
                       <BaseParagraph size="xs" class="text-muted-500 font-medium">Select operating systems:</BaseParagraph>
-                      <div class="flex flex-wrap gap-2">
-                        <BaseButton
+                      <div class="grid grid-cols-3 gap-3">
+                        <BaseCard
                           v-for="system in osOptions"
                           :key="system"
-                          size="sm"
-                          :variant="rule.condition.systems?.includes(system) ? 'solid' : 'outline'"
-                          color="primary"
-                          class="rounded-full"
-                          @click="toggleArrayValue(rule.condition.systems, system)"
+                          class="p-4 cursor-pointer transition-all hover:border-primary-500 dark:hover:border-primary-400"
+                          :class="{ 'border-primary-500 dark:border-primary-400 bg-primary-50 dark:bg-primary-900/20': (rule.condition.systems || []).includes(system) }"
+                          @click="() => { if (!rule.condition.systems) rule.condition.systems = []; toggleArrayValue(rule.condition.systems, system) }"
                         >
-                          {{ system }}
-                        </BaseButton>
+                          <div class="flex items-center gap-3">
+                            <BaseCheckbox
+                              :model-value="(rule.condition.systems || []).includes(system)"
+                              @update:model-value="() => { if (!rule.condition.systems) rule.condition.systems = []; toggleArrayValue(rule.condition.systems, system) }"
+                              @click.stop
+                            />
+                            <span class="text-sm font-medium">{{ system }}</span>
+                          </div>
+                        </BaseCard>
                       </div>
                     </div>
 
                     <div v-else-if="rule.conditionType === 'Browser'" class="space-y-3">
                       <BaseParagraph size="xs" class="text-muted-500 font-medium">Select browsers:</BaseParagraph>
-                      <div class="flex flex-wrap gap-2">
-                        <BaseButton
+                      <div class="grid grid-cols-3 gap-3">
+                        <BaseCard
                           v-for="browser in browserOptions"
                           :key="browser"
-                          size="sm"
-                          :variant="rule.condition.browsers?.includes(browser) ? 'solid' : 'outline'"
-                          color="primary"
-                          class="rounded-full"
-                          @click="toggleArrayValue(rule.condition.browsers, browser)"
+                          class="p-4 cursor-pointer transition-all hover:border-primary-500 dark:hover:border-primary-400"
+                          :class="{ 'border-primary-500 dark:border-primary-400 bg-primary-50 dark:bg-primary-900/20': (rule.condition.browsers || []).includes(browser) }"
+                          @click="() => { if (!rule.condition.browsers) rule.condition.browsers = []; toggleArrayValue(rule.condition.browsers, browser) }"
                         >
-                          {{ browser }}
-                        </BaseButton>
+                          <div class="flex items-center gap-3">
+                            <BaseCheckbox
+                              :model-value="(rule.condition.browsers || []).includes(browser)"
+                              @update:model-value="() => { if (!rule.condition.browsers) rule.condition.browsers = []; toggleArrayValue(rule.condition.browsers, browser) }"
+                              @click.stop
+                            />
+                            <span class="text-sm font-medium">{{ browser }}</span>
+                          </div>
+                        </BaseCard>
                       </div>
                     </div>
 
@@ -1257,10 +1678,10 @@ const downloadQRCode = () => {
                             v-for="day in dayOptions"
                             :key="day"
                             size="xs"
-                            :variant="rule.condition.days?.includes(day) ? 'solid' : 'outline'"
+                            :variant="(rule.condition.days || []).includes(day) ? 'solid' : 'outline'"
                             color="primary"
                             class="rounded-full"
-                            @click="toggleArrayValue(rule.condition.days, day)"
+                            @click="() => { if (!rule.condition.days) rule.condition.days = []; toggleArrayValue(rule.condition.days, day) }"
                           >
                             {{ day }}
                           </BaseButton>
@@ -2075,7 +2496,7 @@ const downloadQRCode = () => {
                     size="sm"
                     variant="outline"
                     class="flex-1"
-                    @click="navigator.clipboard.writeText(createdResult.shortUrl)"
+                    @click="copyLink"
                   >
                     <Icon name="ph:share-network" class="size-4" />
                     Copy Link
@@ -2100,21 +2521,129 @@ const downloadQRCode = () => {
                 <div class="space-y-3">
                   <div class="flex items-center justify-between">
                     <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
+                      Name
+                    </BaseText>
+                    <BaseText size="xs" weight="medium" class="text-muted-800 dark:text-muted-100">
+                      {{ formData.name || 'Untitled SmartLink' }}
+                    </BaseText>
+                  </div>
+                  <div class="flex items-center justify-between">
+                    <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
                       Short URL
                     </BaseText>
-                    <BaseText size="xs" weight="medium" class="text-muted-800 dark:text-muted-100 font-mono">
+                    <BaseText size="xs" weight="medium" class="text-muted-800 dark:text-muted-100 font-mono truncate max-w-[200px]" :title="createdResult.shortUrl">
                       {{ createdResult.shortUrl }}
                     </BaseText>
                   </div>
                   <div class="flex items-center justify-between">
                     <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
-                      SmartLink ID
+                      Fallback URL
                     </BaseText>
-                    <BaseText size="xs" weight="medium" class="text-muted-800 dark:text-muted-100 font-mono">
-                      {{ createdResult.id }}
+                    <BaseText size="xs" weight="medium" class="text-muted-800 dark:text-muted-100 truncate max-w-[200px]" :title="formData.fallbackUrl">
+                      {{ formData.fallbackUrl || 'Not set' }}
                     </BaseText>
                   </div>
+                  <div class="flex items-center justify-between">
+                    <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
+                      Domain
+                    </BaseText>
+                    <BaseText size="xs" weight="medium" class="text-muted-800 dark:text-muted-100">
+                      {{ getDomainDisplay(formData.domainType, formData.domainValue) }}
+                    </BaseText>
+                  </div>
+                  <div class="flex items-center justify-between">
+                    <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
+                      Rules
+                    </BaseText>
+                    <BaseText size="xs" weight="medium" class="text-muted-800 dark:text-muted-100">
+                      {{ activeRulesCount }} active
+                    </BaseText>
+                  </div>
+                  <div class="flex items-center justify-between">
+                    <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
+                      Collections
+                    </BaseText>
+                    <BaseText size="xs" weight="medium" class="text-muted-800 dark:text-muted-100">
+                      {{ selectedCollectionsCount || 'None' }}
+                    </BaseText>
+                  </div>
+                  <div class="flex items-center justify-between">
+                    <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
+                      Visibility
+                    </BaseText>
+                    <BaseTag size="xs" :variant="formData.visibility === 'public' ? 'solid' : 'pastel'" :color="formData.visibility === 'public' ? 'success' : 'primary'">
+                      {{ formData.visibility === 'public' ? 'Public' : 'Private' }}
+                    </BaseTag>
+                  </div>
+                  <div v-if="formData.isOneTime || formData.expiresAt" class="flex items-center justify-between">
+                    <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
+                      Expiration
+                    </BaseText>
+                    <BaseText size="xs" weight="medium" class="text-muted-800 dark:text-muted-100">
+                      {{ formData.isOneTime ? 'One-time use' : (formData.expiresAt ? new Date(formData.expiresAt).toLocaleString() : 'Never') }}
+                    </BaseText>
+                  </div>
+                  <div v-if="formData.hasPassword" class="flex items-center justify-between">
+                    <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
+                      Password
+                    </BaseText>
+                    <BaseTag size="xs" variant="solid" color="warning">
+                      Protected
+                    </BaseTag>
+                  </div>
                 </div>
+              </div>
+            </div>
+
+            <!-- Share Buttons Section -->
+            <div v-if="createdResult?.shortUrl" class="rounded-2xl border border-muted-200 bg-white/70 p-5 dark:border-muted-700/60 dark:bg-muted-900/40">
+              <div class="flex items-center gap-3 mb-4">
+                <Icon name="solar:share-linear" class="size-5 text-primary-600 dark:text-primary-400" />
+                <BaseText size="sm" weight="medium" class="text-muted-600 dark:text-muted-300">
+                  Share on Social Media
+                </BaseText>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <BaseButton
+                  variant="outline"
+                  size="sm"
+                  @click="shareToSocial('whatsapp')"
+                >
+                  <Icon name="logos:whatsapp-icon" class="size-4" />
+                  <span>WhatsApp</span>
+                </BaseButton>
+                <BaseButton
+                  variant="outline"
+                  size="sm"
+                  @click="shareToSocial('telegram')"
+                >
+                  <Icon name="logos:telegram" class="size-4" />
+                  <span>Telegram</span>
+                </BaseButton>
+                <BaseButton
+                  variant="outline"
+                  size="sm"
+                  @click="shareToSocial('twitter')"
+                >
+                  <Icon name="logos:twitter" class="size-4" />
+                  <span>Twitter</span>
+                </BaseButton>
+                <BaseButton
+                  variant="outline"
+                  size="sm"
+                  @click="shareToSocial('facebook')"
+                >
+                  <Icon name="logos:facebook" class="size-4" />
+                  <span>Facebook</span>
+                </BaseButton>
+                <BaseButton
+                  variant="outline"
+                  size="sm"
+                  @click="shareToSocial('linkedin')"
+                >
+                  <Icon name="logos:linkedin-icon" class="size-4" />
+                  <span>LinkedIn</span>
+                </BaseButton>
               </div>
             </div>
           </div>
@@ -2160,5 +2689,6 @@ const downloadQRCode = () => {
     </DialogPortal>
   </DialogRoot>
 </template>
+
 
 

@@ -21,11 +21,20 @@ const emit = defineEmits<{
   toggleSelect: [id: string]
   toggleAll: [selected: boolean]
   copy: [link: SmartLink]
+  delete: [id: string]
 }>()
+
+const toaster = useNuiToasts()
 
 const handleToggleSelect = (id: string) => emit('toggleSelect', id)
 const handleToggleAll = (checked: boolean) => emit('toggleAll', checked)
 const handleCopy = (link: SmartLink) => emit('copy', link)
+
+const handleDelete = (id: string) => {
+  if (confirm('Are you sure you want to delete this SmartLink? This action cannot be undone.')) {
+    emit('delete', id)
+  }
+}
 
 // QR Code Modal
 const showQRModal = ref(false)
@@ -249,9 +258,19 @@ function getRulesSummary(link: SmartLink) {
                         variant="ghost"
                         icon
                         class="rounded-full"
-                        @click="() => navigateTo(`/dashboard/url-shortener/smart-links/${link.id}`)"
+                        @click="() => navigateTo(`/dashboard/url-shortener/smart-links/${link.id}/edit`)"
                       >
                         <Icon name="ph:pencil" class="size-4" />
+                      </BaseButton>
+                      <BaseButton
+                        size="sm"
+                        variant="ghost"
+                        icon
+                        color="danger"
+                        class="rounded-full"
+                        @click="() => handleDelete(link.id)"
+                      >
+                        <Icon name="ph:trash" class="size-4" />
                       </BaseButton>
                     </div>
                   </div>
