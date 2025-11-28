@@ -340,10 +340,18 @@ export const useAuth = () => {
         sessionStorage.setItem('snaplink:access_token', response.access_token)
         return true
       }
+      
+      // success: false is expected for Kratos-only sessions (no refresh token)
+      // Don't call logout() - this is normal behavior
+      if (import.meta.dev) {
+        console.log('[useAuth] Refresh token not available - this is expected for Kratos-only sessions')
+      }
       return false
     } catch (error: any) {
-      // If refresh fails, user needs to re-authenticate
+      // Only call logout() for actual errors, not for missing refresh tokens
+      // Missing refresh tokens now return success: false, not 401 error
       if (error.statusCode === 401 || error.status === 401) {
+        // This is an actual error, not just missing refresh token
         await logout()
       }
       return false

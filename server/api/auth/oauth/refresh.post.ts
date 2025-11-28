@@ -10,16 +10,18 @@ export default defineEventHandler(async (event) => {
     // Get refresh token from cookie
     const refreshToken = getCookie(event, 'hydra_refresh_token')
     
-    if (import.meta.dev) {
-      console.log('[auth/oauth/refresh.post.ts] Refresh token check:', refreshToken ? 'Found' : 'Not found')
-    }
-    
     if (!refreshToken) {
-      throw createError({
-        statusCode: 401,
-        statusMessage: 'No refresh token found',
-        message: 'No refresh token available',
-      })
+      // No refresh token available - this is expected for Kratos-only sessions
+      // Return success: false instead of throwing 401 error
+      // This allows Kratos sessions to work without OAuth2 tokens
+      if (import.meta.dev) {
+        console.log('[auth/oauth/refresh.post.ts] Refresh token check: Not found')
+        console.log('[auth/oauth/refresh.post.ts] No refresh token found - this is expected for Kratos-only sessions')
+      }
+      return {
+        success: false,
+        message: 'No refresh token available - this is expected for Kratos-only sessions',
+      }
     }
 
     // Exchange refresh token for new access token
