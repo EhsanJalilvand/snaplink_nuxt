@@ -86,7 +86,8 @@ export const useUrlShortenerLinks = () => {
   const mapLinkListDto = (dto: any): ShortenerLink => {
     const status = mapLinkStatus(dto.linkStatus ?? dto.status ?? 1)
     const linkType = mapLinkType(dto.linkType ?? 'urlShortener')
-    const cleanedShortUrl = (dto.shortUrl ?? '').replace(/^https?:\/\//i, '').trim()
+    // Keep the shortUrl as-is from backend (it already has the correct protocol)
+    const cleanedShortUrl = (dto.shortUrl ?? '').trim()
 
     // Handle collectionIds - convert Guid[] to string[] if needed
     let collectionIds: string[] | null = null
@@ -467,9 +468,10 @@ export const useUrlShortenerLinks = () => {
   }
 
   const copyLink = async (shortUrl: string) => {
-    const normalized = security.validateUrl(`https://${shortUrl}`, {
-      allowedProtocols: ['http', 'https'],
-    })
+    // shortUrl already has protocol from backend, use it as-is
+    const normalized = shortUrl.startsWith('http://') || shortUrl.startsWith('https://')
+      ? security.validateUrl(shortUrl, { allowedProtocols: ['http', 'https'] })
+      : security.validateUrl(`http://${shortUrl}`, { allowedProtocols: ['http', 'https'] })
 
     if (!normalized) {
       toasts.add({

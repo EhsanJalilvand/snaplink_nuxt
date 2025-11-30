@@ -1,34 +1,78 @@
 <script setup lang="ts">
-defineProps<{
+import { useUrlShortenerAnalytics } from '~/composables/useUrlShortenerAnalytics'
+
+const props = defineProps<{
   selectedIds: string[]
   reportType: 'links' | 'collections'
   period: string
 }>()
 
-// Overview stats - TODO: Replace with API call
+const { fetchOverview } = useUrlShortenerAnalytics()
+
+const isLoading = ref(false)
+const error = ref<string | null>(null)
+
 const stats = ref({
-  totalClicks: 125847,
-  uniqueClicks: 98432,
-  avgClicksPerDay: 4194,
-  clickThroughRate: 68.5,
-  topLink: {
-    shortUrl: 'snap.ly/abc123',
-    clicks: 12500,
-  },
+  totalClicks: 0,
+  uniqueClicks: 0,
+  avgClicksPerDay: 0,
+  clickThroughRate: 0,
 })
 
-// Clicks over time (last 30 days)
-const clicksOverTime = ref([
-  { date: '2024-01-01', clicks: 1250, unique: 980 },
-  { date: '2024-01-02', clicks: 1420, unique: 1120 },
-  { date: '2024-01-03', clicks: 1380, unique: 1080 },
-  { date: '2024-01-04', clicks: 1560, unique: 1220 },
-  { date: '2024-01-05', clicks: 1680, unique: 1320 },
-  { date: '2024-01-06', clicks: 1890, unique: 1480 },
-  { date: '2024-01-07', clicks: 2100, unique: 1650 },
-])
+const clicksOverTime = ref<Array<{ date: string; clicks: number; unique: number }>>([])
+const topLinks = ref<Array<{ shortUrl: string; clicks: number }>>([])
 
-const maxClicks = computed(() => Math.max(...clicksOverTime.value.map(d => d.clicks)))
+const maxClicks = computed(() => {
+  if (clicksOverTime.value.length === 0) return 1
+  return Math.max(...clicksOverTime.value.map(d => d.clicks), 1)
+})
+
+const loadData = async () => {
+  isLoading.value = true
+  error.value = null
+
+  try {
+    const data = await fetchOverview(props.selectedIds, props.period)
+    
+    if (data) {
+      stats.value = {
+        totalClicks: data.stats.totalClicks,
+        uniqueClicks: data.stats.uniqueClicks,
+        avgClicksPerDay: data.stats.avgClicksPerDay,
+        clickThroughRate: data.stats.clickThroughRate,
+      }
+      
+      clicksOverTime.value = data.clicksOverTime.map(item => ({
+        date: item.date,
+        clicks: item.clicks,
+        unique: item.uniqueClicks,
+      }))
+      
+      topLinks.value = data.topLinks.map(link => ({
+        shortUrl: link.shortUrl,
+        clicks: link.clicks,
+      }))
+    } else {
+      // Fallback to empty data
+      stats.value = {
+        totalClicks: 0,
+        uniqueClicks: 0,
+        avgClicksPerDay: 0,
+        clickThroughRate: 0,
+      }
+      clicksOverTime.value = []
+      topLinks.value = []
+    }
+  } catch (err: any) {
+    error.value = err.message || 'Failed to load analytics data'
+  } finally {
+    isLoading.value = false
+  }
+}
+
+watch([() => props.selectedIds, () => props.period], () => {
+  loadData()
+}, { immediate: true })
 </script>
 
 <template>
@@ -52,8 +96,8 @@ const maxClicks = computed(() => Math.max(...clicksOverTime.value.map(d => d.cli
         >
           {{ stats.totalClicks.toLocaleString() }}
         </BaseHeading>
-        <BaseText size="xs" class="text-success-600 dark:text-success-400 mt-2">
-          +12.5% from last period
+        <BaseText v-if="stats.totalClicks > 0" size="xs" class="text-muted-500 dark:text-muted-400 mt-2">
+          {{ Math.round((stats.uniqueClicks / stats.totalClicks) * 100) }}% unique rate
         </BaseText>
       </BaseCard>
 
@@ -96,8 +140,8 @@ const maxClicks = computed(() => Math.max(...clicksOverTime.value.map(d => d.cli
         >
           {{ stats.avgClicksPerDay.toLocaleString() }}
         </BaseHeading>
-        <BaseText size="xs" class="text-success-600 dark:text-success-400 mt-2">
-          +8.2% from last period
+        <BaseText size="xs" class="text-muted-500 dark:text-muted-400 mt-2">
+          Average per day
         </BaseText>
       </BaseCard>
 
@@ -118,8 +162,8 @@ const maxClicks = computed(() => Math.max(...clicksOverTime.value.map(d => d.cli
         >
           {{ stats.clickThroughRate }}%
         </BaseHeading>
-        <BaseText size="xs" class="text-success-600 dark:text-success-400 mt-2">
-          +2.5% from last period
+        <BaseText size="xs" class="text-muted-500 dark:text-muted-400 mt-2">
+          Unique clicks rate
         </BaseText>
       </BaseCard>
     </div>
@@ -172,43 +216,61 @@ const maxClicks = computed(() => Math.max(...clicksOverTime.value.map(d => d.cli
       </div>
     </BaseCard>
 
-    <!-- Top Link -->
-    <BaseCard class="p-6">
+    <!-- Top Links -->
+    <BaseCard v-if="topLinks.length > 0" class="p-6">
       <BaseHeading
         as="h3"
         size="md"
         weight="semibold"
         class="text-muted-800 dark:text-muted-100 mb-6"
       >
-        Top Performing Link
+        Top Performing Links
       </BaseHeading>
-      <div class="flex items-center justify-between p-4 border border-muted-200 dark:border-muted-700 rounded-lg">
-        <div class="flex items-center gap-3">
-          <div class="p-2 rounded-lg bg-primary-100 dark:bg-primary-900/30">
-            <Icon name="solar:link-linear" class="size-5 text-primary-600 dark:text-primary-400" />
+      <div class="space-y-3">
+        <div
+          v-for="(link, index) in topLinks.slice(0, 5)"
+          :key="index"
+          class="flex items-center justify-between p-4 border border-muted-200 dark:border-muted-700 rounded-lg"
+        >
+          <div class="flex items-center gap-3">
+            <div class="p-2 rounded-lg bg-primary-100 dark:bg-primary-900/30">
+              <Icon name="solar:link-linear" class="size-5 text-primary-600 dark:text-primary-400" />
+            </div>
+            <div>
+              <BaseHeading
+                as="h4"
+                size="sm"
+                weight="semibold"
+                class="text-muted-900 dark:text-muted-100 mb-1"
+              >
+                {{ link.shortUrl }}
+              </BaseHeading>
+              <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
+                Rank #{index + 1}
+              </BaseText>
+            </div>
           </div>
-          <div>
-            <BaseHeading
-              as="h4"
-              size="sm"
-              weight="semibold"
-              class="text-muted-900 dark:text-muted-100 mb-1"
-            >
-              {{ stats.topLink.shortUrl }}
-            </BaseHeading>
+          <div class="text-right">
+            <BaseText size="sm" weight="semibold" class="text-muted-900 dark:text-muted-100">
+              {{ link.clicks.toLocaleString() }}
+            </BaseText>
             <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
-              Most clicked link
+              clicks
             </BaseText>
           </div>
         </div>
-        <div class="text-right">
-          <BaseText size="sm" weight="semibold" class="text-muted-900 dark:text-muted-100">
-            {{ stats.topLink.clicks.toLocaleString() }}
-          </BaseText>
-          <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
-            clicks
-          </BaseText>
-        </div>
+      </div>
+    </BaseCard>
+
+    <!-- Loading State -->
+    <div v-if="isLoading" class="flex items-center justify-center p-12">
+      <Icon name="lucide:loader-2" class="h-8 w-8 animate-spin text-primary-500" />
+    </div>
+
+    <!-- Error State -->
+    <BaseCard v-if="error" class="p-6">
+      <div class="text-center text-danger-600 dark:text-danger-400">
+        {{ error }}
       </div>
     </BaseCard>
   </div>

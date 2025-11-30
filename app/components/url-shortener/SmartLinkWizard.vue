@@ -1434,7 +1434,7 @@ const selectedCollectionsCount = computed(() => {
                         :search="rule.condition.search || ''"
                         @update:model-value="(value) => { rule.condition.countries = value }"
                         @update:search="(value) => { rule.condition.search = value }"
-                      />
+                        />
                     </div>
 
                     <div v-else-if="rule.conditionType === 'GeoCity'" class="space-y-4">

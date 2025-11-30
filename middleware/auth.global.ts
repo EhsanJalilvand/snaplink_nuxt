@@ -19,6 +19,11 @@ export default defineNuxtRouteMiddleware(async (to) => {
     return
   }
 
+  // Skip auth check for redirect pages (public access)
+  if (to.path.startsWith('/r/') || to.path.startsWith('/s/')) {
+    return
+  }
+
   // Skip auth check for auth pages (except callback)
   if (to.path.startsWith('/auth') && !to.path.includes('/callback')) {
     // If user is already authenticated, redirect to dashboard

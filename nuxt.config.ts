@@ -99,6 +99,7 @@ export default defineNuxtConfig({
         process.env.API_GATEWAY_BASE_URL ||
         'http://localhost:5100', // Ocelot API Gateway
       apiInternalBaseUrl: process.env.NUXT_PUBLIC_API_INTERNAL_BASE_URL || process.env.API_INTERNAL_BASE_URL || '/api',
+      baseShortUrl: process.env.NUXT_PUBLIC_BASE_SHORT_URL || 'http://localhost:3000/s',
     },
   },
 
@@ -123,6 +124,14 @@ export default defineNuxtConfig({
     '/analytics/**': {
       ssr: false,
       swr: 3600,
+    },
+    '/r/**': {
+      ssr: true, // Server-side rendering for redirect pages to handle redirects properly
+      index: false,
+    },
+    '/s/**': {
+      ssr: true, // Server-side rendering for redirect pages to handle redirects properly
+      index: false,
     },
   },
 
