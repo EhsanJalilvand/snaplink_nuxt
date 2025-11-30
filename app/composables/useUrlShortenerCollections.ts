@@ -7,6 +7,9 @@ import type {
   ApiResponse,
   CreateCollectionRequest,
   ShortenerCollectionDto,
+  UpdateCollectionRequest,
+  CollectionLinkItem,
+  CollectionLinksDto,
 } from '~/types/url-shortener'
 import { useWorkspaceContext } from './useWorkspaceContext'
 
@@ -264,6 +267,240 @@ export const useUrlShortenerCollections = () => {
     }
   }
 
+  const getCollection = async (collectionId: string): Promise<ShortenerCollectionDto | null> => {
+    if (!workspaceId.value) {
+      toasts.add({
+        title: 'Error',
+        description: 'No workspace selected',
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return null
+    }
+
+    try {
+      const response = await api.get<ApiResponse<ShortenerCollectionDto>>(
+        `/api/workspaces/${workspaceId.value}/url-shortener/collections/${collectionId}`,
+        {
+          base: 'gateway',
+          retry: 0,
+          timeout: 7000,
+        }
+      )
+
+      const result = 'success' in response && response.success && response.data
+        ? response.data
+        : (response as any as ShortenerCollectionDto)
+
+      return result
+    } catch (error: any) {
+      const message = error?.data?.errors?.[0]?.message ?? error?.message ?? 'Failed to fetch collection'
+      toasts.add({
+        title: 'Error',
+        description: message,
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return null
+    }
+  }
+
+  const updateCollection = async (collectionId: string, request: UpdateCollectionRequest): Promise<ShortenerCollectionDto | null> => {
+    if (!workspaceId.value) {
+      toasts.add({
+        title: 'Error',
+        description: 'No workspace selected',
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return null
+    }
+
+    try {
+      const response = await api.put<ApiResponse<ShortenerCollectionDto>>(
+        `/api/workspaces/${workspaceId.value}/url-shortener/collections/${collectionId}`,
+        request,
+        {
+          base: 'gateway',
+          retry: 0,
+          timeout: 10000,
+        }
+      )
+
+      const result = 'success' in response && response.success && response.data
+        ? response.data
+        : (response as any as ShortenerCollectionDto)
+
+      if (result) {
+        // Refresh collections list
+        await fetchCollections({ force: true })
+
+        toasts.add({
+          title: 'Collection updated',
+          description: `Collection "${result.name}" has been updated.`,
+          icon: 'ph:check',
+          color: 'success',
+          progress: true,
+        })
+
+        return result
+      }
+
+      throw new Error('Invalid response from server')
+    } catch (error: any) {
+      const message = error?.data?.errors?.[0]?.message ?? error?.message ?? 'Failed to update collection'
+      toasts.add({
+        title: 'Error',
+        description: message,
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return null
+    }
+  }
+
+  const addLinksToCollection = async (collectionId: string, linkIds: string[]): Promise<ShortenerCollectionDto | null> => {
+    if (!workspaceId.value) {
+      toasts.add({
+        title: 'Error',
+        description: 'No workspace selected',
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return null
+    }
+
+    try {
+      const response = await api.post<ApiResponse<ShortenerCollectionDto>>(
+        `/api/workspaces/${workspaceId.value}/url-shortener/collections/${collectionId}/links`,
+        { linkIds },
+        {
+          base: 'gateway',
+          retry: 0,
+          timeout: 10000,
+        }
+      )
+
+      const result = 'success' in response && response.success && response.data
+        ? response.data
+        : (response as any as ShortenerCollectionDto)
+
+      if (result) {
+        toasts.add({
+          title: 'Links added',
+          description: `${linkIds.length} link(s) added to collection.`,
+          icon: 'ph:check',
+          color: 'success',
+          progress: true,
+        })
+
+        return result
+      }
+
+      throw new Error('Invalid response from server')
+    } catch (error: any) {
+      const message = error?.data?.errors?.[0]?.message ?? error?.message ?? 'Failed to add links to collection'
+      toasts.add({
+        title: 'Error',
+        description: message,
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return null
+    }
+  }
+
+  const removeLinksFromCollection = async (collectionId: string, linkIds: string[]): Promise<boolean> => {
+    if (!workspaceId.value) {
+      toasts.add({
+        title: 'Error',
+        description: 'No workspace selected',
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return false
+    }
+
+    try {
+      await api.delete<ApiResponse<boolean>>(
+        `/api/workspaces/${workspaceId.value}/url-shortener/collections/${collectionId}/links`,
+        {
+          base: 'gateway',
+          retry: 0,
+          timeout: 10000,
+          body: { linkIds },
+        }
+      )
+
+      toasts.add({
+        title: 'Links removed',
+        description: `${linkIds.length} link(s) removed from collection.`,
+        icon: 'ph:check',
+        color: 'success',
+        progress: true,
+      })
+
+      return true
+    } catch (error: any) {
+      const message = error?.data?.errors?.[0]?.message ?? error?.message ?? 'Failed to remove links from collection'
+      toasts.add({
+        title: 'Error',
+        description: message,
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return false
+    }
+  }
+
+  const getCollectionLinks = async (collectionId: string): Promise<CollectionLinkItem[] | null> => {
+    if (!workspaceId.value) {
+      toasts.add({
+        title: 'Error',
+        description: 'No workspace selected',
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return null
+    }
+
+    try {
+      const response = await api.get<ApiResponse<CollectionLinksDto>>(
+        `/api/workspaces/${workspaceId.value}/url-shortener/collections/${collectionId}/links`,
+        {
+          base: 'gateway',
+          retry: 0,
+          timeout: 7000,
+        }
+      )
+
+      const result = 'success' in response && response.success && response.data
+        ? response.data
+        : (response as any as CollectionLinksDto)
+
+      return result?.links ?? null
+    } catch (error: any) {
+      const message = error?.data?.errors?.[0]?.message ?? error?.message ?? 'Failed to fetch collection links'
+      toasts.add({
+        title: 'Error',
+        description: message,
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return null
+    }
+  }
+
   // Backend handles filtering, so we just return items
   const filteredItems = computed(() => state.value.items)
 
@@ -350,5 +587,10 @@ export const useUrlShortenerCollections = () => {
     toggleSelectMany,
     createCollection,
     removeCollection,
+    getCollection,
+    updateCollection,
+    addLinksToCollection,
+    removeLinksFromCollection,
+    getCollectionLinks,
   }
 }

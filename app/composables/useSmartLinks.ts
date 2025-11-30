@@ -2,6 +2,7 @@ import { computed, useState, watch } from '#imports'
 import type {
   ApiResponse,
   CreateSmartLinkRequest,
+  UpdateSmartLinkRequest,
   SmartLink,
   SmartLinkAiInsightsRequest,
   SmartLinkAiInsightsResponse,
@@ -141,13 +142,13 @@ const mapSmartLinkDto = (dto: any): SmartLink => {
     webhookMethod: dto.webhookMethod ?? null,
     webhookHeaders: parseJsonField(dto.webhookHeaders) as any,
     webhookBodyTemplate: dto.webhookBodyTemplate ?? null,
+    isPublic: dto.isPublic ?? true,
+    visibilityRoles: dto.visibilityRoles ?? null,
+    visibilityMemberIds: dto.visibilityMemberIds ? dto.visibilityMemberIds.map((id: any) => String(id)) : null,
     createdAt: dto.createdAt ?? new Date().toISOString(),
     updatedAt: dto.updatedAt ?? dto.createdAt ?? new Date().toISOString(),
     createdBy: dto.createdBy ?? 'system',
     rules: Array.isArray(dto.rules) ? dto.rules.map(mapRuleDto) : [],
-    isPublic: dto.isPublic !== false,
-    visibilityRoles: dto.visibilityRoles && Array.isArray(dto.visibilityRoles) ? dto.visibilityRoles.map((r: any) => String(r)) : null,
-    visibilityMemberIds: dto.visibilityMemberIds && Array.isArray(dto.visibilityMemberIds) ? dto.visibilityMemberIds.map((id: any) => String(id)) : null,
   }
 }
 
@@ -301,6 +302,67 @@ export const useSmartLinks = () => {
     }
   }
 
+  const updateSmartLink = async (smartLinkId: string, request: UpdateSmartLinkRequest) => {
+    console.log('[useSmartLinks] updateSmartLink called', { smartLinkId, workspaceId: workspaceId.value, request })
+    
+    if (!workspaceId.value) {
+      toasts.add({
+        title: 'No workspace selected',
+        description: 'Please choose a workspace first.',
+        icon: 'ph:warning',
+        color: 'warning',
+      })
+      return null
+    }
+
+    try {
+      console.log('[useSmartLinks] Preparing payload...')
+      const payload = {
+        ...request,
+        collectionIds: request.collectionIds?.length ? request.collectionIds : null,
+        rules: request.rules?.map(rule => ({
+          ...rule,
+          condition: rule.condition ?? {},
+        })) ?? null,
+        pixelEvents: request.pixelEvents?.length ? request.pixelEvents : null,
+        webhookUrl: request.webhookUrl || null,
+        webhookMethod: request.webhookUrl ? (request.webhookMethod || 'POST') : null,
+        webhookHeaders: request.webhookUrl && request.webhookHeaders && Object.keys(request.webhookHeaders).length > 0 ? request.webhookHeaders : null,
+        webhookBodyTemplate: request.webhookUrl && request.webhookBodyTemplate ? request.webhookBodyTemplate : null,
+        // Ensure visibility fields are sent correctly
+        visibility: request.visibility,
+        visibilityRoles: request.visibility === 'private' && request.visibilityRoles?.length ? request.visibilityRoles : undefined,
+        visibilityMemberIds: request.visibility === 'private' && request.visibilityMemberIds?.length ? request.visibilityMemberIds : undefined,
+      }
+
+      console.log('[useSmartLinks] Calling API PUT...', { url: `/api/workspaces/${workspaceId.value}/url-shortener/smart-links/${smartLinkId}`, payload })
+      
+      const response = await api.put<ApiResponse<SmartLink>>(
+        `/api/workspaces/${workspaceId.value}/url-shortener/smart-links/${smartLinkId}`,
+        payload,
+        {
+          base: 'gateway',
+          retry: 0,
+          timeout: 12000,
+        },
+      )
+
+      console.log('[useSmartLinks] API response received', response)
+
+      await fetchSmartLinks({ force: true })
+
+      const dto = response?.data ?? response
+      const result = dto ? mapSmartLinkDto(dto) : null
+      console.log('[useSmartLinks] Returning mapped result', result)
+      return result
+    }
+    catch (error: any) {
+      console.error('[useSmartLinks] updateSmartLink error', error)
+      // Don't show toast here - let the calling component handle it
+      throw error
+    }
+  }
+
   const generateSmartLinkAiInsights = async (payload: SmartLinkAiInsightsRequest) => {
     if (!workspaceId.value) {
       throw new Error('Workspace not selected')
@@ -319,6 +381,51 @@ export const useSmartLinks = () => {
     return 'data' in response && response.data
       ? response.data
       : (response as SmartLinkAiInsightsResponse)
+  }
+
+  const deleteSmartLink = async (smartLinkId: string) => {
+    if (!workspaceId.value) {
+      toasts.add({
+        title: 'Error',
+        description: 'No workspace selected',
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+      return
+    }
+
+    try {
+      await api.delete<ApiResponse<boolean>>(
+        `/api/workspaces/${workspaceId.value}/url-shortener/smart-links/${smartLinkId}`,
+        {
+          base: 'gateway',
+          retry: 0,
+          timeout: 7000,
+        },
+      )
+
+      // Remove from local state
+      state.value.items = state.value.items.filter(link => link.id !== smartLinkId)
+      state.value.selectedIds = state.value.selectedIds.filter(id => id !== smartLinkId)
+
+      toasts.add({
+        title: 'SmartLink deleted',
+        description: 'SmartLink removed from your catalog.',
+        icon: 'ph:trash',
+        color: 'danger',
+        progress: true,
+      })
+    } catch (error: any) {
+      const message = error?.data?.errors?.[0]?.message ?? error?.message ?? 'Failed to delete SmartLink'
+      toasts.add({
+        title: 'Error',
+        description: message,
+        icon: 'ph:warning',
+        color: 'danger',
+        progress: true,
+      })
+    }
   }
 
   const chatWithAi = async (payload: {
@@ -343,119 +450,6 @@ export const useSmartLinks = () => {
     return 'data' in response && response.data
       ? response.data
       : response
-  }
-
-  const updateSmartLink = async (smartLinkId: string, request: {
-    name?: string
-    description?: string
-    fallbackUrl?: string
-    isOneTime?: boolean
-    expiresAt?: string | null
-    clickLimit?: number | null
-    password?: string | null
-    domainType?: string
-    domainValue?: string | null
-    customAlias?: string | null
-    collectionIds?: string[]
-    isPublic?: boolean
-    visibilityRoles?: string[]
-    visibilityMemberIds?: string[]
-  }): Promise<SmartLink | null> => {
-    if (!workspaceId.value) {
-      toasts.add({
-        title: 'No workspace selected',
-        description: 'Please choose a workspace first.',
-        icon: 'ph:warning',
-        color: 'warning',
-      })
-      return null
-    }
-
-    try {
-      const response = await api.put<ApiResponse<SmartLink>>(
-        `/api/workspaces/${workspaceId.value}/url-shortener/smart-links/${smartLinkId}`,
-        request,
-        {
-          base: 'gateway',
-          retry: 0,
-          timeout: 10000,
-        },
-      )
-
-      // Handle ApiResponse format
-      const dto = response?.data ?? response
-      const result = dto ? mapSmartLinkDto(dto) : null
-
-      if (result) {
-        // Update local state
-        const index = state.value.items.findIndex(link => link.id === smartLinkId)
-        if (index > -1) {
-          state.value.items[index] = result
-        }
-
-        toasts.add({
-          title: 'SmartLink updated',
-          description: 'SmartLink has been updated successfully.',
-          icon: 'ph:check',
-          color: 'success',
-          progress: true,
-        })
-
-        return result
-      }
-
-      throw new Error('Invalid response from server')
-    }
-    catch (error: any) {
-      const message = error?.data?.errors?.[0]?.message ?? error?.message ?? 'Failed to update SmartLink'
-      toasts.add({
-        title: 'Error',
-        description: message,
-        icon: 'ph:warning',
-        color: 'danger',
-        progress: true,
-      })
-      return null
-    }
-  }
-
-  const deleteSmartLink = async (smartLinkId: string): Promise<boolean> => {
-    if (!workspaceId.value) {
-      toasts.add({
-        title: 'No workspace selected',
-        description: 'Please choose a workspace first.',
-        icon: 'ph:warning',
-        color: 'warning',
-      })
-      return false
-    }
-
-    try {
-      await api.delete(
-        `/api/workspaces/${workspaceId.value}/url-shortener/smart-links/${smartLinkId}`,
-        {
-          base: 'gateway',
-          retry: 0,
-          timeout: 10000,
-        },
-      )
-
-      // Remove from local state
-      state.value.items = state.value.items.filter(link => link.id !== smartLinkId)
-
-      return true
-    }
-    catch (error: any) {
-      const message = error?.data?.errors?.[0]?.message ?? error?.message ?? 'Failed to delete SmartLink'
-      toasts.add({
-        title: 'Error',
-        description: message,
-        icon: 'ph:warning',
-        color: 'danger',
-        progress: true,
-      })
-      return false
-    }
   }
 
   const clearSmartLinks = () => {

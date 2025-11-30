@@ -285,8 +285,8 @@ export const useApi = () => {
     })
   }
 
-  const destroy = <TResponse>(path: string, options?: ApiRequestOptions<TResponse>) => {
-    return request<TResponse>({
+  const destroy = <TResponse, TBody = unknown>(path: string, options?: ApiRequestOptions<TResponse, TBody>) => {
+    return request<TResponse, TBody>({
       ...options,
       path,
       method: 'DELETE',

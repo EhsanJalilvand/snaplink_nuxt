@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch, onMounted } from '#imports'
+import { computed, watch, onMounted, ref } from '#imports'
 import SmartLinkWizard from '~/components/url-shortener/SmartLinkWizard.vue'
 import SmartLinkAiWizard from '~/components/url-shortener/SmartLinkAiWizard.vue'
 import SmartLinksTable from '~/components/url-shortener/SmartLinksTable.vue'
@@ -33,6 +33,7 @@ const {
   selectionIndeterminate,
   hasSelection,
   fetchSmartLinks,
+  deleteSmartLink,
   setSearch,
   setPerPage,
   setPage,
@@ -116,31 +117,25 @@ const handleCopyLink = (link: SmartLink) => {
   }
 }
 
-const handleDeleteSmartLink = async (id: string) => {
-  const toaster = useNuiToasts()
-  const { deleteSmartLink } = useSmartLinks()
-  
-  try {
-    const success = await deleteSmartLink(id)
-    if (success) {
-      toaster.add({
-        title: 'Deleted',
-        description: 'SmartLink has been deleted successfully.',
-        color: 'success',
-        icon: 'ph:check',
-        progress: true,
-      })
-      await fetchSmartLinks({ force: true })
-    }
-  } catch (error: any) {
-    toaster.add({
-      title: 'Error',
-      description: error.message || 'Failed to delete SmartLink',
-      color: 'danger',
-      icon: 'ph:warning',
-      progress: true,
-    })
+const showDeleteConfirm = ref(false)
+const smartLinkToDelete = ref<string | null>(null)
+
+const handleDeleteClick = (id: string) => {
+  smartLinkToDelete.value = id
+  showDeleteConfirm.value = true
+}
+
+const handleDeleteConfirm = async () => {
+  if (smartLinkToDelete.value) {
+    await deleteSmartLink(smartLinkToDelete.value)
+    showDeleteConfirm.value = false
+    smartLinkToDelete.value = null
   }
+}
+
+const handleDeleteCancel = () => {
+  showDeleteConfirm.value = false
+  smartLinkToDelete.value = null
 }
 
 const handleViewReport = () => {
@@ -267,8 +262,8 @@ const handleToggleAll = (selected: boolean) => {
       @toggle-all="handleToggleAll"
       @toggle-select="toggleSelect"
       @copy="handleCopyLink"
-      @delete="handleDeleteSmartLink"
-    />
+          @delete="handleDeleteClick"
+        />
 
     <ShortenerLinksPagination
       v-if="filteredItems.length > 0"
@@ -284,5 +279,54 @@ const handleToggleAll = (selected: boolean) => {
       v-model:open="showSmartLinkAiWizard"
       @created="handleSmartLinkCreated"
     />
+
+    <!-- Delete Confirmation Modal -->
+    <DialogRoot :open="showDeleteConfirm" @update:open="(value) => { if (!value) handleDeleteCancel() }">
+      <DialogPortal>
+        <DialogOverlay class="bg-muted-900/70 fixed inset-0 z-50 backdrop-blur-sm" />
+        <DialogContent
+          class="fixed top-[50%] start-1/2 z-[100] w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-muted-200 bg-white shadow-2xl focus:outline-none dark:border-muted-700 dark:bg-muted-900"
+        >
+          <div class="flex w-full flex-col">
+            <!-- Header -->
+            <div class="flex items-center justify-between border-b border-muted-200 px-6 py-5 dark:border-muted-800">
+              <div>
+                <DialogTitle class="font-heading text-xl font-semibold text-muted-900 dark:text-white">
+                  Delete SmartLink
+                </DialogTitle>
+                <DialogDescription class="mt-1 text-sm text-muted-500 dark:text-muted-400">
+                  Are you sure you want to delete this SmartLink? This action cannot be undone.
+                </DialogDescription>
+              </div>
+            </div>
+
+            <!-- Content -->
+            <div class="px-6 py-5">
+              <BaseText size="sm" class="text-muted-600 dark:text-muted-400">
+                This will permanently delete the SmartLink and all its associated data including rules, collections, and tracking information. This action cannot be reversed.
+              </BaseText>
+            </div>
+
+            <!-- Footer -->
+            <div class="flex items-center justify-end gap-3 border-t border-muted-200 px-6 py-4 dark:border-muted-800">
+              <BaseButton
+                variant="outline"
+                @click="handleDeleteCancel"
+              >
+                Cancel
+              </BaseButton>
+              <BaseButton
+                variant="solid"
+                color="danger"
+                @click="handleDeleteConfirm"
+              >
+                <Icon name="ph:trash" class="size-4" />
+                Delete
+              </BaseButton>
+            </div>
+          </div>
+        </DialogContent>
+      </DialogPortal>
+    </DialogRoot>
   </div>
 </template>

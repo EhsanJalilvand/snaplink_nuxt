@@ -127,6 +127,15 @@ const handleReport = (id: string) => emit('report', id)
 
         <TairoFlexTableCell type="shrink" data-content="Actions">
           <div class="flex items-center gap-1">
+            <BaseButton 
+              size="sm" 
+              variant="ghost" 
+              icon 
+              class="rounded-full" 
+              @click="() => navigateTo(`/dashboard/url-shortener/collections/${collection.id}/edit`)"
+            >
+              <Icon name="ph:pencil" class="size-4" />
+            </BaseButton>
             <BaseButton size="sm" variant="ghost" icon class="rounded-full" @click="handleReport(collection.id)">
               <Icon name="ph:chart-line" class="size-4" />
             </BaseButton>

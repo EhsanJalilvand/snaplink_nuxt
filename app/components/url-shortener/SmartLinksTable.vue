@@ -24,17 +24,10 @@ const emit = defineEmits<{
   delete: [id: string]
 }>()
 
-const toaster = useNuiToasts()
-
 const handleToggleSelect = (id: string) => emit('toggleSelect', id)
 const handleToggleAll = (checked: boolean) => emit('toggleAll', checked)
 const handleCopy = (link: SmartLink) => emit('copy', link)
-
-const handleDelete = (id: string) => {
-  if (confirm('Are you sure you want to delete this SmartLink? This action cannot be undone.')) {
-    emit('delete', id)
-  }
-}
+const handleDelete = (id: string) => emit('delete', id)
 
 // QR Code Modal
 const showQRModal = ref(false)
@@ -147,38 +140,24 @@ function getRulesSummary(link: SmartLink) {
           <div
             v-for="index in 6"
             :key="`smartlinks-skeleton-${index}`"
-            class="h-40 rounded-xl border border-muted-200/70 bg-muted-100/60 animate-pulse dark:border-muted-700/60 dark:bg-muted-900/30"
+            class="h-40 rounded-xl border-l-4 border-info-300/50 dark:border-info-700/50 border border-info-200/50 dark:border-info-800/50 bg-gradient-to-br from-white to-info-50/30 dark:from-muted-900 dark:to-info-950/30 animate-pulse"
           />
         </div>
         <div v-else class="space-y-3">
-          <!-- Header with checkbox -->
-          <div class="flex items-center gap-4 px-4 py-3 bg-muted-50 dark:bg-muted-800/50 rounded-lg border border-muted-200 dark:border-muted-700">
-            <BaseCheckbox
-              :checked="allSelected"
-              :indeterminate="indeterminate"
-              rounded="sm"
-              color="primary"
-              @update:checked="handleToggleAll"
-            />
-            <BaseText size="xs" weight="semibold" class="uppercase tracking-wider text-muted-500 dark:text-muted-400">
-              Select All
-            </BaseText>
-          </div>
-
           <!-- SmartLink Cards -->
           <div
             v-for="link in smartLinks"
             :key="link.id"
-            class="group relative rounded-xl border border-muted-200 dark:border-muted-700 bg-white dark:bg-muted-900 hover:border-primary-300 dark:hover:border-primary-700 hover:shadow-lg transition-all duration-200"
+            class="group relative rounded-xl border-l-4 border-info-400 dark:border-info-500 border border-info-200/50 dark:border-info-800/50 bg-gradient-to-br from-white to-info-50/30 dark:from-muted-900 dark:to-info-950/30 hover:border-info-500 dark:hover:border-info-400 hover:shadow-xl hover:shadow-info-500/10 dark:hover:shadow-info-500/20 transition-all duration-300"
           >
             <div class="p-6">
               <div class="flex items-start gap-4">
                 <!-- Selection Checkbox -->
                 <div class="pt-1">
-                  <BaseCheckbox
+                        <BaseCheckbox
                     :checked="selectedIds.includes(link.id)"
                     rounded="sm"
-                    color="primary"
+                    color="info"
                     @update:checked="() => handleToggleSelect(link.id)"
                   />
                 </div>
@@ -193,7 +172,7 @@ function getRulesSummary(link: SmartLink) {
                           :to="`/dashboard/url-shortener/smart-links/${link.id}`"
                           class="group/link flex items-center gap-2 min-w-0"
                         >
-                          <BaseText size="base" weight="semibold" class="text-primary-600 dark:text-primary-400 group-hover/link:underline truncate">
+                          <BaseText size="base" weight="semibold" class="text-info-600 dark:text-info-400 group-hover/link:text-info-700 dark:group-hover/link:text-info-300 group-hover/link:underline truncate">
                             {{ link.shortUrl || `${getDomainDisplay(link.domainType, link.domainValue)}/${link.customAlias || link.shortCode}` }}
                           </BaseText>
                         </NuxtLink>
@@ -228,7 +207,7 @@ function getRulesSummary(link: SmartLink) {
                           <Icon name="ph:qr-code" class="size-4" />
                         </BaseButton>
                       </div>
-                      <BaseText size="sm" weight="medium" class="text-muted-900 dark:text-muted-100">
+                      <BaseText size="sm" weight="medium" class="text-info-900 dark:text-info-100">
                         {{ link.name }}
                       </BaseText>
                       <BaseText size="xs" class="text-muted-500 dark:text-muted-400 line-clamp-1" v-if="link.description">
@@ -268,7 +247,7 @@ function getRulesSummary(link: SmartLink) {
                         icon
                         color="danger"
                         class="rounded-full"
-                        @click="() => handleDelete(link.id)"
+                        @click="handleDelete(link.id)"
                       >
                         <Icon name="ph:trash" class="size-4" />
                       </BaseButton>
@@ -276,7 +255,7 @@ function getRulesSummary(link: SmartLink) {
                   </div>
 
                   <!-- Info Grid -->
-                  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-5">
+                  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                     <!-- Basic Info -->
                     <div class="space-y-2.5">
                       <BaseText size="xs" weight="semibold" class="uppercase tracking-wider text-muted-400 dark:text-muted-500">
@@ -305,7 +284,7 @@ function getRulesSummary(link: SmartLink) {
                       </BaseText>
                       <div class="space-y-2">
                         <div class="flex items-center gap-2">
-                          <Icon name="ph:git-branch" class="size-4 text-primary-500 shrink-0" />
+                          <Icon name="ph:git-branch" class="size-4 text-info-500 shrink-0" />
                           <BaseText size="xs" class="text-muted-600 dark:text-muted-400">
                             {{ getRulesSummary(link) }}
                           </BaseText>
@@ -346,21 +325,6 @@ function getRulesSummary(link: SmartLink) {
                       </div>
                     </div>
 
-                    <!-- Domain -->
-                    <div class="space-y-2.5">
-                      <BaseText size="xs" weight="semibold" class="uppercase tracking-wider text-muted-400 dark:text-muted-500">
-                        Domain
-                      </BaseText>
-                      <div class="space-y-2">
-                        <div class="flex items-center gap-2">
-                          <Icon name="ph:link" class="size-4 text-muted-400 shrink-0" />
-                          <BaseText size="xs" class="text-muted-600 dark:text-muted-400 truncate">
-                            {{ link.domainType === 'default' ? 'Default' : link.domainType }}
-                          </BaseText>
-                        </div>
-                      </div>
-                    </div>
-
                     <!-- Collections & Tracking -->
                     <div class="space-y-2.5">
                       <BaseText size="xs" weight="semibold" class="uppercase tracking-wider text-muted-400 dark:text-muted-500">
@@ -368,7 +332,7 @@ function getRulesSummary(link: SmartLink) {
                       </BaseText>
                       <div class="space-y-2">
                         <div v-if="link.collectionIds && link.collectionIds.length > 0" class="flex items-center gap-2">
-                          <Icon name="ph:folders" class="size-4 text-primary-500 shrink-0" />
+                          <Icon name="ph:folders" class="size-4 text-info-500 shrink-0" />
                           <BaseText size="xs" class="text-muted-600 dark:text-muted-400">
                             {{ link.collectionIds.length }} collection{{ link.collectionIds.length > 1 ? 's' : '' }}
                           </BaseText>
@@ -407,8 +371,10 @@ function getRulesSummary(link: SmartLink) {
           </div>
 
           <div v-if="!smartLinks.length && !isLoading" class="py-12 text-center">
-            <Icon name="solar:shuffle-linear" class="mx-auto size-12 text-muted-400" />
-            <BaseText size="sm" class="text-muted-500 dark:text-muted-400 mt-2">
+            <div class="inline-flex items-center justify-center size-16 rounded-full bg-gradient-to-br from-info-100 to-primary-100 dark:from-info-900/30 dark:to-primary-900/30 mb-4">
+              <Icon name="solar:shuffle-linear" class="size-8 text-info-600 dark:text-info-400" />
+            </div>
+            <BaseText size="sm" class="text-info-600 dark:text-info-400 mt-2 font-medium">
               No SmartLinks yet. Create your first dynamic routing link.
             </BaseText>
           </div>

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import type { CreateCollectionRequest, ShortenerLink } from '~/types/url-shortener'
+import type { CreateCollectionRequest, ShortenerLink, SmartLink } from '~/types/url-shortener'
 import { useUrlShortenerCollections } from '~/composables/useUrlShortenerCollections'
 import { useUrlShortenerLinks } from '~/composables/useUrlShortenerLinks'
+import { useSmartLinks } from '~/composables/useSmartLinks'
 import { useWorkspaceContext } from '~/composables/useWorkspaceContext'
 import { useApi } from '~/composables/useApi'
 import { watch } from '#imports'
@@ -20,6 +21,7 @@ const toaster = useNuiToasts()
 const api = useApi()
 const { workspaceId } = useWorkspaceContext()
 const { items: linksList, fetchLinks, getLink, updateLink } = useUrlShortenerLinks()
+const { items: smartLinksList, fetchSmartLinks } = useSmartLinks()
 
 const isOpen = computed({
   get: () => props.open,
@@ -38,6 +40,7 @@ const isOpen = computed({
       errors.value = {}
       searchQuery.value = ''
       isLoadingLinks.value = false
+      isLoadingSmartLinks.value = false
     }
   },
 })
@@ -45,6 +48,7 @@ const isOpen = computed({
 const currentStep = ref(1)
 const totalSteps = 3
 const isLoadingLinks = ref(false)
+const isLoadingSmartLinks = ref(false)
 
 // Form data
 const formData = ref({
@@ -54,13 +58,57 @@ const formData = ref({
   selectedLinks: [] as string[],
 })
 
-// Available links from API
-const availableLinks = computed(() => {
-  // Filter out test links - check if destinationUrl contains "test" or "example" (case insensitive)
-  return linksList.value.filter(link => {
-    const url = (link.destinationUrl || '').toLowerCase()
-    return !url.includes('test') && !url.includes('example.com')
-  })
+// Combined type for display
+interface CombinedLink {
+  id: string
+  shortUrl: string
+  name?: string | null
+  destinationUrl?: string | null
+  originalUrl?: string | null
+  description?: string | null
+  linkStatus?: string
+  currentClicks: number
+  createdAt: string
+  isSmartLink: boolean
+}
+
+// Available links from API (both regular links and SmartLinks)
+const availableLinks = computed<CombinedLink[]>(() => {
+  const regularLinks: CombinedLink[] = linksList.value
+    .filter(link => {
+      const url = (link.destinationUrl || '').toLowerCase()
+      return !url.includes('test') && !url.includes('example.com')
+    })
+    .map(link => ({
+      id: link.id,
+      shortUrl: link.shortUrl,
+      name: link.title || null,
+      destinationUrl: link.destinationUrl || null,
+      originalUrl: link.originalUrl || null,
+      description: link.description || null,
+      linkStatus: link.linkStatus,
+      currentClicks: link.currentClicks,
+      createdAt: link.createdAt,
+      isSmartLink: false,
+    }))
+
+  const smartLinks: CombinedLink[] = smartLinksList.value.map(link => ({
+    id: link.id,
+    shortUrl: link.shortUrl,
+    name: link.name || null,
+    destinationUrl: link.fallbackUrl || null,
+    originalUrl: link.fallbackUrl || null,
+    description: link.description || null,
+    linkStatus: 'active', // SmartLinks don't have status, default to active
+    currentClicks: link.currentClicks,
+    createdAt: link.createdAt,
+    isSmartLink: true,
+  }))
+
+  // Combine and sort by creation date (newest first)
+  return [...regularLinks, ...smartLinks].sort((a, b) => 
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  )
 })
 
 const searchQuery = ref('')
@@ -82,7 +130,9 @@ const filteredLinks = computed(() => {
     const query = searchQuery.value.toLowerCase()
     links = links.filter(link =>
       (link.shortUrl || '').toLowerCase().includes(query) ||
-      (link.destinationUrl || link.originalUrl || '').toLowerCase().includes(query)
+      (link.name || '').toLowerCase().includes(query) ||
+      (link.destinationUrl || link.originalUrl || '').toLowerCase().includes(query) ||
+      (link.description || '').toLowerCase().includes(query)
     )
   }
   
@@ -160,13 +210,17 @@ const nextStep = async () => {
   }
 }
 
-// Fetch links from API
+// Fetch links from API (both regular links and SmartLinks)
 const fetchLinksData = async () => {
-  if (isLoadingLinks.value) return
+  if (isLoadingLinks.value || isLoadingSmartLinks.value) return
   
   isLoadingLinks.value = true
+  isLoadingSmartLinks.value = true
   try {
-    await fetchLinks({ force: true })
+    await Promise.all([
+      fetchLinks({ force: true }),
+      fetchSmartLinks({ force: true }),
+    ])
   } catch (error: any) {
     toaster.add({
       title: 'Error',
@@ -177,6 +231,7 @@ const fetchLinksData = async () => {
     })
   } finally {
     isLoadingLinks.value = false
+    isLoadingSmartLinks.value = false
   }
 }
 
@@ -469,7 +524,7 @@ const totalClicks = computed(() => {
 
             <!-- Links List -->
             <div class="space-y-2 max-h-96 overflow-y-auto">
-              <div v-if="isLoadingLinks" class="py-8 text-center">
+              <div v-if="isLoadingLinks || isLoadingSmartLinks" class="py-8 text-center">
                 <Icon name="solar:refresh-linear" class="size-12 text-muted-400 mx-auto mb-3 animate-spin" />
                 <BaseText size="sm" class="text-muted-500 dark:text-muted-400">
                   Loading links...
@@ -507,14 +562,25 @@ const totalClicks = computed(() => {
                       {{ link.shortUrl }}
                     </BaseText>
                     <BaseTag
+                      v-if="link.isSmartLink"
+                      color="info"
+                      size="xs"
+                    >
+                      SmartLink
+                    </BaseTag>
+                    <BaseTag
+                      v-else
                       :color="link.linkStatus === 'active' ? 'success' : 'warning'"
                       size="xs"
                     >
                       {{ link.linkStatus }}
                     </BaseTag>
                   </div>
+                  <BaseText v-if="link.name" size="xs" weight="medium" class="text-muted-700 dark:text-muted-300 mb-1">
+                    {{ link.name }}
+                  </BaseText>
                   <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400 line-clamp-1">
-                    {{ link.destinationUrl || link.originalUrl }}
+                    {{ link.destinationUrl || link.originalUrl || (link.isSmartLink ? 'SmartLink with routing rules' : 'No destination URL') }}
                   </BaseParagraph>
                   <div class="flex items-center gap-4 mt-2">
                     <div class="flex items-center gap-1">

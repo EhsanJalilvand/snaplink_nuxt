@@ -224,20 +224,6 @@ function getTeammatesTooltip(link: ShortenerLink) {
         />
       </div>
       <div v-else class="space-y-3">
-        <!-- Header with checkbox -->
-        <div class="flex items-center gap-4 px-4 py-3 bg-muted-50 dark:bg-muted-800/50 rounded-lg border border-muted-200 dark:border-muted-700">
-          <BaseCheckbox
-            :checked="allSelected"
-            :indeterminate="indeterminate"
-            rounded="sm"
-            color="primary"
-            @update:checked="handleToggleAll"
-          />
-          <BaseText size="xs" weight="semibold" class="uppercase tracking-wider text-muted-500 dark:text-muted-400">
-            Select All
-          </BaseText>
-        </div>
-
         <!-- Link Cards -->
         <div
           v-for="link in links"

@@ -155,14 +155,14 @@ const menu: MenuItem[] = [
         to: '/dashboard/url-shortener/overview',
       },
       {
+        label: 'Collections',
+        icon: 'solar:folder-linear',
+        to: '/dashboard/url-shortener/collections',
+      },
+      {
         label: 'Links',
         icon: 'solar:link-round-linear',
         to: '/dashboard/url-shortener/links',
-      },
-      {
-        label: 'Bulk Links',
-        icon: 'solar:layers-linear',
-        to: '/dashboard/url-shortener/bulk-links',
       },
       {
         label: 'SmartLinks',
@@ -170,9 +170,9 @@ const menu: MenuItem[] = [
         to: '/dashboard/url-shortener/smart-links',
       },
       {
-        label: 'Collections',
-        icon: 'solar:folder-linear',
-        to: '/dashboard/url-shortener/collections',
+        label: 'Bulk Links',
+        icon: 'solar:layers-linear',
+        to: '/dashboard/url-shortener/bulk-links',
       },
       {
         label: 'Notifications',

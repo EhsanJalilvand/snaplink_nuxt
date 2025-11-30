@@ -8,9 +8,8 @@ const createUid = () => {
 }
 
 const cloneCondition = (condition: Record<string, any>) => {
-  if (typeof structuredClone === 'function') {
-    return structuredClone(condition)
-  }
+  // Use JSON methods to ensure deep cloning of all objects
+  // structuredClone may fail on certain object types
   return JSON.parse(JSON.stringify(condition))
 }
 import type { CreateSmartLinkRequest, SmartLinkConditionType } from '~/types/url-shortener'
@@ -21,6 +20,7 @@ import { useWorkspaceContext } from '~/composables/useWorkspaceContext'
 import { useWorkspaceMembers } from '~/composables/useWorkspaceMembers'
 import { useQRCode } from '~/composables/useQRCode'
 import { onClickOutside } from '@vueuse/core'
+import SearchableCheckboxList from './SearchableCheckboxList.vue'
 
 type SmartLinkRuleForm = {
   uid: string
@@ -60,8 +60,6 @@ const { members: workspaceMembers, fetchMembers: fetchWorkspaceMembers, isLoadin
 const { getQRCodeUrl } = useQRCode()
 
 const expandedRules = ref<Set<string>>(new Set())
-const openCityDropdowns = ref<Set<string>>(new Set())
-const openRegionDropdowns = ref<Set<string>>(new Set())
 
 const toggleRuleExpanded = (ruleUid: string) => {
   if (expandedRules.value.has(ruleUid)) {
@@ -99,7 +97,7 @@ const isOpen = computed({
   },
 })
 
-const totalSteps = 7
+const totalSteps = 8
 const currentStep = ref(1)
 const isSubmitting = ref(false)
 const createdResult = ref<{ id: string; shortUrl: string } | null>(null)
@@ -198,13 +196,42 @@ const browserOptions = [
 ]
 
 const dayOptions = [
-  'Mon',
-  'Tue',
-  'Wed',
-  'Thu',
-  'Fri',
-  'Sat',
-  'Sun',
+  { value: 'Mon', label: 'Monday' },
+  { value: 'Tue', label: 'Tuesday' },
+  { value: 'Wed', label: 'Wednesday' },
+  { value: 'Thu', label: 'Thursday' },
+  { value: 'Fri', label: 'Friday' },
+  { value: 'Sat', label: 'Saturday' },
+  { value: 'Sun', label: 'Sunday' },
+]
+
+const timezoneOptions = [
+  { value: 'UTC', label: 'UTC (Coordinated Universal Time)' },
+  { value: 'America/New_York', label: 'EST/EDT (Eastern Time)' },
+  { value: 'America/Chicago', label: 'CST/CDT (Central Time)' },
+  { value: 'America/Denver', label: 'MST/MDT (Mountain Time)' },
+  { value: 'America/Los_Angeles', label: 'PST/PDT (Pacific Time)' },
+  { value: 'America/Toronto', label: 'EST/EDT (Toronto)' },
+  { value: 'America/Mexico_City', label: 'CST/CDT (Mexico City)' },
+  { value: 'America/Sao_Paulo', label: 'BRT/BRST (São Paulo)' },
+  { value: 'Europe/London', label: 'GMT/BST (London)' },
+  { value: 'Europe/Paris', label: 'CET/CEST (Paris)' },
+  { value: 'Europe/Berlin', label: 'CET/CEST (Berlin)' },
+  { value: 'Europe/Rome', label: 'CET/CEST (Rome)' },
+  { value: 'Europe/Madrid', label: 'CET/CEST (Madrid)' },
+  { value: 'Europe/Moscow', label: 'MSK (Moscow)' },
+  { value: 'Europe/Istanbul', label: 'TRT (Istanbul)' },
+  { value: 'Asia/Dubai', label: 'GST (Dubai)' },
+  { value: 'Asia/Kolkata', label: 'IST (India)' },
+  { value: 'Asia/Shanghai', label: 'CST (Shanghai)' },
+  { value: 'Asia/Tokyo', label: 'JST (Tokyo)' },
+  { value: 'Asia/Seoul', label: 'KST (Seoul)' },
+  { value: 'Asia/Hong_Kong', label: 'HKT (Hong Kong)' },
+  { value: 'Asia/Singapore', label: 'SGT (Singapore)' },
+  { value: 'Asia/Bangkok', label: 'ICT (Bangkok)' },
+  { value: 'Australia/Sydney', label: 'AEDT/AEST (Sydney)' },
+  { value: 'Australia/Melbourne', label: 'AEDT/AEST (Melbourne)' },
+  { value: 'Pacific/Auckland', label: 'NZDT/NZST (Auckland)' },
 ]
 
 
@@ -217,11 +244,12 @@ const createConditionTemplate = (type: SmartLinkConditionType): Record<string, a
         country: null as string | null,
         cities: [] as string[],
         regions: [] as string[],
+        countrySearch: '',
         citySearch: '',
         regionSearch: ''
       }
     case 'GeoCity':
-      return { country: null as string | null, cities: [] as string[], citySearch: '' }
+      return { country: null as string | null, cities: [] as string[], countrySearch: '', citySearch: '' }
     case 'DeviceType':
       return { devices: [] as string[] }
     case 'OperatingSystem':
@@ -456,33 +484,28 @@ watch(() => formData.value.visibility, (newValue) => {
 })
 
 
-const filteredCountries = (search: string) => {
-  if (!search) {
-    return geoCountries.value
-  }
-  const query = search.toLowerCase()
-  return geoCountries.value.filter(country => country.name.toLowerCase().includes(query) || country.code.toLowerCase().includes(query))
-}
+// Computed properties for SearchableCheckboxList
+const countryItems = computed(() => {
+  return geoCountries.value.map(country => ({
+    value: country.code,
+    label: country.name,
+    subtitle: country.code,
+  }))
+})
 
-const filteredCities = (countryCode: string | null, search: string) => {
+const getCityItems = (countryCode: string | null) => {
   if (!countryCode) {
     return []
   }
-
-  const country = geoCountries.value.find(country => country.code === countryCode)
+  const country = geoCountries.value.find(c => c.code === countryCode)
   if (!country) {
     return []
   }
-
-  if (!search) {
-    return country.cities
-  }
-
-  const query = search.toLowerCase()
-  return country.cities.filter(city => 
-    city.name.toLowerCase().includes(query) || 
-    (city.region && city.region.toLowerCase().includes(query))
-  )
+  return country.cities.map(city => ({
+    value: city.name,
+    label: city.name,
+    subtitle: city.region || undefined,
+  }))
 }
 
 const getAvailableRegions = (countryCode: string | null, selectedCityNames: string[]) => {
@@ -502,6 +525,14 @@ const getAvailableRegions = (countryCode: string | null, selectedCityNames: stri
   
   // Return unique regions
   return [...new Set(regions)].sort()
+}
+
+const getRegionItems = (countryCode: string | null, selectedCityNames: string[]) => {
+  const regions = getAvailableRegions(countryCode, selectedCityNames)
+  return regions.map(region => ({
+    value: region,
+    label: region,
+  }))
 }
 
 const toggleArrayValue = (array: string[] | undefined, value: string): string[] => {
@@ -569,18 +600,18 @@ const duplicateRule = (rule: SmartLinkRuleForm) => {
     }
     
     // Create new rule with cloned condition
-    const clone: SmartLinkRuleForm = {
-      uid: createUid(),
+  const clone: SmartLinkRuleForm = {
+    uid: createUid(),
       targetUrl: rule.targetUrl || '',
-      conditionType: rule.conditionType,
+    conditionType: rule.conditionType,
       condition: clonedCondition,
-      priority: (rules.value.length + 1) * 10,
-      isActive: rule.isActive,
-    }
+    priority: (rules.value.length + 1) * 10,
+    isActive: rule.isActive,
+  }
     
     // Add to rules array
-    rules.value.push(clone)
-    updatePriorities()
+  rules.value.push(clone)
+  updatePriorities()
     
     // Expand the new rule so user can see it
     expandedRules.value.add(clone.uid)
@@ -672,6 +703,17 @@ const validateStep1 = () => {
     return false
   }
   
+  // Validate custom alias if provided
+  if (formData.value.customAlias && formData.value.customAlias.length < 3) {
+    errors.value.customAlias = 'Alias should be at least 3 characters'
+    return false
+  }
+  
+  return true
+}
+
+const validateStep2 = () => {
+  errors.value = {}
   // Only validate active rules
   const activeRules = rules.value.filter(rule => rule.isActive)
   
@@ -797,7 +839,12 @@ const validateRuleCondition = (rule: SmartLinkRuleForm) => {
   }
 }
 
-const validateStep2 = () => {
+const validateStep3 = () => {
+  // Collections are optional, so always return true
+  return true
+}
+
+const validateStep4 = () => {
   errors.value = {}
 
   if (formData.value.visibility === 'private') {
@@ -810,7 +857,7 @@ const validateStep2 = () => {
   return true
 }
 
-const validateStep3 = () => {
+const validateStep5 = () => {
   errors.value = {}
   if (formData.value.hasPassword && !formData.value.password.trim()) {
     errors.value.password = 'Provide a password'
@@ -823,18 +870,10 @@ const validateStep3 = () => {
   return true
 }
 
-const validateStep4 = () => {
+const validateStep6 = () => {
   errors.value = {}
   if (!formData.value.domainType) {
     errors.value.domain = 'Pick a domain'
-    return false
-  }
-  return true
-}
-
-const validateStep5 = () => {
-  if (formData.value.customAlias && formData.value.customAlias.length < 3) {
-    errors.value.customAlias = 'Alias should be at least 3 characters'
     return false
   }
   return true
@@ -857,6 +896,9 @@ const nextStep = async () => {
   if (currentStep.value === 5 && !validateStep5()) {
     return
   }
+  if (currentStep.value === 6 && !validateStep6()) {
+    return
+  }
   if (currentStep.value < totalSteps) {
     currentStep.value++
   }
@@ -870,7 +912,7 @@ const prevStep = () => {
 
 
 const submitSmartLink = async () => {
-  if (!validateStep1() || !validateStep2() || !validateStep3() || !validateStep4() || !validateStep5()) {
+  if (!validateStep1() || !validateStep2() || !validateStep3() || !validateStep4() || !validateStep5() || !validateStep6()) {
     return
   }
 
@@ -913,7 +955,7 @@ const submitSmartLink = async () => {
     const result = await createSmartLink(request)
     if (result) {
       createdResult.value = result
-      currentStep.value = totalSteps
+      currentStep.value = 8
       emit('created', result)
     }
   } catch (error: any) {
@@ -1098,20 +1140,6 @@ const selectedCollectionsCount = computed(() => {
   return formData.value.collectionIds.length
 })
 
-// Close dropdowns when clicking outside
-onMounted(() => {
-  const handleClickOutside = (event: MouseEvent) => {
-    const target = event.target as HTMLElement
-    if (!target.closest('.relative')) {
-      openCityDropdowns.value.clear()
-      openRegionDropdowns.value.clear()
-    }
-  }
-  document.addEventListener('click', handleClickOutside)
-  onUnmounted(() => {
-    document.removeEventListener('click', handleClickOutside)
-  })
-})
 </script>
 
 <template>
@@ -1152,14 +1180,14 @@ onMounted(() => {
             />
           </div>
 
-          <!-- Step 1 -->
+          <!-- Step 1: Basic Information -->
           <div v-if="currentStep === 1" class="space-y-6">
             <div>
               <BaseHeading as="h3" size="lg" weight="semibold">
-                Define routing rules
+                Basic Information
               </BaseHeading>
               <BaseParagraph size="sm">
-                Decide how visitors flow to different destinations based on context.
+                Provide essential details for your SmartLink.
               </BaseParagraph>
             </div>
             
@@ -1198,6 +1226,51 @@ onMounted(() => {
                   </BaseTooltip>
                 </div>
               </TairoFormGroup>
+            </div>
+
+            <TairoFormGroup label="Custom alias (optional)">
+                        <div class="flex items-center gap-2">
+                            <TairoInput
+                  v-model="formData.customAlias"
+                  placeholder="my-campaign-link"
+                  icon="solar:pen-linear"
+                              rounded="lg"
+                  class="flex-1"
+                  :error="errors.customAlias"
+                            />
+                <BaseTooltip content="Custom name in the URL instead of auto-generated code">
+                            <button
+                              type="button"
+                    class="flex items-center justify-center size-5 rounded-full bg-muted-100 dark:bg-muted-800 hover:bg-muted-200 dark:hover:bg-muted-700 transition-colors"
+                            >
+                              <Icon name="lucide:help-circle" class="size-3.5 text-muted-500 dark:text-muted-400" />
+                            </button>
+                          </BaseTooltip>
+                        </div>
+              <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400 mt-2">
+                Leave empty to generate automatically
+              </BaseParagraph>
+                      </TairoFormGroup>
+
+            <TairoFormGroup label="Description (optional)">
+                        <textarea
+                v-model="formData.description"
+                placeholder="Add a helpful note for your team"
+                          rows="3"
+                          class="w-full px-4 py-3 rounded-lg border border-muted-300 dark:border-muted-600 bg-white dark:bg-muted-800 text-muted-800 dark:text-muted-100 placeholder:text-muted-400 dark:placeholder:text-muted-500 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:focus:ring-primary-400 focus:border-transparent transition-all duration-200 resize-none"
+                        />
+                      </TairoFormGroup>
+          </div>
+
+          <!-- Step 2: Routing Rules -->
+          <div v-else-if="currentStep === 2" class="space-y-6">
+            <div>
+              <BaseHeading as="h3" size="lg" weight="semibold">
+                Define routing rules
+              </BaseHeading>
+              <BaseParagraph size="sm">
+                Decide how visitors flow to different destinations based on context.
+              </BaseParagraph>
             </div>
 
             <div class="flex items-center justify-between">
@@ -1353,193 +1426,77 @@ onMounted(() => {
 
                     <!-- Condition-specific fields -->
                     <div v-if="rule.conditionType === 'GeoCountry'" class="space-y-3">
-                      <TairoFormGroup label="Filter countries">
-                        <TairoInput
-                          v-model="rule.condition.search"
-                          placeholder="Search country"
-                          rounded="lg"
-                          size="sm"
-                        />
-                      </TairoFormGroup>
-                      <div class="max-h-48 overflow-y-auto border border-muted-200 dark:border-muted-700 rounded-lg p-3 space-y-2 bg-white dark:bg-muted-800">
-                        <label
-                          v-for="country in filteredCountries(rule.condition.search)"
-                          :key="country.code"
-                          class="flex items-center gap-3 text-sm cursor-pointer hover:bg-muted-50 dark:hover:bg-muted-700/50 p-2 rounded transition-colors"
-                        >
-                          <BaseCheckbox
-                            :model-value="(rule.condition.countries || []).includes(country.code)"
-                            @update:model-value="() => { if (!rule.condition.countries) rule.condition.countries = []; toggleArrayValue(rule.condition.countries, country.code) }"
-                            @click.stop
-                          />
-                          <span class="flex-1">{{ country.name }}</span>
-                          <span class="text-xs text-muted-400">{{ country.code }}</span>
-                        </label>
-                      </div>
+                      <SearchableCheckboxList
+                        label="countries"
+                        search-placeholder="Search country"
+                        :items="countryItems"
+                        :model-value="rule.condition.countries || []"
+                        :search="rule.condition.search || ''"
+                        @update:model-value="(value) => { rule.condition.countries = value }"
+                        @update:search="(value) => { rule.condition.search = value }"
+                      />
                     </div>
 
                     <div v-else-if="rule.conditionType === 'GeoCity'" class="space-y-4">
                       <div class="grid grid-cols-2 gap-4">
-                        <TairoFormGroup label="Country">
-                          <TairoSelect v-model="rule.condition.country" rounded="lg" size="sm">
-                            <BaseSelectItem
-                              v-for="country in geoCountries"
-                              :key="country.code"
-                              :value="country.code"
-                            >
-                              {{ country.name }}
-                            </BaseSelectItem>
-                          </TairoSelect>
-                        </TairoFormGroup>
-                        <TairoFormGroup label="City">
-                          <div class="relative">
-                            <div class="pointer-events-none">
-                              <TairoSelect
-                                :model-value="(rule.condition.cities || []).length > 0 ? `${(rule.condition.cities || []).length} selected` : null"
-                                rounded="lg"
-                                size="sm"
-                                :disabled="!rule.condition.country"
-                              >
-                                <BaseSelectItem :value="null">
-                                  {{ (rule.condition.cities || []).length > 0 ? `${(rule.condition.cities || []).length} selected` : 'Select cities...' }}
-                                </BaseSelectItem>
-                              </TairoSelect>
-                            </div>
-                            <div
-                              class="absolute inset-0 cursor-pointer"
-                              @click.stop="openCityDropdowns.has(rule.uid) ? openCityDropdowns.delete(rule.uid) : openCityDropdowns.add(rule.uid)"
-                            ></div>
-                            <div
-                              v-if="openCityDropdowns.has(rule.uid)"
-                              class="absolute z-50 w-full mt-1 bg-white dark:bg-muted-800 border border-muted-200 dark:border-muted-700 rounded-lg shadow-lg"
-                              @click.stop
-                            >
-                              <div class="max-h-48 overflow-y-auto p-2 space-y-1">
-                                <label
-                                  v-for="city in filteredCities(rule.condition.country, '')"
-                                  :key="city.name"
-                                  class="flex items-center gap-3 text-sm cursor-pointer hover:bg-muted-50 dark:hover:bg-muted-700/50 p-2 rounded transition-colors"
-                                >
-                                  <BaseCheckbox
-                                    :model-value="(rule.condition.cities || []).includes(city.name)"
-                                    @update:model-value="() => { if (!rule.condition.cities) rule.condition.cities = []; toggleArrayValue(rule.condition.cities, city.name) }"
-                                    @click.stop
-                                  />
-                                  <span class="flex-1">{{ city.name }}</span>
-                                  <span v-if="city.region" class="text-xs text-muted-400">{{ city.region }}</span>
-                                </label>
-                                <div v-if="!filteredCities(rule.condition.country, '').length" class="text-xs text-muted-400 text-center py-4">
-                                  {{ !rule.condition.country ? 'Select country first' : 'No cities available' }}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </TairoFormGroup>
+                        <SearchableCheckboxList
+                          label="country"
+                          search-placeholder="Search country"
+                          :items="countryItems"
+                          :model-value="rule.condition.country || null"
+                          :search="rule.condition.countrySearch || ''"
+                          :single-select="true"
+                          @update:model-value="(value) => { rule.condition.country = value ? String(value) : null }"
+                          @update:search="(value) => { rule.condition.countrySearch = value }"
+                        />
+                        <SearchableCheckboxList
+                          label="cities"
+                          search-placeholder="Search city"
+                          :items="getCityItems(rule.condition.country)"
+                          :model-value="rule.condition.cities || []"
+                          :search="rule.condition.citySearch || ''"
+                          :disabled="!rule.condition.country"
+                          empty-message="Select country first or no cities found"
+                          @update:model-value="(value) => { rule.condition.cities = value }"
+                          @update:search="(value) => { rule.condition.citySearch = value }"
+                        />
                       </div>
                     </div>
 
                     <div v-else-if="rule.conditionType === 'GeoRegion'" class="space-y-4">
                       <div class="grid grid-cols-3 gap-4">
-                        <TairoFormGroup label="Country">
-                          <TairoSelect v-model="rule.condition.country" rounded="lg" size="sm">
-                            <BaseSelectItem
-                              v-for="country in geoCountries"
-                              :key="country.code"
-                              :value="country.code"
-                            >
-                              {{ country.name }}
-                            </BaseSelectItem>
-                          </TairoSelect>
-                        </TairoFormGroup>
-                        <TairoFormGroup label="City">
-                          <div class="relative">
-                            <div class="pointer-events-none">
-                              <TairoSelect
-                                :model-value="(rule.condition.cities || []).length > 0 ? `${(rule.condition.cities || []).length} selected` : null"
-                                rounded="lg"
-                                size="sm"
-                                :disabled="!rule.condition.country"
-                              >
-                                <BaseSelectItem :value="null">
-                                  {{ (rule.condition.cities || []).length > 0 ? `${(rule.condition.cities || []).length} selected` : 'Select cities...' }}
-                                </BaseSelectItem>
-                              </TairoSelect>
-                            </div>
-                            <div
-                              class="absolute inset-0 cursor-pointer"
-                              @click.stop="openCityDropdowns.has(rule.uid) ? openCityDropdowns.delete(rule.uid) : openCityDropdowns.add(rule.uid)"
-                            ></div>
-                            <div
-                              v-if="openCityDropdowns.has(rule.uid)"
-                              class="absolute z-50 w-full mt-1 bg-white dark:bg-muted-800 border border-muted-200 dark:border-muted-700 rounded-lg shadow-lg"
-                              @click.stop
-                            >
-                              <div class="max-h-48 overflow-y-auto p-2 space-y-1">
-                                <label
-                                  v-for="city in filteredCities(rule.condition.country, '')"
-                                  :key="city.name"
-                                  class="flex items-center gap-3 text-sm cursor-pointer hover:bg-muted-50 dark:hover:bg-muted-700/50 p-2 rounded transition-colors"
-                                >
-                                  <BaseCheckbox
-                                    :model-value="(rule.condition.cities || []).includes(city.name)"
-                                    @update:model-value="() => { if (!rule.condition.cities) rule.condition.cities = []; toggleArrayValue(rule.condition.cities, city.name) }"
-                                    @click.stop
-                                  />
-                                  <span class="flex-1">{{ city.name }}</span>
-                                  <span v-if="city.region" class="text-xs text-muted-400">{{ city.region }}</span>
-                                </label>
-                                <div v-if="!filteredCities(rule.condition.country, '').length" class="text-xs text-muted-400 text-center py-4">
-                                  {{ !rule.condition.country ? 'Select country first' : 'No cities available' }}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </TairoFormGroup>
-                        <TairoFormGroup label="Region">
-                          <div class="relative">
-                            <div class="pointer-events-none">
-                              <TairoSelect
-                                :model-value="(rule.condition.regions || []).length > 0 ? `${(rule.condition.regions || []).length} selected` : null"
-                                rounded="lg"
-                                size="sm"
-                                :disabled="!rule.condition.country || !(rule.condition.cities || []).length"
-                              >
-                                <BaseSelectItem :value="null">
-                                  {{ (rule.condition.regions || []).length > 0 ? `${(rule.condition.regions || []).length} selected` : 'Select regions...' }}
-                                </BaseSelectItem>
-                              </TairoSelect>
-                            </div>
-                            <div
-                              class="absolute inset-0 cursor-pointer"
-                              @click.stop="openRegionDropdowns.has(rule.uid) ? openRegionDropdowns.delete(rule.uid) : openRegionDropdowns.add(rule.uid)"
-                            ></div>
-                            <div
-                              v-if="openRegionDropdowns.has(rule.uid)"
-                              class="absolute z-50 w-full mt-1 bg-white dark:bg-muted-800 border border-muted-200 dark:border-muted-700 rounded-lg shadow-lg"
-                              @click.stop
-                            >
-                              <div class="max-h-48 overflow-y-auto p-2 space-y-1">
-                                <template v-if="getAvailableRegions(rule.condition.country, rule.condition.cities || []).length > 0">
-                                  <label
-                                    v-for="region in getAvailableRegions(rule.condition.country, rule.condition.cities || [])"
-                                    :key="region"
-                                    class="flex items-center gap-3 text-sm cursor-pointer hover:bg-muted-50 dark:hover:bg-muted-700/50 p-2 rounded transition-colors"
-                                  >
-                                    <BaseCheckbox
-                                      :model-value="(rule.condition.regions || []).includes(region)"
-                                      @update:model-value="() => { if (!rule.condition.regions) rule.condition.regions = []; toggleArrayValue(rule.condition.regions, region) }"
-                                      @click.stop
-                                    />
-                                    <span class="flex-1">{{ region }}</span>
-                                  </label>
-                                </template>
-                                <div v-else class="text-xs text-muted-400 text-center py-4">
-                                  Select cities first to see available regions
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </TairoFormGroup>
+                        <SearchableCheckboxList
+                          label="country"
+                          search-placeholder="Search country"
+                          :items="countryItems"
+                          :model-value="rule.condition.country || null"
+                          :search="rule.condition.countrySearch || ''"
+                          :single-select="true"
+                          @update:model-value="(value) => { rule.condition.country = value ? String(value) : null }"
+                          @update:search="(value) => { rule.condition.countrySearch = value }"
+                        />
+                        <SearchableCheckboxList
+                          label="cities"
+                          search-placeholder="Search city"
+                          :items="getCityItems(rule.condition.country)"
+                          :model-value="rule.condition.cities || []"
+                          :search="rule.condition.citySearch || ''"
+                          :disabled="!rule.condition.country"
+                          empty-message="Select country first or no cities found"
+                          @update:model-value="(value) => { rule.condition.cities = value }"
+                          @update:search="(value) => { rule.condition.citySearch = value }"
+                        />
+                        <SearchableCheckboxList
+                          label="regions"
+                          search-placeholder="Search region"
+                          :items="getRegionItems(rule.condition.country, rule.condition.cities || [])"
+                          :model-value="rule.condition.regions || []"
+                          :search="rule.condition.regionSearch || ''"
+                          :disabled="!rule.condition.country || !(rule.condition.cities || []).length"
+                          empty-message="Select cities first to see available regions"
+                          @update:model-value="(value) => { rule.condition.regions = value }"
+                          @update:search="(value) => { rule.condition.regionSearch = value }"
+                        />
                       </div>
                     </div>
 
@@ -1647,12 +1604,15 @@ onMounted(() => {
                       </div>
                       <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
                         <TairoFormGroup label="Time zone">
-                          <TairoInput
-                            v-model="rule.condition.timezone"
-                            placeholder="UTC"
-                            rounded="lg"
-                            size="sm"
-                          />
+                          <TairoSelect v-model="rule.condition.timezone" rounded="lg" size="sm">
+                            <BaseSelectItem
+                              v-for="tz in timezoneOptions"
+                              :key="tz.value"
+                              :value="tz.value"
+                            >
+                              {{ tz.label }}
+                            </BaseSelectItem>
+                          </TairoSelect>
                         </TairoFormGroup>
                         <TairoFormGroup label="Start time">
                           <TairoInput
@@ -1673,18 +1633,26 @@ onMounted(() => {
                       </div>
                       <div>
                         <BaseParagraph size="xs" class="text-muted-500 font-medium mb-2">Select days:</BaseParagraph>
-                        <div class="flex flex-wrap gap-2">
-                          <BaseButton
+                        <div class="grid grid-cols-3 gap-3">
+                          <BaseCard
                             v-for="day in dayOptions"
-                            :key="day"
-                            size="xs"
-                            :variant="(rule.condition.days || []).includes(day) ? 'solid' : 'outline'"
-                            color="primary"
-                            class="rounded-full"
-                            @click="() => { if (!rule.condition.days) rule.condition.days = []; toggleArrayValue(rule.condition.days, day) }"
+                            :key="day.value"
+                            class="p-4 cursor-pointer transition-all hover:border-primary-500 dark:hover:border-primary-400"
+                            :class="{ 'border-primary-500 dark:border-primary-400 bg-primary-50 dark:bg-primary-900/20': (rule.condition.days || []).includes(day.value) }"
+                            @click="() => { if (!rule.condition.days) rule.condition.days = []; toggleArrayValue(rule.condition.days, day.value) }"
                           >
-                            {{ day }}
-                          </BaseButton>
+                            <div class="flex items-center gap-3">
+                              <BaseCheckbox
+                                :model-value="(rule.condition.days || []).includes(day.value)"
+                                @update:model-value="() => { if (!rule.condition.days) rule.condition.days = []; toggleArrayValue(rule.condition.days, day.value) }"
+                                @click.stop
+                              />
+                              <div class="flex flex-col">
+                                <span class="text-sm font-medium">{{ day.value }}</span>
+                                <span class="text-xs text-muted-400">{{ day.label }}</span>
+                              </div>
+                            </div>
+                          </BaseCard>
                         </div>
                       </div>
                     </div>
@@ -1743,8 +1711,66 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- Step 2: Visibility & Access -->
-          <div v-else-if="currentStep === 2" class="space-y-6">
+          <!-- Step 3: Collections -->
+          <div v-else-if="currentStep === 3" class="space-y-6">
+            <div>
+              <BaseHeading
+                as="h3"
+                size="lg"
+                weight="semibold"
+                class="text-muted-800 dark:text-muted-100 mb-2"
+              >
+                Collections
+              </BaseHeading>
+              <BaseParagraph size="sm" class="text-muted-500 dark:text-muted-400 mb-6">
+                Organize this SmartLink into collections for better management
+              </BaseParagraph>
+            </div>
+
+            <TairoFormGroup label="Collections (optional)">
+              <div class="space-y-2 max-h-48 overflow-y-auto border border-muted-200 dark:border-muted-700 rounded-lg p-3">
+                <div
+                  v-for="collection in collectionOptions"
+                  :key="collection.id"
+                  class="flex items-center gap-3 p-2 rounded-lg hover:bg-muted-50 dark:hover:bg-muted-800/50 cursor-pointer transition-colors"
+                  @click="toggleCollection(collection.id)"
+                >
+                  <BaseCheckbox
+                    :model-value="formData.collectionIds.includes(collection.id)"
+                    rounded="sm"
+                    color="primary"
+                    @update:model-value="() => toggleCollection(collection.id)"
+                    @click.stop
+                  />
+                  <BaseText size="sm" class="text-muted-800 dark:text-muted-100">
+                    {{ collection.name }}
+                  </BaseText>
+                </div>
+                <div
+                  v-if="collectionOptions.length === 0"
+                  class="text-center py-4 text-sm text-muted-500 dark:text-muted-400"
+                >
+                  No collections available. Create one first.
+                </div>
+              </div>
+              <div class="flex items-center gap-2 mt-2">
+                <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400">
+                  Use collections to organize campaigns, clients, or channels
+                </BaseParagraph>
+                <BaseTooltip content="Organize links into collections for better management of campaigns, clients, or channels">
+                  <button
+                    type="button"
+                    class="flex items-center justify-center size-5 rounded-full bg-muted-100 dark:bg-muted-800 hover:bg-muted-200 dark:hover:bg-muted-700 transition-colors"
+                  >
+                    <Icon name="lucide:help-circle" class="size-3.5 text-muted-500 dark:text-muted-400" />
+                  </button>
+                </BaseTooltip>
+              </div>
+            </TairoFormGroup>
+          </div>
+
+          <!-- Step 4: Visibility & Access -->
+          <div v-else-if="currentStep === 4" class="space-y-6">
             <div>
               <BaseHeading
                 as="h3"
@@ -1944,8 +1970,8 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- Step 3: Limits & Security -->
-          <div v-else-if="currentStep === 3" class="space-y-6">
+          <!-- Step 5: Limits & Security -->
+          <div v-else-if="currentStep === 5" class="space-y-6">
             <div>
               <BaseHeading
                 as="h3"
@@ -2053,8 +2079,8 @@ onMounted(() => {
             </TairoFormGroup>
           </div>
 
-          <!-- Step 4: Domain Configuration -->
-          <div v-else-if="currentStep === 4" class="space-y-6">
+          <!-- Step 6: Domain Configuration -->
+          <div v-else-if="currentStep === 6" class="space-y-6">
             <div>
               <BaseHeading
                 as="h3"
@@ -2170,99 +2196,9 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- Step 5: Customize & Organize -->
-          <div v-else-if="currentStep === 5" class="space-y-6">
-            <div>
-              <BaseHeading
-                as="h3"
-                size="lg"
-                weight="semibold"
-                class="text-muted-800 dark:text-muted-100 mb-2"
-              >
-                Customize & Organize
-              </BaseHeading>
-              <BaseParagraph size="sm" class="text-muted-500 dark:text-muted-400 mb-6">
-                Add an alias, description, and categorize this SmartLink
-              </BaseParagraph>
-            </div>
 
-            <TairoFormGroup label="Custom alias (optional)">
-              <div class="flex items-center gap-2">
-                <TairoInput
-                  v-model="formData.customAlias"
-                  placeholder="my-campaign-link"
-                  icon="solar:pen-linear"
-                  rounded="lg"
-                  class="flex-1"
-                  :error="errors.customAlias"
-                />
-                <BaseTooltip content="Custom name in the URL instead of auto-generated code">
-                  <button
-                    type="button"
-                    class="flex items-center justify-center size-5 rounded-full bg-muted-100 dark:bg-muted-800 hover:bg-muted-200 dark:hover:bg-muted-700 transition-colors"
-                  >
-                    <Icon name="lucide:help-circle" class="size-3.5 text-muted-500 dark:text-muted-400" />
-                  </button>
-                </BaseTooltip>
-              </div>
-              <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400 mt-2">
-                Leave empty to generate automatically
-              </BaseParagraph>
-            </TairoFormGroup>
-
-            <TairoFormGroup label="Description (optional)">
-              <textarea
-                v-model="formData.description"
-                placeholder="Add a helpful note for your team"
-                rows="3"
-                class="w-full px-4 py-3 rounded-lg border border-muted-300 dark:border-muted-600 bg-white dark:bg-muted-800 text-muted-800 dark:text-muted-100 placeholder:text-muted-400 dark:placeholder:text-muted-500 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:focus:ring-primary-400 focus:border-transparent transition-all duration-200 resize-none"
-              />
-            </TairoFormGroup>
-
-            <TairoFormGroup label="Collections (optional)">
-              <div class="space-y-2 max-h-48 overflow-y-auto border border-muted-200 dark:border-muted-700 rounded-lg p-3">
-                <div
-                  v-for="collection in collectionOptions"
-                  :key="collection.id"
-                  class="flex items-center gap-3 p-2 rounded-lg hover:bg-muted-50 dark:hover:bg-muted-800/50 cursor-pointer transition-colors"
-                  @click="toggleCollection(collection.id)"
-                >
-                  <BaseCheckbox
-                    :model-value="formData.collectionIds.includes(collection.id)"
-                    rounded="sm"
-                    color="primary"
-                    @update:model-value="() => toggleCollection(collection.id)"
-                    @click.stop
-                  />
-                  <BaseText size="sm" class="text-muted-800 dark:text-muted-100">
-                    {{ collection.name }}
-                  </BaseText>
-                </div>
-                <div
-                  v-if="collectionOptions.length === 0"
-                  class="text-center py-4 text-sm text-muted-500 dark:text-muted-400"
-                >
-                  No collections available. Create one first.
-                </div>
-              </div>
-              <div class="flex items-center gap-2 mt-2">
-                <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400">
-                  Use collections to organize campaigns, clients, or channels
-                </BaseParagraph>
-                <BaseTooltip content="Organize links into collections for better management of campaigns, clients, or channels">
-                  <button
-                    type="button"
-                    class="flex items-center justify-center size-5 rounded-full bg-muted-100 dark:bg-muted-800 hover:bg-muted-200 dark:hover:bg-muted-700 transition-colors"
-                  >
-                    <Icon name="lucide:help-circle" class="size-3.5 text-muted-500 dark:text-muted-400" />
-                  </button>
-                </BaseTooltip>
-              </div>
-            </TairoFormGroup>
-          </div>
-
-          <!-- Step 6: Pixel Events & Webhooks -->
-          <div v-else-if="currentStep === 6" class="space-y-6">
+          <!-- Step 7: Pixel Events & Webhooks -->
+          <div v-else-if="currentStep === 7" class="space-y-6">
             <div>
               <BaseHeading as="h3" size="lg" weight="semibold">
                 Pixel Events & Webhooks
@@ -2462,10 +2398,10 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- Step 7: Success -->
-          <div v-else-if="currentStep === 7" class="space-y-6">
-            <div class="text-center space-y-4">
-              <Icon name="ph:confetti-duotone" class="mx-auto size-12 text-success-500" />
+          <!-- Step 8: Success -->
+          <div v-else-if="currentStep === 8" class="space-y-3">
+            <div class="text-center space-y-2">
+              <Icon name="ph:confetti-duotone" class="mx-auto size-10 text-success-500" />
               <BaseHeading as="h3" size="lg" weight="semibold">
                 SmartLink ready
               </BaseHeading>
@@ -2478,17 +2414,17 @@ onMounted(() => {
               </div>
             </div>
 
-            <div v-if="createdResult?.shortUrl" class="flex flex-col gap-4 md:flex-row">
+            <div v-if="createdResult?.shortUrl" class="flex flex-col gap-3 md:flex-row">
               <!-- QR Code Section -->
-              <div class="flex-1 rounded-2xl border border-muted-200 bg-white/70 p-5 dark:border-muted-700/60 dark:bg-muted-900/40">
-                <BaseText size="xs" class="text-muted-500 dark:text-muted-400 mb-3">
+              <div class="flex-1 rounded-2xl border border-muted-200 bg-white/70 p-4 dark:border-muted-700/60 dark:bg-muted-900/40">
+                <BaseText size="xs" class="text-muted-500 dark:text-muted-400 mb-2">
                   QR code
                 </BaseText>
-                <div class="flex items-center justify-center rounded-xl border border-dashed border-primary-200 bg-primary-50/40 p-6 dark:border-primary-900/40 dark:bg-primary-900/20">
+                <div class="flex items-center justify-center rounded-xl border border-dashed border-primary-200 bg-primary-50/40 p-4 dark:border-primary-900/40 dark:bg-primary-900/20">
                   <img
                     :src="getQRCodeUrl(createdResult.shortUrl, 300)"
                     alt="QR code"
-                    class="size-48 rounded-lg border border-white dark:border-muted-700 shadow-sm"
+                    class="size-40 rounded-lg border border-white dark:border-muted-700 shadow-sm"
                   >
                 </div>
                 <div class="mt-3 flex items-center gap-2">
@@ -2514,11 +2450,11 @@ onMounted(() => {
               </div>
 
               <!-- Link Details Section -->
-              <div class="flex-1 rounded-2xl border border-muted-200 bg-white/70 p-5 dark:border-muted-700/60 dark:bg-muted-900/40">
-                <BaseText size="xs" class="text-muted-500 dark:text-muted-400 mb-3">
+              <div class="flex-1 rounded-2xl border border-muted-200 bg-white/70 p-4 dark:border-muted-700/60 dark:bg-muted-900/40">
+                <BaseText size="xs" class="text-muted-500 dark:text-muted-400 mb-2">
                   Link details
                 </BaseText>
-                <div class="space-y-3">
+                <div class="space-y-2">
                   <div class="flex items-center justify-between">
                     <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
                       Name
@@ -2550,7 +2486,7 @@ onMounted(() => {
                     <BaseText size="xs" weight="medium" class="text-muted-800 dark:text-muted-100">
                       {{ getDomainDisplay(formData.domainType, formData.domainValue) }}
                     </BaseText>
-                  </div>
+                </div>
                   <div class="flex items-center justify-between">
                     <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
                       Rules
@@ -2558,7 +2494,7 @@ onMounted(() => {
                     <BaseText size="xs" weight="medium" class="text-muted-800 dark:text-muted-100">
                       {{ activeRulesCount }} active
                     </BaseText>
-                  </div>
+              </div>
                   <div class="flex items-center justify-between">
                     <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
                       Collections
@@ -2566,7 +2502,7 @@ onMounted(() => {
                     <BaseText size="xs" weight="medium" class="text-muted-800 dark:text-muted-100">
                       {{ selectedCollectionsCount || 'None' }}
                     </BaseText>
-                  </div>
+            </div>
                   <div class="flex items-center justify-between">
                     <BaseText size="xs" class="text-muted-500 dark:text-muted-400">
                       Visibility
@@ -2596,8 +2532,8 @@ onMounted(() => {
             </div>
 
             <!-- Share Buttons Section -->
-            <div v-if="createdResult?.shortUrl" class="rounded-2xl border border-muted-200 bg-white/70 p-5 dark:border-muted-700/60 dark:bg-muted-900/40">
-              <div class="flex items-center gap-3 mb-4">
+            <div v-if="createdResult?.shortUrl" class="rounded-2xl border border-muted-200 bg-white/70 p-4 dark:border-muted-700/60 dark:bg-muted-900/40">
+              <div class="flex items-center gap-3 mb-3">
                 <Icon name="solar:share-linear" class="size-5 text-primary-600 dark:text-primary-400" />
                 <BaseText size="sm" weight="medium" class="text-muted-600 dark:text-muted-300">
                   Share on Social Media

@@ -115,6 +115,16 @@ export interface CreateCollectionRequest {
   tags?: string[] | null
 }
 
+// Backend UpdateCollectionRequest
+export interface UpdateCollectionRequest {
+  name?: string | null
+  description?: string | null
+  color?: string | null
+  defaultExpirationHours?: number | null
+  defaultPassword?: string | null
+  tags?: string[] | null
+}
+
 // Backend CollectionDto (full collection details)
 export interface ShortenerCollectionDto {
   id: string
@@ -130,6 +140,21 @@ export interface ShortenerCollectionDto {
   createdAt: string
   updatedAt: string
   createdBy: string
+}
+
+export interface CollectionLinkItem {
+  id: string
+  shortUrl: string
+  name?: string | null
+  destinationUrl?: string | null
+  description?: string | null
+  currentClicks: number
+  createdAt: string
+  isSmartLink: boolean
+}
+
+export interface CollectionLinksDto {
+  links: CollectionLinkItem[]
 }
 
 export interface ShortenerNotificationSettings {
@@ -282,13 +307,13 @@ export interface SmartLink {
   webhookMethod?: string | null
   webhookHeaders?: Record<string, string> | null
   webhookBodyTemplate?: string | null
+  isPublic?: boolean | null
+  visibilityRoles?: string[] | null
+  visibilityMemberIds?: string[] | null
   createdAt: string
   updatedAt: string
   createdBy: string
   rules: SmartLinkRule[]
-  isPublic?: boolean
-  visibilityRoles?: string[] | null
-  visibilityMemberIds?: string[] | null
 }
 
 export interface CreateSmartLinkRuleInput {
@@ -333,6 +358,30 @@ export interface CreateSmartLinkRequest {
   password?: string | null
   collectionIds?: string[] | null
   rules: CreateSmartLinkRuleInput[]
+  aiMetadata?: Record<string, any> | null
+  pixelEvents?: PixelEvent[] | null
+  webhookUrl?: string | null
+  webhookMethod?: string | null
+  webhookHeaders?: Record<string, string> | null
+  webhookBodyTemplate?: string | null
+  visibility?: 'public' | 'private'
+  visibilityRoles?: string[]
+  visibilityMemberIds?: string[]
+}
+
+export interface UpdateSmartLinkRequest {
+  name?: string | null
+  description?: string | null
+  domainType?: string | null
+  domainValue?: string | null
+  customAlias?: string | null
+  fallbackUrl?: string | null
+  isOneTime?: boolean | null
+  expiresAt?: string | null
+  clickLimit?: number | null
+  password?: string | null
+  collectionIds?: string[] | null
+  rules?: CreateSmartLinkRuleInput[] | null
   aiMetadata?: Record<string, any> | null
   pixelEvents?: PixelEvent[] | null
   webhookUrl?: string | null
