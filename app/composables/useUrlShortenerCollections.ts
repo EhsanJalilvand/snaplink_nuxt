@@ -63,19 +63,23 @@ export const useUrlShortenerCollections = () => {
 
   const fetchCollections = async (options: { force?: boolean } = {}) => {
     if (state.value.isLoading) {
+      console.log('[useUrlShortenerCollections] Already loading, skipping fetch')
       return
     }
 
     if (!options.force && state.value.items.length > 0) {
+      console.log('[useUrlShortenerCollections] Items already loaded, skipping fetch')
       return
     }
 
     if (!workspaceId.value) {
       // Don't set error if workspaceId is not available yet - it might be loading
+      console.warn('[useUrlShortenerCollections] workspaceId is not available')
       state.value.isLoading = false
       return
     }
 
+    console.log('[useUrlShortenerCollections] Fetching collections for workspace:', workspaceId.value)
     state.value.isLoading = true
     state.value.error = null
 

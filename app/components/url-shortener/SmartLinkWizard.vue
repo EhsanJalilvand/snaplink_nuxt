@@ -20,6 +20,7 @@ import { useWorkspaceContext } from '~/composables/useWorkspaceContext'
 import { useWorkspaceMembers } from '~/composables/useWorkspaceMembers'
 import { useQRCode } from '~/composables/useQRCode'
 import { onClickOutside } from '@vueuse/core'
+import { onMounted } from '#imports'
 import SearchableCheckboxList from './SearchableCheckboxList.vue'
 
 type SmartLinkRuleForm = {
@@ -460,18 +461,43 @@ const fetchGeoData = async () => {
 }
 
 const fetchWizardData = async () => {
+  // Ensure workspaceId is available before fetching
+  if (!workspaceId.value) {
+    console.warn('[SmartLinkWizard] workspaceId is not available yet')
+    return
+  }
+  
+  console.log('[SmartLinkWizard] Fetching wizard data for workspace:', workspaceId.value)
   await Promise.all([
-    fetchLinks({ force: true }),
     fetchCollections({ force: true }),
     fetchDomains(),
     fetchGeoData(),
     fetchWorkspaceMembers(),
   ])
+  
+  console.log('[SmartLinkWizard] Collections fetched:', collectionsItems.value.length)
+  console.log('[SmartLinkWizard] Domains fetched:', domainOptions.value.length)
 }
 
-watch(isOpen, (value) => {
+// Fetch data on mount (like in edit page)
+onMounted(async () => {
+  console.log('[SmartLinkWizard] onMounted - workspaceId:', workspaceId.value)
+  if (workspaceId.value) {
+    await fetchWizardData()
+  }
+})
+
+// Fetch data when wizard opens
+watch(isOpen, async (value) => {
   if (value) {
-    fetchWizardData()
+    await fetchWizardData()
+  }
+}, { immediate: false })
+
+// Also fetch when workspaceId becomes available
+watch(workspaceId, async (newWorkspaceId) => {
+  if (newWorkspaceId && isOpen.value) {
+    await fetchWizardData()
   }
 }, { immediate: false })
 
@@ -1147,12 +1173,11 @@ const selectedCollectionsCount = computed(() => {
     <DialogPortal>
       <DialogOverlay
         class="bg-muted-800/70 dark:bg-muted-900/80 fixed inset-0 z-50"
-        @click="handleClose"
       />
       <DialogContent
         class="fixed top-[4%] start-1/2 max-h-[92vh] w-[92vw] max-w-4xl -translate-x-1/2 rounded-2xl border border-muted-200 dark:border-muted-700 bg-white dark:bg-muted-900 focus:outline-none z-[100] flex flex-col"
-        @pointer-down-outside="handleClose"
         @escape-key-down="handleClose"
+        @interact-outside.prevent
       >
         <div class="flex items-center justify-between border-b border-muted-200 dark:border-muted-800 px-6 py-4">
           <div>
@@ -2099,24 +2124,26 @@ const selectedCollectionsCount = computed(() => {
               <BaseParagraph size="sm" weight="medium" class="text-muted-600 dark:text-muted-300">
                 Default domain
               </BaseParagraph>
-              <BaseCard
-                v-if="defaultDomainOption"
-                class="p-4 border-2 transition-all cursor-pointer"
-                :class="isDomainSelected(defaultDomainOption) ? 'border-primary-500 bg-primary-50/60 dark:bg-primary-900/20' : 'border-muted-200 dark:border-muted-700 hover:border-primary-300'"
-                @click="selectDomainOption(defaultDomainOption)"
-              >
-                <div class="flex items-center justify-between">
-                  <div>
-                    <BaseHeading as="h5" size="sm" weight="semibold">snap.ly</BaseHeading>
-                    <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400">Managed by Snaplink</BaseParagraph>
-                  </div>
-                  <Icon
+              <div class="grid gap-3 md:grid-cols-2">
+                <BaseCard
+                  v-if="defaultDomainOption"
+                  class="p-4 border-2 transition-all cursor-pointer"
+                  :class="isDomainSelected(defaultDomainOption) ? 'border-primary-500 bg-primary-50/60 dark:bg-primary-900/20' : 'border-muted-200 dark:border-muted-700 hover:border-primary-300'"
+                  @click="selectDomainOption(defaultDomainOption)"
+                >
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <BaseHeading as="h5" size="sm" weight="semibold">snap.ly</BaseHeading>
+                      <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400">Managed by Snaplink</BaseParagraph>
+                    </div>
+                    <Icon
                     v-if="isDomainSelected(defaultDomainOption)"
                     name="ph:check-circle"
                     class="size-5 text-primary-500"
                   />
                 </div>
               </BaseCard>
+              </div>
             </div>
 
             <div class="space-y-3">

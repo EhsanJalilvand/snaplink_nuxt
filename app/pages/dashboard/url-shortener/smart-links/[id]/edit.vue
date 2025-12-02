@@ -1904,24 +1904,26 @@ watch([workspaceId, smartLinkId], () => {
             <BaseParagraph size="sm" weight="medium" class="text-muted-600 dark:text-muted-300">
               Default domain
             </BaseParagraph>
-            <BaseCard
-              v-if="defaultDomainOption"
-              class="p-4 border-2 transition-all cursor-pointer"
-              :class="isDomainSelected(defaultDomainOption) ? 'border-primary-500 bg-primary-50/60 dark:bg-primary-900/20' : 'border-muted-200 dark:border-muted-700 hover:border-primary-300'"
-              @click="selectDomainOption(defaultDomainOption)"
-            >
-              <div class="flex items-center justify-between">
-                <div>
-                  <BaseHeading as="h5" size="sm" weight="semibold">snap.ly</BaseHeading>
-                  <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400">Managed by Snaplink</BaseParagraph>
+            <div class="grid gap-3 md:grid-cols-2">
+              <BaseCard
+                v-if="defaultDomainOption"
+                class="p-4 border-2 transition-all cursor-pointer"
+                :class="isDomainSelected(defaultDomainOption) ? 'border-primary-500 bg-primary-50/60 dark:bg-primary-900/20' : 'border-muted-200 dark:border-muted-700 hover:border-primary-300'"
+                @click="selectDomainOption(defaultDomainOption)"
+              >
+                <div class="flex items-center justify-between">
+                  <div>
+                    <BaseHeading as="h5" size="sm" weight="semibold">snap.ly</BaseHeading>
+                    <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400">Managed by Snaplink</BaseParagraph>
+                  </div>
+                  <Icon
+                    v-if="isDomainSelected(defaultDomainOption)"
+                    name="ph:check-circle"
+                    class="size-5 text-primary-500"
+                  />
                 </div>
-                <Icon
-                  v-if="isDomainSelected(defaultDomainOption)"
-                  name="ph:check-circle"
-                  class="size-5 text-primary-500"
-                />
-              </div>
-            </BaseCard>
+              </BaseCard>
+            </div>
           </div>
 
           <div class="space-y-3">

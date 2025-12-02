@@ -19,10 +19,12 @@ export const useWorkspaceDomains = () => {
   const fetchDomains = async () => {
     const wsId = workspaceId.value
     if (!wsId) {
+      console.warn('[useWorkspaceDomains] No workspace selected')
       error.value = 'No workspace selected'
       return
     }
 
+    console.log('[useWorkspaceDomains] Fetching domains for workspace:', wsId)
     isLoading.value = true
     error.value = null
 

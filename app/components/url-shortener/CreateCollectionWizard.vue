@@ -377,12 +377,11 @@ const totalClicks = computed(() => {
     <DialogPortal>
       <DialogOverlay 
         class="bg-muted-800/70 dark:bg-muted-900/80 fixed inset-0 z-50"
-        @click="handleClose"
       />
       <DialogContent
         class="fixed top-[5%] start-[50%] max-h-[90vh] w-[90vw] max-w-2xl translate-x-[-50%] rounded-lg overflow-hidden border border-muted-200 dark:border-muted-700 bg-white dark:bg-muted-800 focus:outline-none z-[100] transition-all duration-200 ease-out flex flex-col"
-        @pointer-down-outside="handleClose"
         @escape-key-down="handleClose"
+        @interact-outside.prevent
       >
         <!-- Header -->
         <div class="flex items-center justify-between w-full p-6 border-b border-muted-200 dark:border-muted-700">

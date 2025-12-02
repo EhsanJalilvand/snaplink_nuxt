@@ -272,12 +272,11 @@ watch(messages, () => {
     <DialogPortal>
       <DialogOverlay
         class="bg-muted-800/70 dark:bg-muted-900/80 fixed inset-0 z-50"
-        @click="handleClose"
       />
       <DialogContent
         class="fixed top-[2%] start-1/2 max-h-[96vh] w-[95vw] max-w-6xl -translate-x-1/2 rounded-2xl border border-muted-200 dark:border-muted-700 bg-white dark:bg-muted-900 focus:outline-none z-[100] flex flex-col"
-        @pointer-down-outside="handleClose"
         @escape-key-down="handleClose"
+        @interact-outside.prevent
       >
         <!-- Header -->
         <div class="flex items-center justify-between border-b border-muted-200 dark:border-muted-800 px-6 py-4">
