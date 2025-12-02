@@ -1,16 +1,15 @@
 <script setup lang="ts">
 import { computed, watch, onMounted, ref } from '#imports'
-import BulkLinkWizard from '~/components/url-shortener/BulkLinkWizard.vue'
-import ShortenerLinksBulkActions from '~/components/url-shortener/ShortenerLinksBulkActions.vue'
-import ShortenerLinksToolbar from '~/components/url-shortener/ShortenerLinksToolbar.vue'
-import ShortenerLinksTable from '~/components/url-shortener/ShortenerLinksTable.vue'
-import ShortenerLinksPagination from '~/components/url-shortener/ShortenerLinksPagination.vue'
-import { useUrlShortenerLinks } from '~/composables/useUrlShortenerLinks'
+import BulkLinkTemplatesTable from '~/components/url-shortener/BulkLinkTemplatesTable.vue'
+import BulkLinkCampaignsTable from '~/components/url-shortener/BulkLinkCampaignsTable.vue'
+import BulkLinkTemplateWizard from '~/components/url-shortener/BulkLinkTemplateWizard.vue'
+import BulkLinkCampaignWizard from '~/components/url-shortener/BulkLinkCampaignWizard.vue'
+import { useBulkLinkTemplates } from '~/composables/useBulkLinkTemplates'
+import { useBulkLinkCampaigns } from '~/composables/useBulkLinkCampaigns'
 import { useWorkspaceContext } from '~/composables/useWorkspaceContext'
-import type { ShortenerLink } from '~/types/url-shortener'
 
 definePageMeta({
-  title: 'Bulk Links',
+  title: 'Bulk Link Management',
   layout: 'dashboard',
 })
 
@@ -18,177 +17,142 @@ const route = useRoute()
 const router = useRouter()
 const { workspaceId } = useWorkspaceContext()
 
+// Tab management
+const activeTab = ref<'campaigns' | 'templates'>('campaigns')
+
+// Templates
 const {
-  items,
-  isLoading,
-  error,
-  search,
-  perPage,
-  page,
-  selectedIds,
-  filteredItems,
-  paginatedItems,
-  totalPages,
-  statusConfig,
-  allVisibleSelected,
-  selectionIndeterminate,
-  hasSelection,
-  fetchLinks,
-  setSearch,
-  setPerPage,
-  setPage,
-  clearSelection,
-  toggleSelect,
-  selectMany,
-  removeLink,
-  copyLink,
-} = useUrlShortenerLinks()
+  items: templates,
+  isLoading: isLoadingTemplates,
+  error: templatesError,
+  fetchTemplates,
+  deleteTemplate,
+} = useBulkLinkTemplates()
 
-// Filter to show only bulk-created links (mock: filter by title containing "bulk" or custom alias pattern)
-// In real implementation, this would filter by a flag or metadata
-const bulkLinks = computed(() => {
-  // For now, show all links as mock data
-  // In production, filter by bulk creation flag
-  return items.value
-})
+// Campaigns
+const {
+  items: campaigns,
+  isLoading: isLoadingCampaigns,
+  error: campaignsError,
+  fetchCampaigns,
+  deleteCampaign,
+} = useBulkLinkCampaigns()
 
-// Override filteredItems to use bulkLinks
-const filteredBulkLinks = computed(() => {
-  if (!search.value.trim()) {
-    return bulkLinks.value
-  }
-  const searchLower = search.value.toLowerCase()
-  return bulkLinks.value.filter(link => 
-    link.destinationUrl?.toLowerCase().includes(searchLower) ||
-    link.shortUrl?.toLowerCase().includes(searchLower) ||
-    link.title?.toLowerCase().includes(searchLower) ||
-    link.shortCode?.toLowerCase().includes(searchLower)
-  )
-})
+// Wizards
+const showTemplateWizard = ref(false)
+const showCampaignWizard = ref(false)
+const editingTemplateId = ref<string | null>(null)
 
-// Pagination for bulk links
-const totalBulkPages = computed(() => {
-  return Math.ceil(filteredBulkLinks.value.length / perPage.value)
-})
-
-const paginatedBulkLinks = computed(() => {
-  const start = (page.value - 1) * perPage.value
-  const end = start + perPage.value
-  return filteredBulkLinks.value.slice(start, end)
-})
-
-// Fetch links when workspaceId is available
+// Fetch data when workspace changes
 watch(workspaceId, (newWorkspaceId) => {
   if (newWorkspaceId) {
-    fetchLinks({ force: true })
+    if (activeTab.value === 'campaigns') {
+      fetchCampaigns({ force: true })
+    } else {
+      fetchTemplates({ force: true })
+    }
   }
 }, { immediate: true })
 
-// Also fetch on mount in case workspaceId is already available
+// Fetch on mount
 onMounted(() => {
   if (workspaceId.value) {
-    fetchLinks({ force: true })
+    fetchCampaigns({ force: true })
+    fetchTemplates({ force: true })
   }
 })
 
+// Fetch when tab changes
+watch(activeTab, (tab) => {
+  if (tab === 'campaigns') {
+    fetchCampaigns({ force: true })
+  } else {
+    fetchTemplates({ force: true })
+  }
+})
+
+// Sync active tab with URL query
 watch(
-  () => route.query.page,
+  () => route.query.tab,
   (value) => {
-    const parsed = Number.parseInt((value as string) ?? '1', 10)
-    if (!Number.isNaN(parsed) && parsed > 0 && parsed !== page.value) {
-      setPage(parsed)
+    if (value === 'templates') {
+      activeTab.value = 'templates'
+    } else {
+      activeTab.value = 'campaigns'
     }
   },
-  { immediate: true },
+  { immediate: true }
 )
 
-watch(
-  () => route.query.perPage,
-  (value) => {
-    const parsed = Number.parseInt((value as string) ?? `${perPage.value}`, 10)
-    if (!Number.isNaN(parsed) && parsed > 0 && parsed !== perPage.value) {
-      setPerPage(parsed)
-    }
-  },
-  { immediate: true },
-)
-
-watch([page, perPage], ([currentPage, currentPerPage]) => {
+watch(activeTab, (tab) => {
   router.replace({
     query: {
       ...route.query,
-      page: currentPage > 1 ? currentPage : undefined,
-      perPage: currentPerPage !== 10 ? currentPerPage : undefined,
+      tab: tab === 'templates' ? 'templates' : undefined,
     },
   })
 })
 
-const showBulkLinkWizard = ref(false)
-
-const handleCreateBulkLinks = () => {
-  showBulkLinkWizard.value = true
+const handleCreateTemplate = () => {
+  showTemplateWizard.value = true
 }
 
-const handleBulkLinksCreated = async () => {
-  // Refresh links list from API
-  await fetchLinks({ force: true })
+const handleCreateCampaign = () => {
+  showCampaignWizard.value = true
 }
 
-const handleCopyLink = (link: ShortenerLink) => {
-  copyLink(link.shortUrl)
+const handleTemplateCreated = async () => {
+  await fetchTemplates({ force: true })
+  showTemplateWizard.value = false
 }
 
-const handleDeleteLink = async (linkId: string) => {
-  await removeLink(linkId)
-  // Refresh links list after deletion
-  await fetchLinks({ force: true })
+const handleCampaignCreated = async () => {
+  await fetchCampaigns({ force: true })
+  showCampaignWizard.value = false
 }
 
-const handleViewReport = () => {
-  const ids = hasSelection.value ? selectedIds.value : paginatedBulkLinks.value.slice(0, 3).map((item) => item.id)
-  router.push({
-    path: '/dashboard/url-shortener/reports',
-    query: {
-      type: 'links',
-      ids: ids.join(','),
-    },
-  })
+const handleDeleteTemplate = async (templateId: string) => {
+  if (confirm('Are you sure you want to delete this template?')) {
+    try {
+      await deleteTemplate(templateId)
+    } catch (error) {
+      // Error toast is shown in composable
+    }
+  }
 }
 
-const periodSearch = computed({
-  get: () => search.value,
-  set: (value: string) => setSearch(value),
-})
-
-const perPageModel = computed({
-  get: () => perPage.value,
-  set: (value: number) => setPerPage(value),
-})
-
-const currentPage = computed({
-  get: () => page.value,
-  set: (value: number) => setPage(value),
-})
-
-const handleToggleAll = (selected: boolean) => {
-  selectMany(paginatedBulkLinks.value.map((item) => item.id), selected)
+const handleDeleteCampaign = async (campaignId: string, deleteSmartLinks: boolean = false) => {
+  try {
+    await deleteCampaign(campaignId, deleteSmartLinks)
+  } catch (error) {
+    // Error toast is shown in composable
+  }
 }
 
-// Override allVisibleSelected for bulk links
-const allBulkSelected = computed(() => {
-  if (paginatedBulkLinks.value.length === 0) return false
-  return paginatedBulkLinks.value.every(link => selectedIds.value.includes(link.id))
-})
+const handleEditTemplate = (templateId: string) => {
+  editingTemplateId.value = templateId
+  showTemplateWizard.value = true
+}
 
-// Override selectionIndeterminate for bulk links
-const bulkSelectionIndeterminate = computed(() => {
-  const selectedCount = paginatedBulkLinks.value.filter(link => selectedIds.value.includes(link.id)).length
-  return selectedCount > 0 && selectedCount < paginatedBulkLinks.value.length
-})
+const handleCloneTemplate = async (templateId: string) => {
+  // TODO: Implement clone template
+  console.log('Clone template:', templateId)
+}
+
+const handleViewTemplateCampaigns = (templateId: string) => {
+  // Filter campaigns by template
+  activeTab.value = 'campaigns'
+  // TODO: Add filter by templateId
+}
+
+const handleViewCampaign = (campaignId: string) => {
+  router.push(`/dashboard/url-shortener/bulk-links/campaigns/${campaignId}`)
+}
 </script>
 
 <template>
   <div class="space-y-6 py-6">
+    <!-- Header -->
     <div class="flex flex-wrap items-center justify-between gap-4">
       <div>
         <BaseHeading
@@ -197,87 +161,135 @@ const bulkSelectionIndeterminate = computed(() => {
           weight="bold"
           class="text-muted-800 dark:text-muted-100"
         >
-          Bulk Links
+          Bulk Link Management
         </BaseHeading>
         <BaseParagraph size="sm" class="text-muted-500 dark:text-muted-400">
-          Manage and track links created through bulk operations.
+          Create reusable templates and launch bulk campaigns with SmartLink capabilities
         </BaseParagraph>
       </div>
       <div class="flex items-center gap-2">
-        <BaseButton variant="outline" :disabled="selectedIds.length === 0" @click="handleViewReport">
-          <Icon name="ph:chart-line" class="size-4" />
-          <span>Generate Bulk Report</span>
-        </BaseButton>
-        <BaseButton variant="primary" @click="handleCreateBulkLinks">
+        <BaseButton
+          v-if="activeTab === 'templates'"
+          variant="primary"
+          @click="handleCreateTemplate"
+        >
           <Icon name="ph:plus" class="size-4" />
-          <span>Create Bulk Links</span>
+          <span>Create Template</span>
+        </BaseButton>
+        <BaseButton
+          v-else
+          variant="primary"
+          @click="handleCreateCampaign"
+        >
+          <Icon name="ph:plus" class="size-4" />
+          <span>Create Campaign</span>
         </BaseButton>
       </div>
     </div>
 
-    <ShortenerLinksBulkActions
-      :selected-count="selectedIds.length"
-      @clear="clearSelection"
-      @report="handleViewReport"
-    />
-
-    <BaseAlert
-      v-if="error"
-      color="warning"
-      variant="pastel"
-      class="rounded-2xl"
-    >
-      <template #title>
-        Using cached links
-      </template>
-      <p class="text-sm text-muted-600 dark:text-muted-300">
-        {{ error }}
-      </p>
-    </BaseAlert>
-
-    <ShortenerLinksToolbar
-      v-model:search="periodSearch"
-      v-model:per-page="perPageModel"
-    />
-
-    <div v-if="filteredBulkLinks.length === 0 && !isLoading" class="py-12">
-      <BasePlaceholderPage
-        title="No bulk links found"
-        subtitle="Create your first bulk links using manual entry or CSV import."
-      >
-        <template #image>
-          <Icon name="solar:layers-linear" class="size-16 text-muted-400" />
-        </template>
-        <BaseButton variant="primary" @click="handleCreateBulkLinks">
-          <Icon name="ph:plus" class="size-4" />
-          <span>Create Bulk Links</span>
-        </BaseButton>
-      </BasePlaceholderPage>
+    <!-- Tabs -->
+    <div class="border-b border-muted-200 dark:border-muted-800">
+      <div class="flex gap-2">
+        <button
+          type="button"
+          class="relative px-4 py-3 text-sm font-medium transition-colors duration-200"
+          :class="
+            activeTab === 'campaigns'
+              ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-600 dark:border-primary-400'
+              : 'text-muted-500 dark:text-muted-400 hover:text-muted-700 dark:hover:text-muted-300'
+          "
+          @click="activeTab = 'campaigns'"
+        >
+          <div class="flex items-center gap-2">
+            <Icon name="solar:layers-linear" class="size-4" />
+            <span>Campaigns</span>
+          </div>
+        </button>
+        <button
+          type="button"
+          class="relative px-4 py-3 text-sm font-medium transition-colors duration-200"
+          :class="
+            activeTab === 'templates'
+              ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-600 dark:border-primary-400'
+              : 'text-muted-500 dark:text-muted-400 hover:text-muted-700 dark:hover:text-muted-300'
+          "
+          @click="activeTab = 'templates'"
+        >
+          <div class="flex items-center gap-2">
+            <Icon name="solar:document-text-linear" class="size-4" />
+            <span>Templates</span>
+          </div>
+        </button>
+      </div>
     </div>
 
-    <ShortenerLinksTable
-      v-else
-      :links="paginatedBulkLinks"
-      :selected-ids="selectedIds"
-      :is-loading="isLoading"
-      :all-selected="allBulkSelected"
-      :indeterminate="bulkSelectionIndeterminate"
-      :status-config="statusConfig"
-      @toggle-all="handleToggleAll"
-      @toggle-select="toggleSelect"
-      @copy="handleCopyLink"
-      @delete="handleDeleteLink"
+    <!-- Campaigns Tab Content -->
+    <div v-if="activeTab === 'campaigns'" class="space-y-6">
+      <div v-if="campaigns.length === 0 && !isLoadingCampaigns" class="py-12">
+        <BasePlaceholderPage
+          title="No campaigns yet"
+          subtitle="Create your first bulk campaign from a template"
+        >
+          <template #image>
+            <Icon name="solar:layers-linear" class="size-16 text-muted-400" />
+          </template>
+          <BaseButton variant="primary" @click="handleCreateCampaign">
+            <Icon name="ph:plus" class="size-4" />
+            <span>Create Campaign</span>
+          </BaseButton>
+        </BasePlaceholderPage>
+      </div>
+
+      <BaseCard v-else class="p-0 overflow-hidden">
+        <BulkLinkCampaignsTable
+          :campaigns="campaigns"
+          :is-loading="isLoadingCampaigns"
+          @view="handleViewCampaign"
+          @delete="handleDeleteCampaign"
+        />
+      </BaseCard>
+    </div>
+
+    <!-- Templates Tab Content -->
+    <div v-else-if="activeTab === 'templates'" class="space-y-6">
+      <div v-if="templates.length === 0 && !isLoadingTemplates" class="py-12">
+        <BasePlaceholderPage
+          title="No templates yet"
+          subtitle="Create your first reusable template with SmartLink features"
+        >
+          <template #image>
+            <Icon name="solar:document-text-linear" class="size-16 text-muted-400" />
+          </template>
+          <BaseButton variant="primary" @click="handleCreateTemplate">
+            <Icon name="ph:plus" class="size-4" />
+            <span>Create Template</span>
+          </BaseButton>
+        </BasePlaceholderPage>
+      </div>
+
+      <BaseCard v-else class="p-0 overflow-hidden">
+        <BulkLinkTemplatesTable
+          :templates="templates"
+          :is-loading="isLoadingTemplates"
+          @edit="handleEditTemplate"
+          @delete="handleDeleteTemplate"
+          @clone="handleCloneTemplate"
+          @view-campaigns="handleViewTemplateCampaigns"
+        />
+      </BaseCard>
+    </div>
+
+    <!-- Wizards -->
+    <BulkLinkTemplateWizard
+      v-model:open="showTemplateWizard"
+      :template-id="editingTemplateId"
+      @created="handleTemplateCreated"
+      @close="editingTemplateId = null"
     />
 
-    <ShortenerLinksPagination
-      v-if="filteredBulkLinks.length > 0"
-      v-model:page="currentPage"
-      :total-pages="totalBulkPages"
-    />
-
-    <BulkLinkWizard
-      v-model:open="showBulkLinkWizard"
-      @created="handleBulkLinksCreated"
+    <BulkLinkCampaignWizard
+      v-model:open="showCampaignWizard"
+      @created="handleCampaignCreated"
     />
   </div>
 </template>

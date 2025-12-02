@@ -154,7 +154,7 @@ function getRulesSummary(link: SmartLink) {
               <div class="flex items-start gap-4">
                 <!-- Selection Checkbox -->
                 <div class="pt-1">
-                        <BaseCheckbox
+                  <BaseCheckbox
                     :checked="selectedIds.includes(link.id)"
                     rounded="sm"
                     color="info"
