@@ -130,8 +130,6 @@ export const useBulkLinkTemplates = () => {
         WebhookBodyTemplate: request.webhookBodyTemplate,
       }
 
-      console.log('[useBulkLinkTemplates] Sending PascalCase request:', JSON.stringify(pascalCaseRequest, null, 2))
-
       const response = await api.post<{ id: string; name: string }>(
         `/api/workspaces/${workspaceId.value}/bulk-link-templates`,
         pascalCaseRequest,

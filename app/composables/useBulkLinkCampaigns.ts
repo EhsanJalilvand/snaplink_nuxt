@@ -117,8 +117,6 @@ export const useBulkLinkCampaigns = () => {
         })),
       }
 
-      console.log('[useBulkLinkCampaigns] Sending PascalCase request:', JSON.stringify(pascalCaseRequest, null, 2))
-
       const response = await api.post<{
         campaignId: string
         campaignName: string

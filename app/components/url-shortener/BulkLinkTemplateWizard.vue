@@ -77,34 +77,247 @@ const formData = ref({
   webhookBodyTemplate: '',
 })
 
-// Geo data (simplified - reuse from SmartLinkWizard if needed)
-const geoCountries = ref([
-  { code: 'US', name: 'United States' },
-  { code: 'CA', name: 'Canada' },
-  { code: 'UK', name: 'United Kingdom' },
-  { code: 'DE', name: 'Germany' },
-  { code: 'FR', name: 'France' },
+// Geo data (full list from SmartLink)
+const geoCountries = ref<Array<{ code: string; name: string; cities: Array<{ id?: string; name: string; region?: string | null }> }>>([
+  { code: 'US', name: 'United States', cities: [
+    { name: 'New York', region: 'New York' },
+    { name: 'Los Angeles', region: 'California' },
+    { name: 'San Francisco', region: 'California' },
+    { name: 'Chicago', region: 'Illinois' },
+    { name: 'Miami', region: 'Florida' }
+  ]},
+  { code: 'CA', name: 'Canada', cities: [
+    { name: 'Toronto', region: 'Ontario' },
+    { name: 'Vancouver', region: 'British Columbia' },
+    { name: 'Montreal', region: 'Quebec' },
+    { name: 'Calgary', region: 'Alberta' }
+  ]},
+  { code: 'DE', name: 'Germany', cities: [
+    { name: 'Berlin', region: 'Berlin' },
+    { name: 'Munich', region: 'Bavaria' },
+    { name: 'Hamburg', region: 'Hamburg' }
+  ]},
+  { code: 'IR', name: 'Iran', cities: [
+    { name: 'Tehran', region: 'Tehran' },
+    { name: 'Isfahan', region: 'Isfahan' },
+    { name: 'Shiraz', region: 'Fars' },
+    { name: 'Tabriz', region: 'East Azerbaijan' }
+  ]},
+  { code: 'AE', name: 'United Arab Emirates', cities: [
+    { name: 'Dubai', region: 'Dubai' },
+    { name: 'Abu Dhabi', region: 'Abu Dhabi' },
+    { name: 'Sharjah', region: 'Sharjah' }
+  ]},
 ])
+const isGeoLoading = ref(false)
 
-const createRule = (): RuleForm => ({
-  uid: crypto.randomUUID(),
-  targetUrlPattern: '{destination}',
-  conditionType: 'GeoCountry',
-  condition: { countries: [] },
-  priority: (formData.value.rules.length + 1) * 10,
-  isActive: true,
-})
+const conditionTypeOptions: { label: string; value: SmartLinkConditionType; description: string }[] = [
+  { label: 'Country', value: 'GeoCountry', description: 'Route visitors based on country' },
+  { label: 'City', value: 'GeoCity', description: 'Hyperlocal routing' },
+  { label: 'Region', value: 'GeoRegion', description: 'Target specific regions or states' },
+  { label: 'Device Type', value: 'DeviceType', description: 'Desktop, mobile or tablet' },
+  { label: 'Operating System', value: 'OperatingSystem', description: 'iOS, Android, Windows, …' },
+  { label: 'Browser', value: 'Browser', description: 'Chrome, Safari, Firefox, …' },
+  { label: 'Referrer', value: 'Referrer', description: 'Send based on referring host' },
+  { label: 'Schedule', value: 'Schedule', description: 'Time-based redirects' },
+  { label: 'Custom Expression', value: 'CustomExpression', description: 'Combine multiple signals' },
+]
+
+const deviceOptions = [
+  { value: 'desktop', label: 'Desktop' },
+  { value: 'mobile', label: 'Mobile' },
+  { value: 'tablet', label: 'Tablet' },
+]
+
+const osOptions = [
+  'iOS',
+  'Android',
+  'Windows',
+  'macOS',
+  'Linux',
+]
+
+const browserOptions = [
+  'Chrome',
+  'Safari',
+  'Firefox',
+  'Edge',
+  'Opera',
+]
+
+const dayOptions = [
+  { value: 'Mon', label: 'Monday' },
+  { value: 'Tue', label: 'Tuesday' },
+  { value: 'Wed', label: 'Wednesday' },
+  { value: 'Thu', label: 'Thursday' },
+  { value: 'Fri', label: 'Friday' },
+  { value: 'Sat', label: 'Saturday' },
+  { value: 'Sun', label: 'Sunday' },
+]
+
+const timezoneOptions = [
+  { value: 'UTC', label: 'UTC (Coordinated Universal Time)' },
+  { value: 'America/New_York', label: 'EST/EDT (Eastern Time)' },
+  { value: 'America/Chicago', label: 'CST/CDT (Central Time)' },
+  { value: 'America/Denver', label: 'MST/MDT (Mountain Time)' },
+  { value: 'America/Los_Angeles', label: 'PST/PDT (Pacific Time)' },
+  { value: 'Europe/London', label: 'GMT/BST (London)' },
+  { value: 'Europe/Paris', label: 'CET/CEST (Paris)' },
+  { value: 'Asia/Tokyo', label: 'JST (Tokyo)' },
+  { value: 'Asia/Dubai', label: 'GST (Dubai)' },
+  { value: 'Asia/Tehran', label: 'IRST (Tehran)' },
+]
+
+// Computed items for SearchableCheckboxList
+const countryItems = computed(() =>
+  geoCountries.value.map(c => ({
+    value: c.code,
+    label: c.name,
+  }))
+)
+
+const getCityItems = (countryCode: string | null) => {
+  if (!countryCode) return []
+  const country = geoCountries.value.find(c => c.code === countryCode)
+  return country?.cities.map(city => ({
+    value: city.name,
+    label: city.name,
+  })) || []
+}
+
+const getRegionItems = (countryCode: string | null, selectedCities: string[] = []) => {
+  if (!countryCode) return []
+  const country = geoCountries.value.find(c => c.code === countryCode)
+  
+  // If cities are selected, filter regions by those cities
+  const citiesToConsider = selectedCities.length > 0
+    ? country?.cities.filter(city => selectedCities.includes(city.name))
+    : country?.cities
+  
+  const uniqueRegions = [...new Set(citiesToConsider?.map(city => city.region).filter(Boolean))]
+  return uniqueRegions.map(region => ({
+    value: region,
+    label: region,
+  }))
+}
+
+// Helper to toggle array values
+const toggleArrayValue = (array: any[], value: any) => {
+  const index = array.indexOf(value)
+  if (index > -1) {
+    array.splice(index, 1)
+  } else {
+    array.push(value)
+  }
+}
+
+// Accordion state for rules
+const expandedRules = ref<Set<string>>(new Set())
+
+const toggleRuleExpanded = (uid: string) => {
+  if (expandedRules.value.has(uid)) {
+    expandedRules.value.delete(uid)
+  } else {
+    expandedRules.value.add(uid)
+  }
+}
+
+const isRuleExpanded = (uid: string) => expandedRules.value.has(uid)
+
+const createConditionTemplate = (type: SmartLinkConditionType): Record<string, any> => {
+  switch (type) {
+    case 'GeoCountry':
+      return { countries: [] }
+    case 'GeoCity':
+      return { country: null, cities: [] }
+    case 'GeoRegion':
+      return { country: null, regions: [] }
+    case 'DeviceType':
+      return { devices: [] }
+    case 'OperatingSystem':
+      return { operatingSystems: [] }
+    case 'Browser':
+      return { browsers: [] }
+    case 'Referrer':
+      return { domain: '' }
+    case 'Schedule':
+      return { days: [], startTime: '09:00', endTime: '17:00', timezone: 'UTC' }
+    case 'CustomExpression':
+      return { expression: '', notes: '' }
+    default:
+      return {}
+  }
+}
+
+const createRule = (): RuleForm => {
+  const newRule = {
+    uid: crypto.randomUUID(),
+    targetUrlPattern: '{destination}',
+    conditionType: 'GeoCountry' as SmartLinkConditionType,
+    condition: { countries: [] },
+    priority: (formData.value.rules.length + 1) * 10,
+    isActive: true,
+  }
+  // Auto-expand new rules
+  expandedRules.value.add(newRule.uid)
+  return newRule
+}
 
 const addRule = () => {
   formData.value.rules.push(createRule())
 }
 
 const removeRule = (uid: string) => {
+  if (formData.value.rules.length === 1) {
+    toaster.add({
+      title: 'Cannot remove',
+      description: 'At least one rule is recommended',
+      icon: 'ph:warning',
+      color: 'warning',
+      progress: true,
+    })
+    return
+  }
+  
   formData.value.rules = formData.value.rules.filter(r => r.uid !== uid)
+  expandedRules.value.delete(uid)
   // Recalculate priorities
   formData.value.rules.forEach((rule, index) => {
     rule.priority = (index + 1) * 10
   })
+}
+
+const duplicateRule = (sourceRule: RuleForm) => {
+  try {
+    const clone: RuleForm = {
+      uid: crypto.randomUUID(),
+      targetUrlPattern: sourceRule.targetUrlPattern,
+      conditionType: sourceRule.conditionType,
+      condition: JSON.parse(JSON.stringify(sourceRule.condition)),
+      priority: (formData.value.rules.length + 1) * 10,
+      isActive: sourceRule.isActive,
+    }
+    
+    formData.value.rules.push(clone)
+    expandedRules.value.add(clone.uid)
+    
+    toaster.add({
+      title: 'Rule duplicated',
+      description: 'The rule has been duplicated successfully',
+      icon: 'ph:check',
+      color: 'success',
+      progress: true,
+    })
+  } catch (error: any) {
+    console.error('Error duplicating rule:', error)
+    toaster.add({
+      title: 'Error',
+      description: error?.message || 'Failed to duplicate rule',
+      icon: 'ph:warning',
+      color: 'danger',
+      progress: true,
+    })
+  }
 }
 
 const moveRuleUp = (index: number) => {
@@ -131,6 +344,56 @@ const moveRuleDown = (index: number) => {
   formData.value.rules.forEach((rule, idx) => {
     rule.priority = (idx + 1) * 10
   })
+}
+
+// Placeholder helpers
+const availablePlaceholders = [
+  { value: '{destination}', label: 'Destination URL', icon: 'ph:link', description: 'The target URL from CSV/input' },
+  { value: '{shortCode}', label: 'Short Code', icon: 'ph:hash', description: 'Generated short code (e.g., abc123)' },
+  { value: '{title}', label: 'Title', icon: 'ph:text-aa', description: 'Link title from CSV/input' },
+  { value: '{description}', label: 'Description', icon: 'ph:note', description: 'Link description from CSV/input' },
+  { value: '{index}', label: 'Index', icon: 'ph:list-numbers', description: 'Link number in campaign (1, 2, 3...)' },
+  { value: '{campaignName}', label: 'Campaign Name', icon: 'ph:folder', description: 'Name of the campaign' },
+  { value: '{templateName}', label: 'Template Name', icon: 'ph:file-text', description: 'Name of this template' },
+]
+
+const insertPlaceholder = (placeholder: string) => {
+  const currentValue = formData.value.fallbackUrlPattern || ''
+  formData.value.fallbackUrlPattern = currentValue + placeholder
+}
+
+const insertRulePlaceholder = (ruleUid: string, placeholder: string) => {
+  const rule = formData.value.rules.find(r => r.uid === ruleUid)
+  if (rule) {
+    const currentValue = rule.targetUrlPattern || ''
+    rule.targetUrlPattern = currentValue + placeholder
+  }
+}
+
+const previewFallbackUrl = computed(() => {
+  if (!formData.value.fallbackUrlPattern) return ''
+  let preview = formData.value.fallbackUrlPattern
+  preview = preview.replace(/\{destination\}/gi, 'https://example.com/product')
+  preview = preview.replace(/\{shortCode\}/gi, 'abc123')
+  preview = preview.replace(/\{title\}/gi, 'Sample Product')
+  preview = preview.replace(/\{description\}/gi, 'Product description')
+  preview = preview.replace(/\{index\}/gi, '1')
+  preview = preview.replace(/\{campaignName\}/gi, 'Summer Sale 2024')
+  preview = preview.replace(/\{templateName\}/gi, formData.value.name || 'My Template')
+  return preview
+})
+
+const getPreviewForRule = (rule: RuleForm) => {
+  if (!rule.targetUrlPattern) return ''
+  let preview = rule.targetUrlPattern
+  preview = preview.replace(/\{destination\}/gi, 'https://example.com/product')
+  preview = preview.replace(/\{shortCode\}/gi, 'abc123')
+  preview = preview.replace(/\{title\}/gi, 'Sample Product')
+  preview = preview.replace(/\{description\}/gi, 'Product description')
+  preview = preview.replace(/\{index\}/gi, '1')
+  preview = preview.replace(/\{campaignName\}/gi, 'Summer Sale 2024')
+  preview = preview.replace(/\{templateName\}/gi, formData.value.name || 'My Template')
+  return preview
 }
 
 const collectionOptions = computed(() => {
@@ -331,8 +594,6 @@ const handleSubmit = async () => {
       webhookBodyTemplate: formData.value.webhookBodyTemplate || null,
     }
     
-    console.log('[BulkLinkTemplateWizard] Sending request (camelCase):', JSON.stringify(request, null, 2))
-
     if (isEditMode.value && props.templateId) {
       await updateTemplate(props.templateId, {
         ...request,
@@ -362,13 +623,6 @@ const handleSubmit = async () => {
     isOpen.value = false
   } catch (error: any) {
     console.error('Failed to save template:', error)
-    console.error('Error details:', {
-      statusCode: error?.statusCode,
-      statusMessage: error?.statusMessage,
-      data: error?.data,
-      message: error?.message,
-    })
-    console.error('Error data (stringified):', JSON.stringify(error?.data, null, 2))
     
     let errorMessage = 'Failed to save template. Please try again.'
     
@@ -594,9 +848,41 @@ const removePixelEvent = (index: number) => {
                 icon="solar:link-linear"
                 rounded="lg"
               />
-              <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400 mt-2">
-                Use {destination} placeholder for the actual link URL. Example: {destination}/promo
-              </BaseParagraph>
+              
+              <!-- Available Placeholders -->
+              <div class="mt-3 space-y-2">
+                <BaseText size="xs" weight="medium" class="text-muted-600 dark:text-muted-400">
+                  Available Placeholders (click to insert):
+                </BaseText>
+                <div class="flex flex-wrap gap-2">
+                  <button
+                    v-for="placeholder in availablePlaceholders"
+                    :key="placeholder.value"
+                    type="button"
+                    class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-muted-300 dark:border-muted-600 bg-white dark:bg-muted-800 hover:bg-primary-50 dark:hover:bg-primary-900/20 hover:border-primary-500 dark:hover:border-primary-400 transition-colors text-xs font-mono text-muted-700 dark:text-muted-300 hover:text-primary-600 dark:hover:text-primary-400"
+                    @click="insertPlaceholder(placeholder.value)"
+                    :title="placeholder.description"
+                  >
+                    <Icon :name="placeholder.icon" class="size-3.5" />
+                    {{ placeholder.value }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Live Preview -->
+              <BaseCard v-if="formData.fallbackUrlPattern && formData.fallbackUrlPattern !== '{destination}'" class="mt-3 p-3 bg-muted-50 dark:bg-muted-800/50 border border-muted-200 dark:border-muted-700">
+                <div class="flex items-start gap-2">
+                  <Icon name="ph:eye" class="size-4 text-muted-500 mt-0.5 shrink-0" />
+                  <div class="flex-1 min-w-0">
+                    <BaseText size="xs" weight="medium" class="text-muted-600 dark:text-muted-400 mb-1">
+                      Preview (with sample data):
+                    </BaseText>
+                    <BaseText size="xs" class="text-muted-700 dark:text-muted-300 font-mono break-all">
+                      {{ previewFallbackUrl }}
+                    </BaseText>
+                  </div>
+                </div>
+              </BaseCard>
             </TairoFormGroup>
           </div>
 
@@ -628,84 +914,482 @@ const removePixelEvent = (index: number) => {
               </BaseParagraph>
             </div>
 
-            <div v-else class="space-y-4">
+            <div v-else class="space-y-3">
               <BaseCard
                 v-for="(rule, index) in formData.rules"
                 :key="rule.uid"
-                class="p-4 border border-muted-200 dark:border-muted-700"
+                class="border border-muted-200 dark:border-muted-800 overflow-hidden"
               >
-                <div class="space-y-4">
-                  <div class="flex items-center gap-3">
-                    <!-- Move Buttons -->
-                    <div class="flex flex-col gap-1 shrink-0">
-                      <BaseButton
-                        variant="ghost"
-                        size="xs"
-                        class="p-1 h-6 w-6"
-                        :disabled="index === 0"
-                        @click="moveRuleUp(index)"
-                      >
-                        <Icon name="lucide:chevron-up" class="size-4" />
-                      </BaseButton>
-                      <BaseButton
-                        variant="ghost"
-                        size="xs"
-                        class="p-1 h-6 w-6"
-                        :disabled="index === formData.rules.length - 1"
-                        @click="moveRuleDown(index)"
-                      >
-                        <Icon name="lucide:chevron-down" class="size-4" />
-                      </BaseButton>
-                    </div>
+                <!-- Accordion Header -->
+                <div class="flex items-center gap-3 px-4 py-3 hover:bg-muted-50 dark:hover:bg-muted-800/50 transition-colors">
+                  <!-- Move Buttons -->
+                  <div class="flex flex-col gap-1 shrink-0">
+                    <BaseButton
+                      variant="ghost"
+                      size="xs"
+                      class="p-1 h-6 w-6"
+                      :disabled="index === 0"
+                      @click.stop="moveRuleUp(index)"
+                    >
+                      <Icon name="lucide:chevron-up" class="size-4" />
+                    </BaseButton>
+                    <BaseButton
+                      variant="ghost"
+                      size="xs"
+                      class="p-1 h-6 w-6"
+                      :disabled="index === formData.rules.length - 1"
+                      @click.stop="moveRuleDown(index)"
+                    >
+                      <Icon name="lucide:chevron-down" class="size-4" />
+                    </BaseButton>
+                  </div>
                     
                     <!-- Rule Info -->
-                    <div class="flex-1 flex items-center justify-between">
-                      <BaseHeading as="h5" size="sm" weight="medium" class="text-muted-700 dark:text-muted-200">
-                        Rule {{ index + 1 }} (Priority: {{ rule.priority }})
-                      </BaseHeading>
-                      <BaseButton size="sm" variant="ghost" color="danger" @click="removeRule(rule.uid)">
-                        <Icon name="solar:trash-bin-trash-linear" class="size-4" />
-                        <span>Remove</span>
-                      </BaseButton>
+                    <div
+                      class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
+                      @click.stop="toggleRuleExpanded(rule.uid)"
+                    >
+                      <div class="text-sm font-semibold text-muted-900 dark:text-white">
+                        Rule {{ index + 1 }}
+                      </div>
+                      <BaseTag
+                        v-if="rule.conditionType"
+                        size="xs"
+                        variant="pastel"
+                        color="primary"
+                      >
+                        {{ conditionTypeOptions.find(opt => opt.value === rule.conditionType)?.label }}
+                      </BaseTag>
+                      <BaseTag
+                        v-if="rule.targetUrlPattern"
+                        size="xs"
+                        variant="solid"
+                        color="muted"
+                      >
+                        Destination set
+                      </BaseTag>
+                    </div>
+                    
+                    <!-- Actions -->
+                    <div class="flex items-center gap-2 shrink-0">
+                      <BaseSwitchBall
+                        v-model="rule.isActive"
+                        variant="primary"
+                        @click.stop
+                      />
+                      <Icon
+                        name="lucide:chevron-down"
+                        class="size-4 text-muted-400 transition-transform duration-200 cursor-pointer"
+                        :class="{ 'rotate-180': isRuleExpanded(rule.uid) }"
+                        @click="toggleRuleExpanded(rule.uid)"
+                      />
                     </div>
                   </div>
 
-                  <TairoFormGroup label="Target URL Pattern">
-                    <TairoInput
-                      v-model="rule.targetUrlPattern"
-                      placeholder="{destination}/us"
-                      icon="solar:link-linear"
-                      rounded="lg"
-                    />
-                    <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400 mt-1">
-                      Use {destination} and {shortCode} placeholders
-                    </BaseParagraph>
-                  </TairoFormGroup>
+                  <!-- Accordion Content -->
+                  <div
+                    v-show="isRuleExpanded(rule.uid)"
+                    class="space-y-5 p-5 border-t border-muted-200 dark:border-muted-800 bg-muted-50/50 dark:bg-muted-900/30"
+                  >
+                    <!-- Main Fields -->
+                    <div class="grid grid-cols-1 gap-4 md:grid-cols-4 md:items-start">
+                      <TairoFormGroup label="Condition type" class="md:col-span-1">
+                        <TairoSelect
+                          v-model="rule.conditionType"
+                          class="w-full"
+                          size="sm"
+                          @update:model-value="rule.condition = createConditionTemplate(rule.conditionType)"
+                        >
+                          <BaseSelectItem
+                            v-for="option in conditionTypeOptions"
+                            :key="option.value"
+                            :value="option.value"
+                          >
+                            {{ option.label }}
+                          </BaseSelectItem>
+                        </TairoSelect>
+                      </TairoFormGroup>
 
-                  <TairoFormGroup label="Condition Type">
-                    <select
-                      v-model="rule.conditionType"
-                      class="w-full rounded-lg border border-muted-300 dark:border-muted-600 bg-white dark:bg-muted-800 px-3 py-2 text-sm"
-                    >
-                      <option value="GeoCountry">Country</option>
-                      <option value="DeviceType">Device Type</option>
-                      <option value="OperatingSystem">Operating System</option>
-                      <option value="Browser">Browser</option>
-                      <option value="Referrer">Referrer</option>
-                      <option value="Schedule">Schedule</option>
-                    </select>
-                  </TairoFormGroup>
+                      <TairoFormGroup label="Target URL Pattern" class="md:col-span-3">
+                        <TairoInput
+                          v-model="rule.targetUrlPattern"
+                          placeholder="{destination}"
+                          rounded="lg"
+                          size="sm"
+                          class="w-full"
+                        />
+                        
+                        <!-- Available Placeholders -->
+                        <div class="mt-2">
+                          <div class="flex flex-wrap gap-1.5">
+                            <button
+                              v-for="placeholder in availablePlaceholders"
+                              :key="placeholder.value"
+                              type="button"
+                              class="inline-flex items-center gap-1 px-2 py-1 rounded border border-muted-300 dark:border-muted-600 bg-white dark:bg-muted-800 hover:bg-primary-50 dark:hover:bg-primary-900/20 hover:border-primary-500 transition-colors text-xs font-mono text-muted-700 dark:text-muted-300 hover:text-primary-600"
+                              @click="insertRulePlaceholder(rule.uid, placeholder.value)"
+                              :title="placeholder.description"
+                            >
+                              <Icon :name="placeholder.icon" class="size-3" />
+                              {{ placeholder.value }}
+                            </button>
+                          </div>
+                        </div>
 
-                  <div class="flex items-center gap-2">
-                    <BaseCheckbox
-                      v-model="rule.isActive"
-                      rounded="sm"
-                      color="primary"
-                    />
-                    <BaseText size="sm">Active</BaseText>
+                        <!-- Preview -->
+                        <BaseCard v-if="rule.targetUrlPattern" class="mt-2 p-2.5 bg-muted-50 dark:bg-muted-800/50 border border-muted-200 dark:border-muted-700">
+                          <div class="flex items-start gap-2">
+                            <Icon name="ph:eye" class="size-3.5 text-muted-500 mt-0.5 shrink-0" />
+                            <div class="flex-1 min-w-0">
+                              <BaseText size="xs" class="text-muted-700 dark:text-muted-300 font-mono break-all">
+                                {{ getPreviewForRule(rule) }}
+                              </BaseText>
+                            </div>
+                          </div>
+                        </BaseCard>
+                      </TairoFormGroup>
+                    </div>
+
+                    <!-- Priority Info -->
+                    <div class="flex items-center gap-2 text-xs text-muted-500 bg-muted-100 dark:bg-muted-800/50 rounded-lg px-3 py-2">
+                      <BaseTooltip content="Priority is based on order: Rules are evaluated from top to bottom. Lower priority numbers are checked first.">
+                        <button
+                          type="button"
+                          class="flex items-center justify-center size-4 rounded-full bg-white dark:bg-muted-700 hover:bg-muted-100 dark:hover:bg-muted-600 transition-colors"
+                        >
+                          <Icon name="lucide:help-circle" class="size-3 text-muted-500 dark:text-muted-400" />
+                        </button>
+                      </BaseTooltip>
+                      <span>Priority: {{ rule.priority }} (evaluated in order from top to bottom)</span>
+                    </div>
+
+                    <!-- Condition-specific fields -->
+                    <div v-if="rule.conditionType === 'GeoCountry'" class="space-y-3">
+                      <SearchableCheckboxList
+                        label="countries"
+                        search-placeholder="Search country"
+                        :items="countryItems"
+                        :model-value="Array.isArray(rule.condition.countries) ? rule.condition.countries : []"
+                        :search="rule.condition.search || ''"
+                        @update:model-value="(value) => { 
+                          if (!rule.condition) rule.condition = {}
+                          rule.condition.countries = Array.isArray(value) ? value : []
+                        }"
+                        @update:search="(value) => { 
+                          if (!rule.condition) rule.condition = {}
+                          rule.condition.search = value 
+                        }"
+                        />
+                    </div>
+
+                    <div v-else-if="rule.conditionType === 'GeoCity'" class="space-y-4">
+                      <div class="grid grid-cols-2 gap-4">
+                        <SearchableCheckboxList
+                          label="country"
+                          search-placeholder="Search country"
+                          :items="countryItems"
+                          :model-value="rule.condition.country || null"
+                          :search="rule.condition.countrySearch || ''"
+                          :single-select="true"
+                          @update:model-value="(value) => { 
+                            if (!rule.condition) rule.condition = {}
+                            rule.condition.country = value ? String(value) : null
+                            // Reset cities when country changes
+                            if (!value) rule.condition.cities = []
+                          }"
+                          @update:search="(value) => { 
+                            if (!rule.condition) rule.condition = {}
+                            rule.condition.countrySearch = value 
+                          }"
+                        />
+                        <SearchableCheckboxList
+                          label="cities"
+                          search-placeholder="Search city"
+                          :items="getCityItems(rule.condition.country)"
+                          :model-value="Array.isArray(rule.condition.cities) ? rule.condition.cities : []"
+                          :search="rule.condition.citySearch || ''"
+                          :disabled="!rule.condition.country"
+                          empty-message="Select country first or no cities found"
+                          @update:model-value="(value) => { 
+                            if (!rule.condition) rule.condition = {}
+                            rule.condition.cities = Array.isArray(value) ? value : []
+                          }"
+                          @update:search="(value) => { 
+                            if (!rule.condition) rule.condition = {}
+                            rule.condition.citySearch = value 
+                          }"
+                        />
+                      </div>
+                    </div>
+
+                    <div v-else-if="rule.conditionType === 'GeoRegion'" class="space-y-4">
+                      <div class="grid grid-cols-3 gap-4">
+                        <SearchableCheckboxList
+                          label="country"
+                          search-placeholder="Search country"
+                          :items="countryItems"
+                          :model-value="rule.condition.country || null"
+                          :search="rule.condition.countrySearch || ''"
+                          :single-select="true"
+                          @update:model-value="(value) => { 
+                            if (!rule.condition) rule.condition = {}
+                            rule.condition.country = value ? String(value) : null
+                            // Reset cities and regions when country changes
+                            if (!value) {
+                              rule.condition.cities = []
+                              rule.condition.regions = []
+                            }
+                          }"
+                          @update:search="(value) => { 
+                            if (!rule.condition) rule.condition = {}
+                            rule.condition.countrySearch = value 
+                          }"
+                        />
+                        <SearchableCheckboxList
+                          label="cities"
+                          search-placeholder="Search city"
+                          :items="getCityItems(rule.condition.country)"
+                          :model-value="Array.isArray(rule.condition.cities) ? rule.condition.cities : []"
+                          :search="rule.condition.citySearch || ''"
+                          :disabled="!rule.condition.country"
+                          empty-message="Select country first or no cities found"
+                          @update:model-value="(value) => { 
+                            if (!rule.condition) rule.condition = {}
+                            rule.condition.cities = Array.isArray(value) ? value : []
+                          }"
+                          @update:search="(value) => { 
+                            if (!rule.condition) rule.condition = {}
+                            rule.condition.citySearch = value 
+                          }"
+                        />
+                        <SearchableCheckboxList
+                          label="regions"
+                          search-placeholder="Search region"
+                          :items="getRegionItems(rule.condition.country, rule.condition.cities || [])"
+                          :model-value="Array.isArray(rule.condition.regions) ? rule.condition.regions : []"
+                          :search="rule.condition.regionSearch || ''"
+                          :disabled="!rule.condition.country || !(rule.condition.cities || []).length"
+                          empty-message="Select cities first to see available regions"
+                          @update:model-value="(value) => { 
+                            if (!rule.condition) rule.condition = {}
+                            rule.condition.regions = Array.isArray(value) ? value : []
+                          }"
+                          @update:search="(value) => { 
+                            if (!rule.condition) rule.condition = {}
+                            rule.condition.regionSearch = value 
+                          }"
+                        />
+                      </div>
+                    </div>
+
+                    <div v-else-if="rule.conditionType === 'DeviceType'" class="space-y-3">
+                      <div class="flex items-center gap-2">
+                        <BaseParagraph size="xs" class="text-muted-500 font-medium">Select device types:</BaseParagraph>
+                        <BaseTooltip content="Route based on device type (mobile, desktop, tablet)">
+                          <button
+                            type="button"
+                            class="flex items-center justify-center size-4 rounded-full bg-muted-100 dark:bg-muted-800 hover:bg-muted-200 dark:hover:bg-muted-700 transition-colors"
+                          >
+                            <Icon name="lucide:help-circle" class="size-3 text-muted-500 dark:text-muted-400" />
+                          </button>
+                        </BaseTooltip>
+                      </div>
+                      <div class="grid grid-cols-3 gap-3">
+                        <BaseCard
+                          v-for="device in deviceOptions"
+                          :key="device.value"
+                          class="p-4 cursor-pointer transition-all hover:border-primary-500 dark:hover:border-primary-400"
+                          :class="{ 'border-primary-500 dark:border-primary-400 bg-primary-50 dark:bg-primary-900/20': (rule.condition.devices || []).includes(device.value) }"
+                          @click="() => { if (!rule.condition.devices) rule.condition.devices = []; toggleArrayValue(rule.condition.devices, device.value) }"
+                        >
+                          <div class="flex items-center gap-3">
+                            <BaseCheckbox
+                              :model-value="(rule.condition.devices || []).includes(device.value)"
+                              @update:model-value="() => { if (!rule.condition.devices) rule.condition.devices = []; toggleArrayValue(rule.condition.devices, device.value) }"
+                              @click.stop
+                            />
+                            <span class="text-sm font-medium">{{ device.label }}</span>
+                          </div>
+                        </BaseCard>
+                      </div>
+                    </div>
+
+                    <div v-else-if="rule.conditionType === 'OperatingSystem'" class="space-y-3">
+                      <BaseParagraph size="xs" class="text-muted-500 font-medium">Select operating systems:</BaseParagraph>
+                      <div class="grid grid-cols-3 gap-3">
+                        <BaseCard
+                          v-for="system in osOptions"
+                          :key="system"
+                          class="p-4 cursor-pointer transition-all hover:border-primary-500 dark:hover:border-primary-400"
+                          :class="{ 'border-primary-500 dark:border-primary-400 bg-primary-50 dark:bg-primary-900/20': (rule.condition.operatingSystems || []).includes(system) }"
+                          @click="() => { if (!rule.condition.operatingSystems) rule.condition.operatingSystems = []; toggleArrayValue(rule.condition.operatingSystems, system) }"
+                        >
+                          <div class="flex items-center gap-3">
+                            <BaseCheckbox
+                              :model-value="(rule.condition.operatingSystems || []).includes(system)"
+                              @update:model-value="() => { if (!rule.condition.operatingSystems) rule.condition.operatingSystems = []; toggleArrayValue(rule.condition.operatingSystems, system) }"
+                              @click.stop
+                            />
+                            <span class="text-sm font-medium">{{ system }}</span>
+                          </div>
+                        </BaseCard>
+                      </div>
+                    </div>
+
+                    <div v-else-if="rule.conditionType === 'Browser'" class="space-y-3">
+                      <BaseParagraph size="xs" class="text-muted-500 font-medium">Select browsers:</BaseParagraph>
+                      <div class="grid grid-cols-3 gap-3">
+                        <BaseCard
+                          v-for="browser in browserOptions"
+                          :key="browser"
+                          class="p-4 cursor-pointer transition-all hover:border-primary-500 dark:hover:border-primary-400"
+                          :class="{ 'border-primary-500 dark:border-primary-400 bg-primary-50 dark:bg-primary-900/20': (rule.condition.browsers || []).includes(browser) }"
+                          @click="() => { if (!rule.condition.browsers) rule.condition.browsers = []; toggleArrayValue(rule.condition.browsers, browser) }"
+                        >
+                          <div class="flex items-center gap-3">
+                            <BaseCheckbox
+                              :model-value="(rule.condition.browsers || []).includes(browser)"
+                              @update:model-value="() => { if (!rule.condition.browsers) rule.condition.browsers = []; toggleArrayValue(rule.condition.browsers, browser) }"
+                              @click.stop
+                            />
+                            <span class="text-sm font-medium">{{ browser }}</span>
+                          </div>
+                        </BaseCard>
+                      </div>
+                    </div>
+
+                    <div v-else-if="rule.conditionType === 'Referrer'" class="space-y-3">
+                      <TairoFormGroup label="Allowed referrers">
+                        <textarea
+                          v-model="rule.condition.hosts"
+                          rows="3"
+                          placeholder="example.com, ads.google.com, facebook.com"
+                          class="w-full px-4 py-3 rounded-lg border border-muted-300 dark:border-muted-600 bg-white dark:bg-muted-800 text-muted-800 dark:text-muted-100 placeholder:text-muted-400 dark:placeholder:text-muted-500 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:focus:ring-primary-400 focus:border-transparent transition-all duration-200 resize-none"
+                        />
+                        <BaseParagraph size="xs" class="text-muted-400 mt-1">
+                          Separate hosts with comma or newline.
+                        </BaseParagraph>
+                      </TairoFormGroup>
+                    </div>
+
+                    <div v-else-if="rule.conditionType === 'Schedule'" class="space-y-4">
+                      <div class="flex items-center gap-2">
+                        <BaseParagraph size="xs" class="text-muted-500 font-medium">Time-based routing:</BaseParagraph>
+                        <BaseTooltip content="Route based on time and day of week">
+                          <button
+                            type="button"
+                            class="flex items-center justify-center size-4 rounded-full bg-muted-100 dark:bg-muted-800 hover:bg-muted-200 dark:hover:bg-muted-700 transition-colors"
+                          >
+                            <Icon name="lucide:help-circle" class="size-3 text-muted-500 dark:text-muted-400" />
+                          </button>
+                        </BaseTooltip>
+                      </div>
+                      <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+                        <TairoFormGroup label="Time zone">
+                          <TairoSelect v-model="rule.condition.timezone" rounded="lg" size="sm">
+                            <BaseSelectItem
+                              v-for="tz in timezoneOptions"
+                              :key="tz.value"
+                              :value="tz.value"
+                            >
+                              {{ tz.label }}
+                            </BaseSelectItem>
+                          </TairoSelect>
+                        </TairoFormGroup>
+                        <TairoFormGroup label="Start time">
+                          <TairoInput
+                            v-model="rule.condition.startTime"
+                            type="time"
+                            rounded="lg"
+                            size="sm"
+                          />
+                        </TairoFormGroup>
+                        <TairoFormGroup label="End time">
+                          <TairoInput
+                            v-model="rule.condition.endTime"
+                            type="time"
+                            rounded="lg"
+                            size="sm"
+                          />
+                        </TairoFormGroup>
+                      </div>
+                      <div>
+                        <BaseParagraph size="xs" class="text-muted-500 font-medium mb-2">Select days:</BaseParagraph>
+                        <div class="grid grid-cols-3 gap-3">
+                          <BaseCard
+                            v-for="day in dayOptions"
+                            :key="day.value"
+                            class="p-4 cursor-pointer transition-all hover:border-primary-500 dark:hover:border-primary-400"
+                            :class="{ 'border-primary-500 dark:border-primary-400 bg-primary-50 dark:bg-primary-900/20': (rule.condition.days || []).includes(day.value) }"
+                            @click="() => { if (!rule.condition.days) rule.condition.days = []; toggleArrayValue(rule.condition.days, day.value) }"
+                          >
+                            <div class="flex items-center gap-3">
+                              <BaseCheckbox
+                                :model-value="(rule.condition.days || []).includes(day.value)"
+                                @update:model-value="() => { if (!rule.condition.days) rule.condition.days = []; toggleArrayValue(rule.condition.days, day.value) }"
+                                @click.stop
+                              />
+                              <div class="flex flex-col">
+                                <span class="text-sm font-medium">{{ day.value }}</span>
+                                <span class="text-xs text-muted-400">{{ day.label }}</span>
+                              </div>
+                            </div>
+                          </BaseCard>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div v-else-if="rule.conditionType === 'CustomExpression'" class="space-y-4">
+                      <TairoFormGroup label="Expression">
+                        <div class="flex items-center gap-2">
+                          <textarea
+                            v-model="rule.condition.expression"
+                            rows="3"
+                            placeholder='e.g. country == "US" && device == "mobile"'
+                            class="flex-1 w-full px-4 py-3 rounded-lg border border-muted-300 dark:border-muted-600 bg-white dark:bg-muted-800 text-muted-800 dark:text-muted-100 placeholder:text-muted-400 dark:placeholder:text-muted-500 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:focus:ring-primary-400 focus:border-transparent transition-all duration-200 resize-none"
+                          />
+                          <BaseTooltip content="Use custom expression to combine multiple conditions">
+                            <button
+                              type="button"
+                              class="flex items-center justify-center size-5 rounded-full bg-muted-100 dark:bg-muted-800 hover:bg-muted-200 dark:hover:bg-muted-700 transition-colors shrink-0"
+                            >
+                              <Icon name="lucide:help-circle" class="size-3.5 text-muted-500 dark:text-muted-400" />
+                            </button>
+                          </BaseTooltip>
+                        </div>
+                      </TairoFormGroup>
+                      <TairoFormGroup label="Notes">
+                        <TairoInput
+                          v-model="rule.condition.notes"
+                          placeholder="Optional description"
+                          rounded="lg"
+                          size="sm"
+                        />
+                      </TairoFormGroup>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="flex items-center justify-end gap-2 pt-3 border-t border-muted-200 dark:border-muted-700">
+                      <BaseButton
+                        variant="ghost"
+                        size="sm"
+                        @click="duplicateRule(rule)"
+                      >
+                        <Icon name="solar:copy-linear" class="size-4" />
+                        Duplicate
+                      </BaseButton>
+                      <BaseButton
+                        variant="ghost"
+                        size="sm"
+                        color="danger"
+                        @click="removeRule(rule.uid)"
+                      >
+                        <Icon name="solar:trash-bin-trash-linear" class="size-4" />
+                        Delete
+                      </BaseButton>
+                    </div>
                   </div>
-                </div>
-              </BaseCard>
+                </BaseCard>
             </div>
           </div>
 

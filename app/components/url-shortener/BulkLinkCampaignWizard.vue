@@ -157,7 +157,6 @@ const nextStep = () => {
   if (validateCurrentStep()) {
     if (currentStep.value < totalSteps) {
       currentStep.value++
-      console.log('[BulkLinkCampaignWizard] Moved to step:', currentStep.value)
     }
   }
 }
