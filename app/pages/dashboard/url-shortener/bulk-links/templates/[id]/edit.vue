@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch, onMounted } from '#imports'
-import type { UpdateSmartLinkRequest, SmartLink, SmartLinkConditionType, CreateSmartLinkRuleInput } from '~/types/url-shortener'
-import { useSmartLinks } from '~/composables/useSmartLinks'
+import type { BulkLinkTemplate, UpdateBulkLinkTemplateRequest, BulkLinkTemplateRuleDto } from '~/types/bulk-link'
+import type { SmartLinkConditionType } from '~/types/url-shortener'
+import { useBulkLinkTemplates } from '~/composables/useBulkLinkTemplates'
 import { useUrlShortenerCollections } from '~/composables/useUrlShortenerCollections'
 import { useWorkspaceContext } from '~/composables/useWorkspaceContext'
 import { useWorkspaceDomains } from '~/composables/useWorkspaceDomains'
@@ -9,7 +10,7 @@ import { useWorkspaceMembers } from '~/composables/useWorkspaceMembers'
 import SearchableCheckboxList from '~/components/url-shortener/SearchableCheckboxList.vue'
 
 definePageMeta({
-  title: 'Edit SmartLink',
+  title: 'Edit Template',
   layout: 'dashboard',
 })
 
@@ -20,39 +21,30 @@ const createUid = () => {
   return Math.random().toString(36).slice(2, 10)
 }
 
-const cloneCondition = (condition: Record<string, any>) => {
-  return JSON.parse(JSON.stringify(condition))
-}
-
 const route = useRoute()
 const router = useRouter()
 const toaster = useNuiToasts()
 
 const { workspaceId } = useWorkspaceContext()
-const { getSmartLink, updateSmartLink } = useSmartLinks()
+const { getTemplate, updateTemplate } = useBulkLinkTemplates()
 const { items: collectionsItems, fetchCollections } = useUrlShortenerCollections()
 const { domainOptions, fetchDomains } = useWorkspaceDomains()
 const { members: workspaceMembers, fetchMembers: fetchWorkspaceMembers, isLoading: isLoadingMembers } = useWorkspaceMembers()
 
-const smartLinkId = computed(() => route.params.id as string)
+const templateId = computed(() => route.params.id as string)
 const isLoading = ref(false)
 const isSaving = ref(false)
-const smartLink = ref<SmartLink | null>(null)
+const template = ref<BulkLinkTemplate | null>(null)
 const existingPassword = ref(false)
 
-type SmartLinkRuleForm = {
+type TemplateRuleForm = BulkLinkTemplateRuleDto & {
   uid: string
-  targetUrl: string
-  conditionType: SmartLinkConditionType
-  condition: Record<string, any>
-  priority: number
-  isActive: boolean
 }
 
 const tabs = [
-  { key: 'basics', label: 'Basics', description: 'Name, URL & description' },
+  { key: 'basics', label: 'Basics', description: 'Name & URL pattern' },
   { key: 'rules', label: 'Routing Rules', description: 'Condition-based routing' },
-  { key: 'collections', label: 'Collections', description: 'Organize links' },
+  { key: 'collections', label: 'Collections', description: 'Organize templates' },
   { key: 'visibility', label: 'Visibility', description: 'Roles & teammates' },
   { key: 'limits', label: 'Limits', description: 'Security & expiration' },
   { key: 'domain', label: 'Domain', description: 'Domain & alias' },
@@ -66,20 +58,19 @@ const showPassword = ref(false)
 
 const formData = ref({
   name: '',
-  fallbackUrl: '',
-  customAlias: '',
+  fallbackUrlPattern: '',
   description: '',
-  isOneTime: false,
-  expiresAt: null as string | null,
-  clickLimit: null as number | null,
-  hasPassword: false,
-  password: '',
   domainType: 'default',
   domainValue: null as string | null,
   collectionIds: [] as string[],
   visibility: 'public' as 'public' | 'private',
   visibilityRoles: [] as string[],
   visibilityMemberIds: [] as string[],
+  expiresAt: null as string | null,
+  clickLimit: null as number | null,
+  isOneTime: false,
+  hasPassword: false,
+  password: '',
   pixelEvents: [] as Array<{ pixelType: string; pixelId: string; eventType: string }>,
   webhookUrl: '',
   webhookMethod: 'POST',
@@ -87,10 +78,10 @@ const formData = ref({
   webhookBodyTemplate: '',
 })
 
-const rules = ref<SmartLinkRuleForm[]>([])
+const rules = ref<TemplateRuleForm[]>([])
 
-// Geo data and options (same as wizard)
-const geoCountries = ref<Array<{ code: string; name: string; cities: Array<{ id?: string; name: string; region?: string | null }> }>>([
+// Geo data (same as SmartLink)
+const geoCountries = ref<Array<{ code: string; name: string; cities: Array<{ name: string; region?: string | null }> }>>([
   { code: 'US', name: 'United States', cities: [
     { name: 'New York', region: 'New York' },
     { name: 'Los Angeles', region: 'California' },
@@ -131,7 +122,6 @@ const conditionTypeOptions: { label: string; value: SmartLinkConditionType; desc
   { label: 'Browser', value: 'Browser', description: 'Chrome, Safari, Firefox, …' },
   { label: 'Referrer', value: 'Referrer', description: 'Send based on referring host' },
   { label: 'Schedule', value: 'Schedule', description: 'Time-based redirects' },
-  { label: 'Custom Expression', value: 'CustomExpression', description: 'Combine multiple signals' },
 ]
 
 const deviceOptions = [
@@ -166,6 +156,44 @@ const timezoneOptions = [
   { value: 'Asia/Tokyo', label: 'JST (Tokyo)' },
 ]
 
+const visibilityRoleOptions = [
+  { value: 'Owner', label: 'Owner', description: 'Full control across workspace' },
+  { value: 'Admin', label: 'Admin', description: 'Manage links & collections' },
+  { value: 'Member', label: 'Editor', description: 'Create and edit assigned links' },
+  { value: 'Viewer', label: 'Viewer', description: 'View-only' },
+]
+
+const pixelTypeOptions = [
+  { value: 'google_tag', label: 'Google Tag / Google Ads Pixel / GA4 Tag' },
+  { value: 'tiktok', label: 'TikTok Pixel' },
+  { value: 'linkedin', label: 'LinkedIn Insight Tag' },
+  { value: 'twitter', label: 'Twitter (X) Pixel' },
+  { value: 'pinterest', label: 'Pinterest Tag' },
+  { value: 'snapchat', label: 'Snapchat Pixel (Snap Pixel)' },
+  { value: 'reddit', label: 'Reddit Conversion Pixel' },
+  { value: 'microsoft_ads', label: 'Microsoft Ads UET Tag' },
+  { value: 'quora', label: 'Quora Pixel' },
+]
+
+const eventTypeOptions = [
+  { value: 'PageView', label: 'PageView' },
+  { value: 'Purchase', label: 'Purchase' },
+  { value: 'Lead', label: 'Lead' },
+  { value: 'AddToCart', label: 'AddToCart' },
+  { value: 'InitiateCheckout', label: 'InitiateCheckout' },
+  { value: 'CompleteRegistration', label: 'CompleteRegistration' },
+  { value: 'ViewContent', label: 'ViewContent' },
+  { value: 'Search', label: 'Search' },
+  { value: 'Custom', label: 'Custom' },
+]
+
+const webhookMethodOptions = [
+  { value: 'GET', label: 'GET' },
+  { value: 'POST', label: 'POST' },
+  { value: 'PUT', label: 'PUT' },
+  { value: 'PATCH', label: 'PATCH' },
+]
+
 const createConditionTemplate = (type: SmartLinkConditionType): Record<string, any> => {
   switch (type) {
     case 'GeoCountry':
@@ -196,18 +224,14 @@ const createConditionTemplate = (type: SmartLinkConditionType): Record<string, a
         start: '08:00',
         end: '18:00',
       }
-    case 'CustomExpression':
     default:
-      return {
-        expression: '',
-        notes: '',
-      }
+      return {}
   }
 }
 
-const createRule = (type: SmartLinkConditionType = 'GeoCountry'): SmartLinkRuleForm => ({
+const createRule = (type: SmartLinkConditionType = 'GeoCountry'): TemplateRuleForm => ({
   uid: createUid(),
-  targetUrl: '',
+  targetUrlPattern: '',
   conditionType: type,
   condition: createConditionTemplate(type),
   priority: (rules.value.length + 1) * 10,
@@ -218,7 +242,6 @@ const countryItems = computed(() => {
   return geoCountries.value.map(country => ({
     value: country.code,
     label: country.name,
-    subtitle: country.code,
   }))
 })
 
@@ -229,24 +252,18 @@ const getCityItems = (countryCode: string | null) => {
   return country.cities.map(city => ({
     value: city.name,
     label: city.name,
-    subtitle: city.region || undefined,
   }))
 }
 
-const getAvailableRegions = (countryCode: string | null, selectedCityNames: string[]) => {
+const getRegionItems = (countryCode: string | null, selectedCityNames: string[]) => {
   if (!countryCode || !selectedCityNames.length) return []
-  const country = geoCountries.value.find(country => country.code === countryCode)
+  const country = geoCountries.value.find(c => c.code === countryCode)
   if (!country) return []
   const selectedCities = country.cities.filter(city => selectedCityNames.includes(city.name))
   const regions = new Set(selectedCities.map(city => city.region).filter(Boolean))
-  return Array.from(regions) as string[]
-}
-
-const getRegionItems = (countryCode: string | null, selectedCityNames: string[]) => {
-  const regions = getAvailableRegions(countryCode, selectedCityNames)
-  return regions.map(region => ({
-    value: region,
-    label: region,
+  return Array.from(regions).map(region => ({
+    value: region as string,
+    label: region as string,
   }))
 }
 
@@ -279,69 +296,22 @@ const addRule = () => {
 }
 
 const removeRule = (uid: string) => {
-  if (rules.value.length === 1) {
-    toaster.add({
-      title: 'At least one rule is required',
-      icon: 'ph:warning',
-      color: 'warning',
-    })
-    return
-  }
   rules.value = rules.value.filter(rule => rule.uid !== uid)
   updatePriorities()
 }
 
-const duplicateRule = (rule: SmartLinkRuleForm) => {
-  try {
-    const clonedCondition = cloneCondition(rule.condition)
-    if (clonedCondition.countries && Array.isArray(clonedCondition.countries)) {
-      clonedCondition.countries = [...clonedCondition.countries]
-    }
-    if (clonedCondition.cities && Array.isArray(clonedCondition.cities)) {
-      clonedCondition.cities = [...clonedCondition.cities]
-    }
-    if (clonedCondition.regions && Array.isArray(clonedCondition.regions)) {
-      clonedCondition.regions = [...clonedCondition.regions]
-    }
-    if (clonedCondition.devices && Array.isArray(clonedCondition.devices)) {
-      clonedCondition.devices = [...clonedCondition.devices]
-    }
-    if (clonedCondition.systems && Array.isArray(clonedCondition.systems)) {
-      clonedCondition.systems = [...clonedCondition.systems]
-    }
-    if (clonedCondition.browsers && Array.isArray(clonedCondition.browsers)) {
-      clonedCondition.browsers = [...clonedCondition.browsers]
-    }
-    if (clonedCondition.days && Array.isArray(clonedCondition.days)) {
-      clonedCondition.days = [...clonedCondition.days]
-    }
-    const clone: SmartLinkRuleForm = {
-      uid: createUid(),
-      targetUrl: rule.targetUrl || '',
-      conditionType: rule.conditionType,
-      condition: clonedCondition,
-      priority: (rules.value.length + 1) * 10,
-      isActive: rule.isActive,
-    }
-    rules.value.push(clone)
-    updatePriorities()
-    expandedRules.value.add(clone.uid)
-    toaster.add({
-      title: 'Rule duplicated',
-      description: 'The rule has been duplicated successfully',
-      icon: 'ph:check',
-      color: 'success',
-      progress: true,
-    })
-  } catch (error: any) {
-    toaster.add({
-      title: 'Error',
-      description: error?.message || 'Failed to duplicate rule',
-      icon: 'ph:warning',
-      color: 'danger',
-      progress: true,
-    })
+const duplicateRule = (rule: TemplateRuleForm) => {
+  const clone: TemplateRuleForm = {
+    uid: createUid(),
+    targetUrlPattern: rule.targetUrlPattern || '',
+    conditionType: rule.conditionType,
+    condition: JSON.parse(JSON.stringify(rule.condition)),
+    priority: (rules.value.length + 1) * 10,
+    isActive: rule.isActive,
   }
+  rules.value.push(clone)
+  updatePriorities()
+  expandedRules.value.add(clone.uid)
 }
 
 const moveRuleUp = (index: number) => {
@@ -368,35 +338,6 @@ const updatePriorities = () => {
   })
 }
 
-const validateUrl = (url: string): boolean => {
-  if (!url.trim()) return false
-  try {
-    const uri = new URL(url)
-    return uri.protocol === 'http:' || uri.protocol === 'https:'
-  } catch {
-    return false
-  }
-}
-
-const formatDateTimeLocal = (isoString: string | null | undefined): string | null => {
-  if (!isoString) return null
-  const date = new Date(isoString)
-  if (Number.isNaN(date.getTime())) return null
-  const pad = (value: number) => value.toString().padStart(2, '0')
-  const year = date.getFullYear()
-  const month = pad(date.getMonth() + 1)
-  const day = pad(date.getDate())
-  const hours = pad(date.getHours())
-  const minutes = pad(date.getMinutes())
-  return `${year}-${month}-${day}T${hours}:${minutes}`
-}
-
-const toIsoString = (value: string | null | undefined): string | null => {
-  if (!value) return null
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? null : date.toISOString()
-}
-
 const collectionOptions = computed(() => {
   return collectionsItems.value.map(collection => ({
     id: collection.id,
@@ -411,6 +352,7 @@ const domains = computed(() => {
 
 const workspaceSubdomains = computed(() => domainOptions.value.filter(domain => domain.domainType === 'subdomain'))
 const workspaceCustomDomains = computed(() => domainOptions.value.filter(domain => domain.domainType === 'custom'))
+const defaultDomainOption = computed(() => domains.value.find(domain => domain.domainType === 'default'))
 
 const memberSearch = ref('')
 const filteredWorkspaceMembers = computed(() => {
@@ -423,13 +365,6 @@ const filteredWorkspaceMembers = computed(() => {
     member.email.toLowerCase().includes(search),
   )
 })
-
-const visibilityRoleOptions = [
-  { value: 'Owner', label: 'Owner', description: 'Full control across workspace' },
-  { value: 'Admin', label: 'Admin', description: 'Manage links & collections' },
-  { value: 'Member', label: 'Editor', description: 'Create and edit assigned links' },
-  { value: 'Viewer', label: 'Viewer', description: 'View-only' },
-]
 
 const selectedVisibilityRoleLabels = computed(() => {
   return visibilityRoleOptions
@@ -492,37 +427,6 @@ const isDomainSelected = (option: { domainType: string; domainValue: string | nu
   )
 }
 
-const pixelTypeOptions = [
-  { value: 'google_tag', label: 'Google Tag / Google Ads Pixel / GA4 Tag' },
-  { value: 'tiktok', label: 'TikTok Pixel' },
-  { value: 'linkedin', label: 'LinkedIn Insight Tag' },
-  { value: 'twitter', label: 'Twitter (X) Pixel' },
-  { value: 'pinterest', label: 'Pinterest Tag' },
-  { value: 'snapchat', label: 'Snapchat Pixel (Snap Pixel)' },
-  { value: 'reddit', label: 'Reddit Conversion Pixel' },
-  { value: 'microsoft_ads', label: 'Microsoft Ads UET Tag' },
-  { value: 'quora', label: 'Quora Pixel' },
-]
-
-const eventTypeOptions = [
-  { value: 'PageView', label: 'PageView' },
-  { value: 'Purchase', label: 'Purchase' },
-  { value: 'Lead', label: 'Lead' },
-  { value: 'AddToCart', label: 'AddToCart' },
-  { value: 'InitiateCheckout', label: 'InitiateCheckout' },
-  { value: 'CompleteRegistration', label: 'CompleteRegistration' },
-  { value: 'ViewContent', label: 'ViewContent' },
-  { value: 'Search', label: 'Search' },
-  { value: 'Custom', label: 'Custom' },
-]
-
-const webhookMethodOptions = [
-  { value: 'GET', label: 'GET' },
-  { value: 'POST', label: 'POST' },
-  { value: 'PUT', label: 'PUT' },
-  { value: 'PATCH', label: 'PATCH' },
-]
-
 const addPixelEvent = () => {
   formData.value.pixelEvents.push({
     pixelType: 'google_tag',
@@ -544,41 +448,35 @@ const removeWebhookHeader = (key: string) => {
   delete formData.value.webhookHeaders[key]
 }
 
-const defaultDomainOption = computed(() => domains.value.find(domain => domain.domainType === 'default'))
+const formatDateTimeLocal = (isoString: string | null | undefined): string | null => {
+  if (!isoString) return null
+  const date = new Date(isoString)
+  if (Number.isNaN(date.getTime())) return null
+  const pad = (value: number) => value.toString().padStart(2, '0')
+  const year = date.getFullYear()
+  const month = pad(date.getMonth() + 1)
+  const day = pad(date.getDate())
+  const hours = pad(date.getHours())
+  const minutes = pad(date.getMinutes())
+  return `${year}-${month}-${day}T${hours}:${minutes}`
+}
 
-const cleanRuleCondition = (rule: SmartLinkRuleForm) => {
+const toIsoString = (value: string | null | undefined): string | null => {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}
+
+const cleanRuleCondition = (rule: TemplateRuleForm) => {
   const clone = { ...rule.condition }
   delete clone.search
   delete clone.citySearch
   delete clone.regionSearch
   delete clone.countrySearch
   
-  if (clone.countries && !Array.isArray(clone.countries)) {
-    clone.countries = []
-  }
-  if (clone.cities && !Array.isArray(clone.cities)) {
-    clone.cities = []
-  }
-  if (clone.regions && !Array.isArray(clone.regions)) {
-    clone.regions = []
-  }
-  if (clone.devices && !Array.isArray(clone.devices)) {
-    clone.devices = []
-  }
-  if (clone.systems && !Array.isArray(clone.systems)) {
-    clone.systems = []
-  }
-  if (clone.browsers && !Array.isArray(clone.browsers)) {
-    clone.browsers = []
-  }
-  if (clone.days && !Array.isArray(clone.days)) {
-    clone.days = []
-  }
-  
   if (rule.conditionType === 'GeoRegion') {
-    const { country, cities, citySearch, countrySearch, ...rest } = clone
     return { 
-      regions: Array.isArray(rest.regions) ? rest.regions : []
+      regions: Array.isArray(clone.regions) ? clone.regions : []
     }
   }
   
@@ -595,53 +493,92 @@ const cleanRuleCondition = (rule: SmartLinkRuleForm) => {
   return clone
 }
 
-// Load SmartLink data
-const fetchSmartLinkData = async () => {
-  if (!smartLinkId.value || !workspaceId.value) return
+// Load Template data
+const fetchTemplateData = async () => {
+  if (!templateId.value || !workspaceId.value) return
 
   isLoading.value = true
   try {
-    const data = await getSmartLink(smartLinkId.value)
+    const data = await getTemplate(templateId.value)
     if (data) {
-      smartLink.value = data
+      template.value = data
       existingPassword.value = data.hasPassword || false
       
-      // Populate form data
       formData.value = {
         name: data.name || '',
-        fallbackUrl: data.fallbackUrl || '',
-        customAlias: data.customAlias || '',
+        fallbackUrlPattern: data.fallbackUrlPattern || '',
         description: data.description || '',
-        isOneTime: data.isOneTime || false,
-        expiresAt: formatDateTimeLocal(data.expiresAt),
-        clickLimit: data.clickLimit || null,
-        hasPassword: data.hasPassword || false,
-        password: '',
         domainType: data.domainType || 'default',
         domainValue: data.domainValue || null,
         collectionIds: data.collectionIds || [],
         visibility: data.isPublic ? 'public' : 'private',
         visibilityRoles: data.visibilityRoles || [],
         visibilityMemberIds: data.visibilityMemberIds || [],
-        pixelEvents: data.pixelEvents || [],
+        expiresAt: formatDateTimeLocal(data.expiresAt),
+        clickLimit: data.clickLimit || null,
+        isOneTime: data.isOneTime || false,
+        hasPassword: data.hasPassword || false,
+        password: '',
+        pixelEvents: (() => {
+          if (!data.pixelEvents) return []
+          // Handle both object with 'pixels' key and direct array
+          if (typeof data.pixelEvents === 'object' && 'pixels' in data.pixelEvents && Array.isArray(data.pixelEvents.pixels)) {
+            return data.pixelEvents.pixels
+          }
+          if (Array.isArray(data.pixelEvents)) {
+            return data.pixelEvents
+          }
+          // If it's a string, try to parse it
+          if (typeof data.pixelEvents === 'string') {
+            try {
+              const parsed = JSON.parse(data.pixelEvents)
+              if (parsed && typeof parsed === 'object' && 'pixels' in parsed && Array.isArray(parsed.pixels)) {
+                return parsed.pixels
+              }
+              if (Array.isArray(parsed)) {
+                return parsed
+              }
+            } catch {
+              return []
+            }
+          }
+          return []
+        })(),
         webhookUrl: data.webhookUrl || '',
         webhookMethod: data.webhookMethod || 'POST',
-        webhookHeaders: data.webhookHeaders || {},
+        webhookHeaders: (() => {
+          if (!data.webhookHeaders) return {}
+          // If it's already an object, return it
+          if (typeof data.webhookHeaders === 'object' && !Array.isArray(data.webhookHeaders)) {
+            return data.webhookHeaders
+          }
+          // If it's a string, try to parse it
+          if (typeof data.webhookHeaders === 'string') {
+            try {
+              const parsed = JSON.parse(data.webhookHeaders)
+              if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                return parsed
+              }
+            } catch {
+              return {}
+            }
+          }
+          return {}
+        })(),
         webhookBodyTemplate: data.webhookBodyTemplate || '',
       }
       
-      // Populate rules
       if (data.rules && data.rules.length > 0) {
         rules.value = data.rules.map(rule => ({
           uid: createUid(),
-          targetUrl: rule.targetUrl || '',
+          targetUrlPattern: rule.targetUrlPattern || '',
           conditionType: rule.conditionType,
           condition: {
             ...rule.condition,
-            search: rule.condition.search || '',
-            citySearch: rule.condition.citySearch || '',
-            regionSearch: rule.condition.regionSearch || '',
-            countrySearch: rule.condition.countrySearch || '',
+            search: '',
+            citySearch: '',
+            regionSearch: '',
+            countrySearch: '',
           },
           priority: rule.priority || 100,
           isActive: rule.isActive !== undefined ? rule.isActive : true,
@@ -653,18 +590,18 @@ const fetchSmartLinkData = async () => {
     } else {
       toaster.add({
         title: 'Error',
-        description: 'SmartLink not found',
-        icon: 'lucide:alert-triangle',
+        description: 'Template not found',
+        icon: 'ph:warning',
         color: 'danger',
         progress: true,
       })
-      router.push('/dashboard/url-shortener/smart-links')
+      router.push('/dashboard/url-shortener/bulk-links?tab=templates')
     }
   } catch (error: any) {
     toaster.add({
       title: 'Error',
-      description: error.message || 'Failed to load SmartLink',
-      icon: 'lucide:alert-triangle',
+      description: error.message || 'Failed to load template',
+      icon: 'ph:warning',
       color: 'danger',
       progress: true,
     })
@@ -675,143 +612,76 @@ const fetchSmartLinkData = async () => {
 
 // Save changes
 const handleSave = async () => {
-  console.log('[Edit SmartLink] handleSave called', { 
-    name: formData.value.name, 
-    fallbackUrl: formData.value.fallbackUrl,
-    smartLinkId: smartLinkId.value 
-  })
-  
   errors.value = {}
   
-  // Validate
   if (!formData.value.name || !formData.value.name.trim()) {
-    errors.value.name = 'Give this SmartLink a friendly name'
+    errors.value.name = 'Template name is required'
     activeTab.value = 'basics'
-    console.log('[Edit SmartLink] Validation failed: name is empty')
     return
   }
   
-  if (!formData.value.fallbackUrl || !formData.value.fallbackUrl.trim()) {
-    errors.value.fallbackUrl = 'Enter a fallback destination URL'
+  if (!formData.value.fallbackUrlPattern || !formData.value.fallbackUrlPattern.trim()) {
+    errors.value.fallbackUrlPattern = 'Fallback URL pattern is required'
     activeTab.value = 'basics'
-    console.log('[Edit SmartLink] Validation failed: fallbackUrl is empty')
     return
   }
-  
-  if (!validateUrl(formData.value.fallbackUrl)) {
-    errors.value.fallbackUrl = 'Enter a valid HTTP or HTTPS URL'
-    activeTab.value = 'basics'
-    console.log('[Edit SmartLink] Validation failed: fallbackUrl is invalid')
-    return
-  }
-  
-  console.log('[Edit SmartLink] Validation passed, proceeding to save')
-  
-  if (formData.value.customAlias && formData.value.customAlias.length < 3) {
-    errors.value.customAlias = 'Alias should be at least 3 characters'
-    return
-  }
-  
-  // Only require password if user is setting a new password (hasPassword is true but no existing password)
-  // OR if user is changing password (hasPassword is true and password field is filled)
-  // If hasPassword is true but password is empty and there's an existing password, that's OK (keeping existing password)
-  if (formData.value.hasPassword && !existingPassword.value && (!formData.value.password || !formData.value.password.trim())) {
-    errors.value.password = 'Provide a password'
-    activeTab.value = 'limits'
-    console.log('[Edit SmartLink] Validation failed: password is required for new password')
-    return
-  }
-  
+
   if (formData.value.visibility === 'private') {
     if (formData.value.visibilityRoles.length === 0 && formData.value.visibilityMemberIds.length === 0) {
-      errors.value.visibility = 'Select at least one role or member to access this SmartLink'
+      errors.value.visibility = 'Select at least one role or member'
       activeTab.value = 'visibility'
-      console.log('[Edit SmartLink] Validation failed: visibility roles/members required')
       return
     }
   }
-  
-  // Validate rules
-  const activeRules = rules.value.filter(rule => rule.isActive)
-  if (activeRules.length > 0) {
-    for (const rule of activeRules) {
-      if (!rule.targetUrl || !rule.targetUrl.trim() || !validateUrl(rule.targetUrl)) {
-        errors.value.rules = 'All active rules must have valid target URLs'
-        activeTab.value = 'rules'
-        console.log('[Edit SmartLink] Validation failed: invalid rule targetUrl', rule)
-        return
-      }
-    }
-  }
-  
-  console.log('[Edit SmartLink] All validations passed, proceeding to save')
 
   isSaving.value = true
   try {
-    console.log('[Edit SmartLink] Starting save process...')
-    
-    const ruleInputs: CreateSmartLinkRuleInput[] = rules.value.map(rule => ({
-      targetUrl: rule.targetUrl,
+    const ruleInputs: BulkLinkTemplateRuleDto[] = rules.value.map(rule => ({
+      targetUrlPattern: rule.targetUrlPattern,
       conditionType: rule.conditionType,
       condition: cleanRuleCondition(rule),
       priority: rule.priority,
       isActive: rule.isActive,
     }))
 
-    const request: UpdateSmartLinkRequest = {
+    const pixelEventsDict = formData.value.pixelEvents.length > 0
+      ? { pixels: formData.value.pixelEvents }
+      : null
+
+    const webhookHeadersDict = Object.keys(formData.value.webhookHeaders).length > 0
+      ? formData.value.webhookHeaders
+      : null
+
+    const request: UpdateBulkLinkTemplateRequest = {
       name: formData.value.name?.trim() || null,
       description: formData.value.description?.trim() || null,
-      fallbackUrl: formData.value.fallbackUrl?.trim() || null,
-      customAlias: formData.value.customAlias?.trim() || null,
-      isOneTime: formData.value.isOneTime,
-      expiresAt: toIsoString(formData.value.expiresAt),
-      clickLimit: formData.value.clickLimit,
-      // Password handling:
-      // - If hasPassword is true and password is provided: send the new password
-      // - If hasPassword is true but password is empty and existingPassword is true: send null (keep existing)
-      // - If hasPassword is false: send null (no password)
-      password: formData.value.hasPassword 
-        ? (formData.value.password?.trim() || null)
-        : null,
+      fallbackUrlPattern: formData.value.fallbackUrlPattern?.trim() || null,
       domainType: formData.value.domainType,
       domainValue: formData.value.domainValue,
       collectionIds: formData.value.collectionIds.length > 0 ? formData.value.collectionIds : null,
       rules: ruleInputs,
-      pixelEvents: formData.value.pixelEvents.length > 0 ? formData.value.pixelEvents : null,
-      webhookUrl: formData.value.webhookUrl?.trim() || null,
-      webhookMethod: formData.value.webhookUrl ? (formData.value.webhookMethod || 'POST') : null,
-      webhookHeaders: formData.value.webhookUrl && Object.keys(formData.value.webhookHeaders).length > 0 ? formData.value.webhookHeaders : null,
-      webhookBodyTemplate: formData.value.webhookUrl && formData.value.webhookBodyTemplate?.trim() ? formData.value.webhookBodyTemplate.trim() : null,
-      visibility: formData.value.visibility,
-      visibilityRoles: formData.value.visibility === 'private' && formData.value.visibilityRoles.length > 0 ? formData.value.visibilityRoles : undefined,
-      visibilityMemberIds: formData.value.visibility === 'private' && formData.value.visibilityMemberIds.length > 0 ? formData.value.visibilityMemberIds : undefined,
+      isPublic: formData.value.visibility === 'public',
+      visibilityRoles: formData.value.visibility === 'private' ? formData.value.visibilityRoles : null,
+      visibilityMemberIds: formData.value.visibility === 'private' ? formData.value.visibilityMemberIds : null,
+      expiresAt: toIsoString(formData.value.expiresAt),
+      clickLimit: formData.value.clickLimit,
+      isOneTime: formData.value.isOneTime,
+      password: formData.value.hasPassword ? formData.value.password?.trim() || null : null,
+      clearPassword: !formData.value.hasPassword && existingPassword.value,
+      pixelEvents: pixelEventsDict,
+      webhookUrl: formData.value.webhookUrl || null,
+      webhookMethod: formData.value.webhookUrl ? formData.value.webhookMethod || null : null,
+      webhookHeaders: webhookHeadersDict,
+      webhookBodyTemplate: formData.value.webhookBodyTemplate || null,
     }
 
-    console.log('[Edit SmartLink] Calling updateSmartLink with:', { 
-      smartLinkId: smartLinkId.value, 
-      request: { ...request, password: request.password ? '***' : null } 
-    })
-    
-    const result = await updateSmartLink(smartLinkId.value, request)
-    console.log('[Edit SmartLink] updateSmartLink result:', result)
-    
-    if (result) {
-      toaster.add({
-        title: 'Success',
-        description: 'SmartLink updated successfully',
-        icon: 'ph:check',
-        color: 'success',
-        progress: true,
-      })
-      router.push('/dashboard/url-shortener/smart-links')
-    } else {
-      throw new Error('Update returned null result')
-    }
+    await updateTemplate(templateId.value, request)
+    router.push('/dashboard/url-shortener/bulk-links?tab=templates')
   } catch (error: any) {
     toaster.add({
       title: 'Error',
-      description: error?.message || error?.data?.errors?.[0]?.message || 'Failed to update SmartLink',
-      icon: 'lucide:alert-triangle',
+      description: error?.message || 'Failed to update template',
+      icon: 'ph:warning',
       color: 'danger',
       progress: true,
     })
@@ -821,48 +691,7 @@ const handleSave = async () => {
 }
 
 const handleCancel = () => {
-  router.push('/dashboard/url-shortener/smart-links')
-}
-
-const toggleSmartLinkStatus = async (newValue?: boolean) => {
-  if (!smartLink.value) {
-    return
-  }
-
-  // If called from switch, newValue is provided; otherwise toggle
-  const desiredState = newValue !== undefined ? newValue : !smartLink.value.isActive
-  const oldStatus = smartLink.value.isActive
-
-  // Optimistically update UI
-  smartLink.value.isActive = desiredState
-
-  try {
-    const result = await updateSmartLink(smartLinkId.value, { isActive: desiredState })
-    if (result) {
-      // Update only the status field, don't refetch everything
-      smartLink.value.isActive = result.isActive !== undefined ? result.isActive : desiredState
-      toaster.add({
-        title: desiredState ? 'SmartLink activated' : 'SmartLink disabled',
-        description: desiredState ? 'SmartLink is now live.' : 'Routing rules will no longer be applied.',
-        icon: desiredState ? 'ph:play' : 'ph:pause',
-        color: desiredState ? 'success' : 'warning',
-        progress: true,
-      })
-    } else {
-      // Revert on failure
-      smartLink.value.isActive = oldStatus
-    }
-  } catch (error: any) {
-    // Revert on error
-    smartLink.value.isActive = oldStatus
-    toaster.add({
-      title: 'Error',
-      description: error.message || 'Unable to update SmartLink status',
-      icon: 'lucide:alert-triangle',
-      color: 'danger',
-      progress: true,
-    })
-  }
+  router.push('/dashboard/url-shortener/bulk-links?tab=templates')
 }
 
 watch(() => formData.value.visibility, (newValue) => {
@@ -876,18 +705,12 @@ watch(() => formData.value.visibility, (newValue) => {
 // Load data on mount
 onMounted(async () => {
   await Promise.all([
-    fetchSmartLinkData(),
+    fetchTemplateData(),
     fetchCollections({ force: true }),
     fetchDomains(),
     fetchWorkspaceMembers(),
   ])
 })
-
-watch([workspaceId, smartLinkId], () => {
-  if (workspaceId.value && smartLinkId.value) {
-    fetchSmartLinkData()
-  }
-}, { immediate: false })
 </script>
 
 <template>
@@ -901,7 +724,7 @@ watch([workspaceId, smartLinkId], () => {
           weight="bold"
           class="text-muted-900 dark:text-white mb-2"
         >
-          Edit SmartLink
+          Edit Template
         </BaseHeading>
       </div>
       <div class="flex items-center gap-2">
@@ -915,10 +738,7 @@ watch([workspaceId, smartLinkId], () => {
           variant="primary"
           :loading="isSaving"
           type="button"
-          @click="() => {
-            console.log('[Edit SmartLink] Save button clicked')
-            handleSave()
-          }"
+          @click="handleSave"
         >
           <Icon name="ph:check" class="size-4" />
           <span>Save Changes</span>
@@ -936,101 +756,20 @@ watch([workspaceId, smartLinkId], () => {
     </div>
 
     <!-- Error State -->
-    <div v-else-if="!smartLink && !isLoading" class="flex flex-col items-center justify-center py-12">
+    <div v-else-if="!template && !isLoading" class="flex flex-col items-center justify-center py-12">
       <BaseHeading as="h2" size="xl" weight="semibold" class="text-muted-900 dark:text-white mb-2">
-        SmartLink not found
+        Template not found
       </BaseHeading>
       <BaseParagraph size="sm" class="text-muted-500 dark:text-muted-400 mb-4">
-        The SmartLink you're looking for doesn't exist or you don't have permission to view it.
+        The template you're looking for doesn't exist or you don't have permission to view it.
       </BaseParagraph>
       <BaseButton variant="primary" @click="handleCancel">
-        Back to SmartLinks
+        Back to Templates
       </BaseButton>
     </div>
 
     <!-- Form -->
-    <div v-else-if="smartLink" class="space-y-6">
-      <!-- Hero URLs & Stats -->
-      <div class="space-y-6 pb-4 border-b border-muted-200 dark:border-muted-800">
-        <div class="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-10">
-          <div class="flex-1 space-y-1">
-            <BaseParagraph size="xs" class="uppercase tracking-[0.3em] text-muted-500 dark:text-muted-400">
-              Fallback URL
-            </BaseParagraph>
-            <div class="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
-              <BaseText
-                size="lg"
-                weight="semibold"
-                class="text-muted-900 dark:text-white leading-relaxed break-words"
-              >
-                {{ smartLink.fallbackUrl || 'Not set' }}
-              </BaseText>
-              <BaseButton
-                v-if="smartLink.fallbackUrl"
-                variant="outline"
-                size="sm"
-                class="shrink-0"
-                @click="() => window.open(smartLink.fallbackUrl, '_blank')"
-              >
-                <Icon name="ph:arrow-up-right" class="size-4" />
-                <span>Open</span>
-              </BaseButton>
-            </div>
-          </div>
-
-          <div class="flex-1 space-y-1">
-            <BaseParagraph size="xs" class="uppercase tracking-[0.3em] text-muted-500 dark:text-muted-400">
-              Short URL
-            </BaseParagraph>
-            <div class="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
-              <BaseHeading
-                as="p"
-                size="2xl"
-                weight="bold"
-                class="text-primary-600 dark:text-primary-300 truncate flex-1"
-                :title="smartLink.shortUrl"
-              >
-                {{ smartLink.shortUrl }}
-              </BaseHeading>
-              <div class="flex items-center gap-3 shrink-0">
-                <BaseButton
-                  variant="outline"
-                  size="sm"
-                  @click="() => {
-                    navigator.clipboard.writeText(smartLink.shortUrl)
-                    toaster.add({
-                      title: 'Copied',
-                      description: 'Short URL copied to clipboard',
-                      icon: 'ph:check',
-                      color: 'success',
-                      progress: true,
-                    })
-                  }"
-                >
-                  <Icon name="ph:copy" class="size-4" />
-                  <span>Copy</span>
-                </BaseButton>
-                <div class="flex items-center gap-2">
-                  <BaseText size="sm" weight="medium" class="text-muted-700 dark:text-muted-300">
-                    {{ smartLink.isActive ? 'Active' : 'Disabled' }}
-                  </BaseText>
-                  <BaseSwitchBall
-                    :model-value="smartLink.isActive"
-                    variant="primary"
-                    @update:model-value="toggleSmartLinkStatus"
-                  />
-                </div>
-                <BaseParagraph
-                  size="xs"
-                  class="text-muted-500 dark:text-muted-400"
-                >
-                  {{ smartLink.currentClicks || 0 }} clicks · {{ new Date(smartLink.createdAt).toLocaleDateString() }}
-                </BaseParagraph>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div v-else-if="template" class="space-y-6">
       <!-- Tabs -->
       <BaseCard class="p-4">
         <div class="flex flex-wrap gap-3">
@@ -1060,67 +799,31 @@ watch([workspaceId, smartLinkId], () => {
             Basic Information
           </BaseHeading>
           <BaseParagraph size="sm" class="text-muted-500 dark:text-muted-400">
-            Provide essential details for your SmartLink.
+            Provide essential details for your template.
           </BaseParagraph>
         </div>
 
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
-          <TairoFormGroup
-            label="SmartLink name"
-            :error="errors.name"
-            class="md:col-span-1"
-          >
-            <TairoInput
-              v-model="formData.name"
-              placeholder="e.g. Holiday blend promo"
-              rounded="lg"
-              size="sm"
-            />
-          </TairoFormGroup>
+        <TairoFormGroup
+          label="Template name"
+          :error="errors.name"
+        >
+          <TairoInput
+            v-model="formData.name"
+            placeholder="e.g. Summer Campaign Template"
+            rounded="lg"
+            size="sm"
+          />
+        </TairoFormGroup>
 
-          <TairoFormGroup label="Fallback destination" :error="errors.fallbackUrl" class="md:col-span-3">
-            <div class="flex items-center gap-2">
-              <div class="flex-1 min-w-0">
-                <TairoInput
-                  v-model="formData.fallbackUrl"
-                  placeholder="Enter fallback URL (e.g., https://example.com)"
-                  rounded="lg"
-                  size="sm"
-                  class="w-full"
-                />
-              </div>
-              <BaseTooltip content="The URL used when no rules match. Must be a valid HTTP or HTTPS URL.">
-                <button
-                  type="button"
-                  class="flex items-center justify-center size-5 rounded-full bg-muted-100 dark:bg-muted-800 hover:bg-muted-200 dark:hover:bg-muted-700 transition-colors shrink-0"
-                >
-                  <Icon name="lucide:help-circle" class="size-3.5 text-muted-500 dark:text-muted-400" />
-                </button>
-              </BaseTooltip>
-            </div>
-          </TairoFormGroup>
-        </div>
-
-        <TairoFormGroup label="Custom alias (optional)" :error="errors.customAlias">
-          <div class="flex items-center gap-2">
-            <TairoInput
-              v-model="formData.customAlias"
-              placeholder="my-campaign-link"
-              icon="solar:pen-linear"
-              rounded="lg"
-              class="flex-1"
-            />
-            <BaseTooltip content="Custom name in the URL instead of auto-generated code">
-              <button
-                type="button"
-                class="flex items-center justify-center size-5 rounded-full bg-muted-100 dark:bg-muted-800 hover:bg-muted-200 dark:hover:bg-muted-700 transition-colors"
-              >
-                <Icon name="lucide:help-circle" class="size-3.5 text-muted-500 dark:text-muted-400" />
-              </button>
-            </BaseTooltip>
-          </div>
+        <TairoFormGroup label="Fallback URL Pattern" :error="errors.fallbackUrlPattern">
+          <TairoInput
+            v-model="formData.fallbackUrlPattern"
+            placeholder="{destination}"
+            rounded="lg"
+            size="sm"
+          />
           <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400 mt-2">
-            Leave empty to generate automatically
+            Use placeholders like {destination}, {shortCode}, {title}, {description}, {index}, {campaignName}, {templateName}
           </BaseParagraph>
         </TairoFormGroup>
 
@@ -1158,10 +861,6 @@ watch([workspaceId, smartLinkId], () => {
             <Icon name="lucide:plus" class="size-4" />
             Add rule
           </BaseButton>
-        </div>
-
-        <div v-if="errors.rules" class="text-danger-500 text-sm">
-          {{ errors.rules }}
         </div>
 
         <div class="space-y-3">
@@ -1211,12 +910,12 @@ watch([workspaceId, smartLinkId], () => {
                   {{ conditionTypeOptions.find(opt => opt.value === rule.conditionType)?.label }}
                 </BaseTag>
                 <BaseTag
-                  v-if="rule.targetUrl"
+                  v-if="rule.targetUrlPattern"
                   size="xs"
                   variant="solid"
                   color="muted"
                 >
-                  Destination set
+                  Pattern set
                 </BaseTag>
               </div>
               
@@ -1260,40 +959,18 @@ watch([workspaceId, smartLinkId], () => {
                   </TairoSelect>
                 </TairoFormGroup>
 
-                <TairoFormGroup label="Destination URL" class="md:col-span-3">
-                  <div class="flex items-center gap-2">
-                    <div class="flex-1 min-w-0">
-                      <TairoInput
-                        v-model="rule.targetUrl"
-                        placeholder="Enter destination URL (e.g., https://example.com)"
-                        rounded="lg"
-                        size="sm"
-                        class="w-full"
-                      />
-                    </div>
-                    <BaseTooltip content="The target URL for this rule. Must be a valid HTTP or HTTPS URL.">
-                      <button
-                        type="button"
-                        class="flex items-center justify-center size-5 rounded-full bg-muted-100 dark:bg-muted-800 hover:bg-muted-200 dark:hover:bg-muted-700 transition-colors shrink-0"
-                      >
-                        <Icon name="lucide:help-circle" class="size-3.5 text-muted-500 dark:text-muted-400" />
-                      </button>
-                    </BaseTooltip>
-                  </div>
+                <TairoFormGroup label="Target URL Pattern" class="md:col-span-3">
+                  <TairoInput
+                    v-model="rule.targetUrlPattern"
+                    placeholder="e.g., https://example.com/{destination}?ref={shortCode}"
+                    rounded="lg"
+                    size="sm"
+                    class="w-full"
+                  />
+                  <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400 mt-1">
+                    Use placeholders like {destination}, {shortCode}, {title}, etc.
+                  </BaseParagraph>
                 </TairoFormGroup>
-              </div>
-
-              <!-- Priority Info -->
-              <div class="flex items-center gap-2 text-xs text-muted-500 bg-muted-100 dark:bg-muted-800/50 rounded-lg px-3 py-2">
-                <BaseTooltip content="Priority is based on order: Rules are evaluated from top to bottom. Lower priority numbers are checked first.">
-                  <button
-                    type="button"
-                    class="flex items-center justify-center size-4 rounded-full bg-white dark:bg-muted-700 hover:bg-muted-100 dark:hover:bg-muted-600 transition-colors"
-                  >
-                    <Icon name="lucide:help-circle" class="size-3 text-muted-500 dark:text-muted-400" />
-                  </button>
-                </BaseTooltip>
-                <span>Priority: {{ rule.priority }} (evaluated in order from top to bottom)</span>
               </div>
 
               <!-- Condition-specific fields -->
@@ -1302,10 +979,16 @@ watch([workspaceId, smartLinkId], () => {
                   label="countries"
                   search-placeholder="Search country"
                   :items="countryItems"
-                  :model-value="rule.condition.countries || []"
+                  :model-value="Array.isArray(rule.condition.countries) ? rule.condition.countries : []"
                   :search="rule.condition.search || ''"
-                  @update:model-value="(value) => { rule.condition.countries = value }"
-                  @update:search="(value) => { rule.condition.search = value }"
+                  @update:model-value="(value) => { 
+                    if (!rule.condition) rule.condition = {}
+                    rule.condition.countries = Array.isArray(value) ? value : []
+                  }"
+                  @update:search="(value) => { 
+                    if (!rule.condition) rule.condition = {}
+                    rule.condition.search = value 
+                  }"
                 />
               </div>
 
@@ -1318,19 +1001,32 @@ watch([workspaceId, smartLinkId], () => {
                     :model-value="rule.condition.country || null"
                     :search="rule.condition.countrySearch || ''"
                     :single-select="true"
-                    @update:model-value="(value) => { rule.condition.country = value ? String(value) : null }"
-                    @update:search="(value) => { rule.condition.countrySearch = value }"
+                    @update:model-value="(value) => { 
+                      if (!rule.condition) rule.condition = {}
+                      rule.condition.country = value ? String(value) : null
+                      if (!value) rule.condition.cities = []
+                    }"
+                    @update:search="(value) => { 
+                      if (!rule.condition) rule.condition = {}
+                      rule.condition.countrySearch = value 
+                    }"
                   />
                   <SearchableCheckboxList
                     label="cities"
                     search-placeholder="Search city"
                     :items="getCityItems(rule.condition.country)"
-                    :model-value="rule.condition.cities || []"
+                    :model-value="Array.isArray(rule.condition.cities) ? rule.condition.cities : []"
                     :search="rule.condition.citySearch || ''"
                     :disabled="!rule.condition.country"
                     empty-message="Select country first or no cities found"
-                    @update:model-value="(value) => { rule.condition.cities = value }"
-                    @update:search="(value) => { rule.condition.citySearch = value }"
+                    @update:model-value="(value) => { 
+                      if (!rule.condition) rule.condition = {}
+                      rule.condition.cities = Array.isArray(value) ? value : []
+                    }"
+                    @update:search="(value) => { 
+                      if (!rule.condition) rule.condition = {}
+                      rule.condition.citySearch = value 
+                    }"
                   />
                 </div>
               </div>
@@ -1344,46 +1040,57 @@ watch([workspaceId, smartLinkId], () => {
                     :model-value="rule.condition.country || null"
                     :search="rule.condition.countrySearch || ''"
                     :single-select="true"
-                    @update:model-value="(value) => { rule.condition.country = value ? String(value) : null }"
-                    @update:search="(value) => { rule.condition.countrySearch = value }"
+                    @update:model-value="(value) => { 
+                      if (!rule.condition) rule.condition = {}
+                      rule.condition.country = value ? String(value) : null
+                      if (!value) {
+                        rule.condition.cities = []
+                        rule.condition.regions = []
+                      }
+                    }"
+                    @update:search="(value) => { 
+                      if (!rule.condition) rule.condition = {}
+                      rule.condition.countrySearch = value 
+                    }"
                   />
                   <SearchableCheckboxList
                     label="cities"
                     search-placeholder="Search city"
                     :items="getCityItems(rule.condition.country)"
-                    :model-value="rule.condition.cities || []"
+                    :model-value="Array.isArray(rule.condition.cities) ? rule.condition.cities : []"
                     :search="rule.condition.citySearch || ''"
                     :disabled="!rule.condition.country"
                     empty-message="Select country first or no cities found"
-                    @update:model-value="(value) => { rule.condition.cities = value }"
-                    @update:search="(value) => { rule.condition.citySearch = value }"
+                    @update:model-value="(value) => { 
+                      if (!rule.condition) rule.condition = {}
+                      rule.condition.cities = Array.isArray(value) ? value : []
+                    }"
+                    @update:search="(value) => { 
+                      if (!rule.condition) rule.condition = {}
+                      rule.condition.citySearch = value 
+                    }"
                   />
                   <SearchableCheckboxList
                     label="regions"
                     search-placeholder="Search region"
                     :items="getRegionItems(rule.condition.country, rule.condition.cities || [])"
-                    :model-value="rule.condition.regions || []"
+                    :model-value="Array.isArray(rule.condition.regions) ? rule.condition.regions : []"
                     :search="rule.condition.regionSearch || ''"
                     :disabled="!rule.condition.country || !(rule.condition.cities || []).length"
                     empty-message="Select cities first to see available regions"
-                    @update:model-value="(value) => { rule.condition.regions = value }"
-                    @update:search="(value) => { rule.condition.regionSearch = value }"
+                    @update:model-value="(value) => { 
+                      if (!rule.condition) rule.condition = {}
+                      rule.condition.regions = Array.isArray(value) ? value : []
+                    }"
+                    @update:search="(value) => { 
+                      if (!rule.condition) rule.condition = {}
+                      rule.condition.regionSearch = value 
+                    }"
                   />
                 </div>
               </div>
 
               <div v-else-if="rule.conditionType === 'DeviceType'" class="space-y-3">
-                <div class="flex items-center gap-2">
-                  <BaseParagraph size="xs" class="text-muted-500 font-medium">Select device types:</BaseParagraph>
-                  <BaseTooltip content="Route based on device type (mobile, desktop, tablet)">
-                    <button
-                      type="button"
-                      class="flex items-center justify-center size-4 rounded-full bg-muted-100 dark:bg-muted-800 hover:bg-muted-200 dark:hover:bg-muted-700 transition-colors"
-                    >
-                      <Icon name="lucide:help-circle" class="size-3 text-muted-500 dark:text-muted-400" />
-                    </button>
-                  </BaseTooltip>
-                </div>
                 <div class="grid grid-cols-3 gap-3">
                   <BaseCard
                     v-for="device in deviceOptions"
@@ -1405,7 +1112,6 @@ watch([workspaceId, smartLinkId], () => {
               </div>
 
               <div v-else-if="rule.conditionType === 'OperatingSystem'" class="space-y-3">
-                <BaseParagraph size="xs" class="text-muted-500 font-medium">Select operating systems:</BaseParagraph>
                 <div class="grid grid-cols-3 gap-3">
                   <BaseCard
                     v-for="system in osOptions"
@@ -1427,7 +1133,6 @@ watch([workspaceId, smartLinkId], () => {
               </div>
 
               <div v-else-if="rule.conditionType === 'Browser'" class="space-y-3">
-                <BaseParagraph size="xs" class="text-muted-500 font-medium">Select browsers:</BaseParagraph>
                 <div class="grid grid-cols-3 gap-3">
                   <BaseCard
                     v-for="browser in browserOptions"
@@ -1463,17 +1168,6 @@ watch([workspaceId, smartLinkId], () => {
               </div>
 
               <div v-else-if="rule.conditionType === 'Schedule'" class="space-y-4">
-                <div class="flex items-center gap-2">
-                  <BaseParagraph size="xs" class="text-muted-500 font-medium">Time-based routing:</BaseParagraph>
-                  <BaseTooltip content="Route based on time and day of week">
-                    <button
-                      type="button"
-                      class="flex items-center justify-center size-4 rounded-full bg-muted-100 dark:bg-muted-800 hover:bg-muted-200 dark:hover:bg-muted-700 transition-colors"
-                    >
-                      <Icon name="lucide:help-circle" class="size-3 text-muted-500 dark:text-muted-400" />
-                    </button>
-                  </BaseTooltip>
-                </div>
                 <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
                   <TairoFormGroup label="Time zone">
                     <TairoSelect v-model="rule.condition.timezone" rounded="lg" size="sm">
@@ -1529,35 +1223,6 @@ watch([workspaceId, smartLinkId], () => {
                 </div>
               </div>
 
-              <div v-else class="space-y-4">
-                <TairoFormGroup label="Expression">
-                  <div class="flex items-center gap-2">
-                    <textarea
-                      v-model="rule.condition.expression"
-                      rows="3"
-                      placeholder='e.g. country == "US" && device == "mobile"'
-                      class="flex-1 w-full px-4 py-3 rounded-lg border border-muted-300 dark:border-muted-600 bg-white dark:bg-muted-800 text-muted-800 dark:text-muted-100 placeholder:text-muted-400 dark:placeholder:text-muted-500 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:focus:ring-primary-400 focus:border-transparent transition-all duration-200 resize-none"
-                    />
-                    <BaseTooltip content="Use custom expression to combine multiple conditions">
-                      <button
-                        type="button"
-                        class="flex items-center justify-center size-5 rounded-full bg-muted-100 dark:bg-muted-800 hover:bg-muted-200 dark:hover:bg-muted-700 transition-colors shrink-0"
-                      >
-                        <Icon name="lucide:help-circle" class="size-3.5 text-muted-500 dark:text-muted-400" />
-                      </button>
-                    </BaseTooltip>
-                  </div>
-                </TairoFormGroup>
-                <TairoFormGroup label="Notes">
-                  <TairoInput
-                    v-model="rule.condition.notes"
-                    placeholder="Optional description"
-                    rounded="lg"
-                    size="sm"
-                  />
-                </TairoFormGroup>
-              </div>
-
               <!-- Action Buttons -->
               <div class="flex items-center justify-end gap-2 pt-3 border-t border-muted-200 dark:border-muted-700">
                 <BaseButton
@@ -1590,7 +1255,7 @@ watch([workspaceId, smartLinkId], () => {
             Collections
           </BaseHeading>
           <BaseParagraph size="sm" class="text-muted-500 dark:text-muted-400">
-            Organize this SmartLink into collections for better management
+            Organize this template into collections for better management
           </BaseParagraph>
         </div>
 
@@ -1620,19 +1285,6 @@ watch([workspaceId, smartLinkId], () => {
               No collections available. Create one first.
             </div>
           </div>
-          <div class="flex items-center gap-2 mt-2">
-            <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400">
-              Use collections to organize campaigns, clients, or channels
-            </BaseParagraph>
-            <BaseTooltip content="Organize links into collections for better management of campaigns, clients, or channels">
-              <button
-                type="button"
-                class="flex items-center justify-center size-5 rounded-full bg-muted-100 dark:bg-muted-800 hover:bg-muted-200 dark:hover:bg-muted-700 transition-colors"
-              >
-                <Icon name="lucide:help-circle" class="size-3.5 text-muted-500 dark:text-muted-400" />
-              </button>
-            </BaseTooltip>
-          </div>
         </TairoFormGroup>
       </BaseCard>
 
@@ -1643,40 +1295,38 @@ watch([workspaceId, smartLinkId], () => {
             Visibility & Access
           </BaseHeading>
           <BaseParagraph size="sm" class="text-muted-500 dark:text-muted-400">
-            Decide who can discover and manage this SmartLink inside your workspace
+            Control who can access SmartLinks created from this template
           </BaseParagraph>
         </div>
 
-        <TairoFormGroup label="Visibility">
-          <div class="flex gap-4">
-            <button
-              type="button"
-              class="flex-1 px-4 py-3 rounded-lg border transition-all text-sm font-medium text-left"
-              :class="
-                formData.visibility === 'public'
-                  ? 'border-primary-600 dark:border-primary-400 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
-                  : 'border-muted-300 dark:border-muted-600 text-muted-600 dark:text-muted-400 hover:bg-muted-50 dark:hover:bg-muted-700'
-              "
-              @click="formData.visibility = 'public'"
-            >
-              <div class="font-medium mb-1">Public</div>
-              <div class="text-xs opacity-75">Anyone with the link can access it</div>
-            </button>
-            <button
-              type="button"
-              class="flex-1 px-4 py-3 rounded-lg border transition-all text-sm font-medium text-left"
-              :class="
-                formData.visibility === 'private'
-                  ? 'border-primary-600 dark:border-primary-400 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
-                  : 'border-muted-300 dark:border-muted-600 text-muted-600 dark:text-muted-400 hover:bg-muted-50 dark:hover:bg-muted-700'
-              "
-              @click="formData.visibility = 'private'"
-            >
-              <div class="font-medium mb-1">Private</div>
-              <div class="text-xs opacity-75">Restrict access to selected roles or teammates</div>
-            </button>
-          </div>
-        </TairoFormGroup>
+        <div class="flex gap-4">
+          <button
+            type="button"
+            class="flex-1 px-4 py-3 rounded-lg border transition-all text-sm font-medium text-left"
+            :class="
+              formData.visibility === 'public'
+                ? 'border-primary-600 dark:border-primary-400 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
+                : 'border-muted-300 dark:border-muted-600 text-muted-600 dark:text-muted-400 hover:bg-muted-50 dark:hover:bg-muted-700'
+            "
+            @click="formData.visibility = 'public'"
+          >
+            <div class="font-medium mb-1">Public</div>
+            <div class="text-xs opacity-75">Anyone with the link can access it</div>
+          </button>
+          <button
+            type="button"
+            class="flex-1 px-4 py-3 rounded-lg border transition-all text-sm font-medium text-left"
+            :class="
+              formData.visibility === 'private'
+                ? 'border-primary-600 dark:border-primary-400 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400'
+                : 'border-muted-300 dark:border-muted-600 text-muted-600 dark:text-muted-400 hover:bg-muted-50 dark:hover:bg-muted-700'
+            "
+            @click="formData.visibility = 'private'"
+          >
+            <div class="font-medium mb-1">Private</div>
+            <div class="text-xs opacity-75">Restrict access to selected roles or teammates</div>
+          </button>
+        </div>
 
         <div v-if="formData.visibility === 'private'" class="space-y-6">
           <BaseCard class="p-5">
@@ -1686,7 +1336,7 @@ watch([workspaceId, smartLinkId], () => {
                   Allow workspace roles
                 </BaseHeading>
                 <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400">
-                  Members with these roles can manage this SmartLink
+                  Members with these roles can manage SmartLinks from this template
                 </BaseParagraph>
               </div>
               <BaseTag
@@ -1733,7 +1383,7 @@ watch([workspaceId, smartLinkId], () => {
                   Allow specific teammates
                 </BaseHeading>
                 <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400">
-                  Select individual team members who can access this SmartLink
+                  Select individual team members who can access SmartLinks from this template
                 </BaseParagraph>
               </div>
               <BaseTag
@@ -1793,35 +1443,6 @@ watch([workspaceId, smartLinkId], () => {
           <div v-if="errors.visibility" class="text-sm text-danger-600 dark:text-danger-400">
             {{ errors.visibility }}
           </div>
-
-          <div
-            v-if="selectedVisibilityRoleLabels.length || selectedMembers.length"
-            class="space-y-2"
-          >
-            <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400">
-              Currently visible to:
-            </BaseParagraph>
-            <div class="flex flex-wrap gap-2">
-              <BaseTag
-                v-for="role in selectedVisibilityRoleLabels"
-                :key="role"
-                size="sm"
-                variant="pastel"
-                color="primary"
-              >
-                Role · {{ role }}
-              </BaseTag>
-              <BaseTag
-                v-for="member in selectedMembers"
-                :key="member.id"
-                size="sm"
-                variant="pastel"
-                color="info"
-              >
-                {{ member.displayName }}
-              </BaseTag>
-            </div>
-          </div>
         </div>
       </BaseCard>
 
@@ -1832,7 +1453,7 @@ watch([workspaceId, smartLinkId], () => {
             Limits & Security
           </BaseHeading>
           <BaseParagraph size="sm" class="text-muted-500 dark:text-muted-400">
-            Control link availability, lifetime, and access rules
+            Set expiration, click limits, and password protection for SmartLinks created from this template
           </BaseParagraph>
         </div>
 
@@ -1870,7 +1491,6 @@ watch([workspaceId, smartLinkId], () => {
         <TairoFormGroup
           v-if="!formData.isOneTime"
           label="Expiration Date (Optional)"
-          :error="errors.expiresAt"
         >
           <TairoInput
             v-model="formData.expiresAt"
@@ -1880,7 +1500,7 @@ watch([workspaceId, smartLinkId], () => {
           />
         </TairoFormGroup>
 
-        <TairoFormGroup label="Click Limit (Optional)" :error="errors.clickLimit">
+        <TairoFormGroup label="Click Limit (Optional)">
           <TairoInput
             v-model.number="formData.clickLimit"
             type="number"
@@ -1911,11 +1531,11 @@ watch([workspaceId, smartLinkId], () => {
           </div>
 
           <div v-if="formData.hasPassword" class="space-y-3">
-            <TairoFormGroup label="Password" :error="errors.password">
+            <TairoFormGroup label="Password">
               <TairoInput
                 v-model="formData.password"
                 :type="showPassword ? 'text' : 'password'"
-                placeholder="Enter password"
+                placeholder="Enter new password"
                 icon="solar:lock-password-linear"
                 rounded="lg"
               >
@@ -1933,7 +1553,7 @@ watch([workspaceId, smartLinkId], () => {
                 </template>
               </TairoInput>
               <BaseParagraph size="xs" class="text-muted-500 dark:text-muted-400 mt-1">
-                Visitors will need to enter this password to access the link
+                Leave empty to keep existing password
               </BaseParagraph>
             </TairoFormGroup>
           </div>
@@ -1947,7 +1567,7 @@ watch([workspaceId, smartLinkId], () => {
             Domain Configuration
           </BaseHeading>
           <BaseParagraph size="sm" class="text-muted-500 dark:text-muted-400">
-            Choose the domain for your SmartLink
+            Choose the domain for SmartLinks created from this template
           </BaseParagraph>
         </div>
 
@@ -2049,10 +1669,6 @@ watch([workspaceId, smartLinkId], () => {
               No custom domains connected yet.
             </div>
           </div>
-
-          <div v-if="errors.domain" class="text-sm text-danger-600 dark:text-danger-400">
-            {{ errors.domain }}
-          </div>
         </div>
       </BaseCard>
 
@@ -2063,7 +1679,7 @@ watch([workspaceId, smartLinkId], () => {
             Pixel Events & Webhooks
           </BaseHeading>
           <BaseParagraph size="sm" class="text-muted-500 dark:text-muted-400">
-            Configure tracking pixels and webhooks to monitor link performance.
+            Configure tracking pixels and webhooks to monitor SmartLink performance
           </BaseParagraph>
         </div>
 

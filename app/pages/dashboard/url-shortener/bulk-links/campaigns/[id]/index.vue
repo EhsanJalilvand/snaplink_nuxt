@@ -11,8 +11,9 @@ definePageMeta({
 
 const route = useRoute()
 const router = useRouter()
+const toaster = useNuiToasts()
 const { workspaceId } = useWorkspaceContext()
-const { getCampaign } = useBulkLinkCampaigns()
+const { getCampaign, updateCampaign } = useBulkLinkCampaigns()
 
 const campaignId = computed(() => route.params.id as string)
 const campaign = ref<BulkLinkCampaignDetail | null>(null)
@@ -45,7 +46,6 @@ const handleBack = () => {
 
 const handleCopyLink = (shortUrl: string) => {
   navigator.clipboard.writeText(shortUrl)
-  const toaster = useNuiToasts()
   toaster.add({
     title: 'Copied',
     description: 'Short URL copied to clipboard',
@@ -76,21 +76,23 @@ const formatDate = (date: string) => {
           <span>Back</span>
         </BaseButton>
         <div>
-          <BaseHeading
-            as="h1"
-            size="2xl"
-            weight="bold"
-            class="text-muted-900 dark:text-white"
-          >
-            {{ campaign?.name || 'Campaign Details' }}
-          </BaseHeading>
-          <BaseParagraph
-            v-if="campaign?.description"
-            size="sm"
-            class="text-muted-500 dark:text-muted-400 mt-1"
-          >
-            {{ campaign.description }}
-          </BaseParagraph>
+          <div class="flex-1">
+            <BaseHeading
+              as="h1"
+              size="2xl"
+              weight="bold"
+              class="text-muted-900 dark:text-white"
+            >
+              {{ campaign?.name || 'Campaign Details' }}
+            </BaseHeading>
+            <BaseParagraph
+              v-if="campaign?.description"
+              size="sm"
+              class="text-muted-500 dark:text-muted-400 mt-1"
+            >
+              {{ campaign.description }}
+            </BaseParagraph>
+          </div>
         </div>
       </div>
     </div>
@@ -278,6 +280,7 @@ const formatDate = (date: string) => {
     </div>
   </div>
 </template>
+
 
 
 

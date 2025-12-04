@@ -15,6 +15,7 @@ definePageMeta({
 
 const route = useRoute()
 const router = useRouter()
+const toaster = useNuiToasts()
 const { workspaceId } = useWorkspaceContext()
 
 // Tab management
@@ -27,6 +28,8 @@ const {
   error: templatesError,
   fetchTemplates,
   deleteTemplate,
+  getTemplate,
+  createTemplate,
 } = useBulkLinkTemplates()
 
 // Campaigns
@@ -42,6 +45,12 @@ const {
 const showTemplateWizard = ref(false)
 const showCampaignWizard = ref(false)
 const editingTemplateId = ref<string | null>(null)
+
+// Clone Dialog
+const showCloneDialog = ref(false)
+const cloneTemplateId = ref<string | null>(null)
+const cloneTemplateName = ref('')
+const isCloning = ref(false)
 
 // Fetch data when workspace changes
 watch(workspaceId, (newWorkspaceId) => {
@@ -130,13 +139,83 @@ const handleDeleteCampaign = async (campaignId: string, deleteSmartLinks: boolea
 }
 
 const handleEditTemplate = (templateId: string) => {
-  editingTemplateId.value = templateId
-  showTemplateWizard.value = true
+  // Navigate to edit page instead of opening wizard
+  router.push(`/dashboard/url-shortener/bulk-links/templates/${templateId}/edit`)
 }
 
 const handleCloneTemplate = async (templateId: string) => {
-  // TODO: Implement clone template
-  console.log('Clone template:', templateId)
+  // Fetch the template to get its name
+  const template = templates.value.find(t => t.id === templateId)
+  if (template) {
+    cloneTemplateId.value = templateId
+    cloneTemplateName.value = `${template.name} (Copy)`
+    showCloneDialog.value = true
+  }
+}
+
+const handleCloneConfirm = async () => {
+  if (!cloneTemplateId.value || !cloneTemplateName.value.trim()) return
+
+  isCloning.value = true
+  try {
+    // Fetch the full template
+    const template = await getTemplate(cloneTemplateId.value)
+    if (!template) {
+      throw new Error('Template not found')
+    }
+
+    // Create a new template with the cloned data
+    await createTemplate({
+      name: cloneTemplateName.value.trim(),
+      description: template.description,
+      fallbackUrlPattern: template.fallbackUrlPattern,
+      rules: template.rules,
+      domainType: template.domainType,
+      domainValue: template.domainValue,
+      collectionIds: template.collectionIds || [],
+      isPublic: template.isPublic,
+      visibilityRoles: template.visibilityRoles || [],
+      visibilityMemberIds: template.visibilityMemberIds || [],
+      expiresAt: template.expiresAt,
+      clickLimit: template.clickLimit,
+      isOneTime: template.isOneTime,
+      password: null,
+      pixelEvents: template.pixelEvents || [],
+      webhookUrl: template.webhookUrl,
+      webhookMethod: template.webhookMethod,
+      webhookHeaders: template.webhookHeaders,
+      webhookBodyTemplate: template.webhookBodyTemplate,
+    })
+
+    toaster.add({
+      title: 'Success',
+      description: `Template "${cloneTemplateName.value}" created successfully`,
+      icon: 'ph:check',
+      color: 'success',
+      progress: true,
+    })
+
+    // Reset and close dialog
+    showCloneDialog.value = false
+    cloneTemplateId.value = null
+    cloneTemplateName.value = ''
+  } catch (error: any) {
+    toaster.add({
+      title: 'Error',
+      description: error.message || 'Failed to clone template',
+      icon: 'ph:warning',
+      color: 'danger',
+      progress: true,
+    })
+  } finally {
+    isCloning.value = false
+  }
+}
+
+const handleCloneCancel = () => {
+  showCloneDialog.value = false
+  cloneTemplateId.value = null
+  cloneTemplateName.value = ''
 }
 
 const handleViewTemplateCampaigns = (templateId: string) => {
@@ -147,6 +226,10 @@ const handleViewTemplateCampaigns = (templateId: string) => {
 
 const handleViewCampaign = (campaignId: string) => {
   router.push(`/dashboard/url-shortener/bulk-links/campaigns/${campaignId}`)
+}
+
+const handleEditCampaign = (campaignId: string) => {
+  router.push(`/dashboard/url-shortener/bulk-links/campaigns/${campaignId}/edit`)
 }
 </script>
 
@@ -245,6 +328,7 @@ const handleViewCampaign = (campaignId: string) => {
           :campaigns="campaigns"
           :is-loading="isLoadingCampaigns"
           @view="handleViewCampaign"
+          @edit="handleEditCampaign"
           @delete="handleDeleteCampaign"
         />
       </BaseCard>
@@ -291,5 +375,62 @@ const handleViewCampaign = (campaignId: string) => {
       v-model:open="showCampaignWizard"
       @created="handleCampaignCreated"
     />
+
+    <!-- Clone Template Dialog -->
+    <DialogRoot :open="showCloneDialog" @update:open="(value) => { if (!value) handleCloneCancel() }">
+      <DialogPortal>
+        <DialogOverlay class="bg-muted-900/70 fixed inset-0 z-50 backdrop-blur-sm" />
+        <DialogContent
+          class="fixed top-[50%] start-1/2 z-[100] w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-muted-200 bg-white shadow-2xl focus:outline-none dark:border-muted-700 dark:bg-muted-900"
+        >
+          <div class="flex w-full flex-col">
+            <!-- Header -->
+            <div class="flex items-center justify-between border-b border-muted-200 px-6 py-5 dark:border-muted-800">
+              <div>
+                <DialogTitle class="font-heading text-xl font-semibold text-muted-900 dark:text-white">
+                  Clone Template
+                </DialogTitle>
+                <DialogDescription class="mt-1 text-sm text-muted-500 dark:text-muted-400">
+                  Enter a name for the cloned template
+                </DialogDescription>
+              </div>
+            </div>
+
+            <!-- Content -->
+            <div class="px-6 py-5">
+              <TairoFormGroup label="Template Name">
+                <TairoInput
+                  v-model="cloneTemplateName"
+                  placeholder="Enter template name"
+                  rounded="lg"
+                  @keyup.enter="handleCloneConfirm"
+                />
+              </TairoFormGroup>
+            </div>
+
+            <!-- Footer -->
+            <div class="flex items-center justify-end gap-3 border-t border-muted-200 px-6 py-4 dark:border-muted-800">
+              <BaseButton
+                variant="outline"
+                @click="handleCloneCancel"
+                :disabled="isCloning"
+              >
+                Cancel
+              </BaseButton>
+              <BaseButton
+                variant="solid"
+                color="primary"
+                @click="handleCloneConfirm"
+                :loading="isCloning"
+                :disabled="!cloneTemplateName.trim()"
+              >
+                <Icon name="ph:copy" class="size-4" />
+                Clone Template
+              </BaseButton>
+            </div>
+          </div>
+        </DialogContent>
+      </DialogPortal>
+    </DialogRoot>
   </div>
 </template>

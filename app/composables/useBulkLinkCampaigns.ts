@@ -159,6 +159,66 @@ export const useBulkLinkCampaigns = () => {
     }
   }
 
+  const updateCampaign = async (campaignId: string, updates: { name?: string; description?: string; isActive?: boolean; templateId?: string }) => {
+    if (!workspaceId.value) {
+      throw new Error('Workspace ID is required')
+    }
+
+    try {
+      const pascalCaseRequest = {
+        Name: updates.name,
+        Description: updates.description,
+        IsActive: updates.isActive,
+        TemplateId: updates.templateId,
+      }
+
+      await api.put(
+        `/api/workspaces/${workspaceId.value}/bulk-link-campaigns/${campaignId}`,
+        pascalCaseRequest,
+        {
+          base: 'gateway',
+        }
+      )
+
+      await fetchCampaigns({ force: true })
+    }
+    catch (error: any) {
+      console.error('[useBulkLinkCampaigns] Update error:', error)
+      throw error
+    }
+  }
+
+  const addLinksToCampaign = async (campaignId: string, items: BulkLinkCampaignItem[]) => {
+    if (!workspaceId.value) {
+      throw new Error('Workspace ID is required')
+    }
+
+    try {
+      const pascalCaseRequest = {
+        Items: items.map(item => ({
+          DestinationUrl: item.destinationUrl,
+          Title: item.title,
+          Description: item.description,
+        })),
+      }
+
+      const response = await api.post(
+        `/api/workspaces/${workspaceId.value}/bulk-link-campaigns/${campaignId}/links`,
+        pascalCaseRequest,
+        {
+          base: 'gateway',
+        }
+      )
+
+      await fetchCampaigns({ force: true })
+      return response
+    }
+    catch (error: any) {
+      console.error('[useBulkLinkCampaigns] Add links error:', error)
+      throw error
+    }
+  }
+
   const deleteCampaign = async (campaignId: string, deleteSmartLinks: boolean = false) => {
     if (!workspaceId.value) {
       throw new Error('Workspace ID is required')
@@ -204,6 +264,8 @@ export const useBulkLinkCampaigns = () => {
     fetchCampaigns,
     getCampaign,
     createCampaign,
+    updateCampaign,
+    addLinksToCampaign,
     deleteCampaign,
   }
 }

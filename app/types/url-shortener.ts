@@ -295,6 +295,7 @@ export interface SmartLink {
   customAlias?: string | null
   description?: string | null
   fallbackUrl?: string | null
+  isActive: boolean
   isOneTime: boolean
   expiresAt?: string | null
   clickLimit?: number | null
@@ -376,6 +377,7 @@ export interface UpdateSmartLinkRequest {
   domainValue?: string | null
   customAlias?: string | null
   fallbackUrl?: string | null
+  isActive?: boolean | null
   isOneTime?: boolean | null
   expiresAt?: string | null
   clickLimit?: number | null

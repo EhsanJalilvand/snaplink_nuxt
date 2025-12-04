@@ -259,13 +259,13 @@ function getTeammatesTooltip(link: ShortenerLink) {
                       <Icon
                         v-if="link.hasPassword"
                         name="ph:lock-fill"
-                        class="size-4 text-warning-500 shrink-0"
+                        class="size-4 text-secondary-500 shrink-0"
                         title="Password protected"
                       />
                       <Icon
                         v-if="link.isOneTime"
                         name="ph:clock-countdown-fill"
-                        class="size-4 text-info-500 shrink-0"
+                        class="size-4 text-primary-500 shrink-0"
                         title="One-time use"
                       />
                       <BaseButton

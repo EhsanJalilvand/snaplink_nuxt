@@ -363,27 +363,37 @@ const handleCancel = () => {
 
 const isLinkActive = computed(() => link.value?.linkStatus?.toLowerCase() === 'active')
 
-const toggleLinkStatus = async () => {
+const toggleLinkStatus = async (newValue?: boolean) => {
   if (!link.value) {
     return
   }
 
-  const desiredState = !isLinkActive.value
+  // If called from switch, newValue is provided; otherwise toggle
+  const desiredState = newValue !== undefined ? newValue : !isLinkActive.value
+  const oldStatus = link.value.linkStatus
+
+  // Optimistically update UI
+  link.value.linkStatus = desiredState ? 'active' : 'paused'
 
   try {
     const result = await updateLink(linkId.value, { isActive: desiredState })
     if (result) {
-      link.value = result
-      await fetchLinkData()
+      // Update only the status field, don't refetch everything
+      link.value.linkStatus = result.linkStatus || (desiredState ? 'active' : 'paused')
       toaster.add({
-        title: desiredState ? 'Link activated' : 'Link paused',
+        title: desiredState ? 'Link activated' : 'Link disabled',
         description: desiredState ? 'Link is now live.' : 'Visitors will no longer be redirected.',
         icon: desiredState ? 'ph:play' : 'ph:pause',
         color: desiredState ? 'success' : 'warning',
         progress: true,
       })
+    } else {
+      // Revert on failure
+      link.value.linkStatus = oldStatus
     }
   } catch (error: any) {
+    // Revert on error
+    link.value.linkStatus = oldStatus
     toaster.add({
       title: 'Error',
       description: error.message || 'Unable to update link status',
@@ -482,35 +492,34 @@ const toggleLinkStatus = async () => {
             <BaseParagraph size="xs" class="uppercase tracking-[0.3em] text-muted-500 dark:text-muted-400">
               Short URL
             </BaseParagraph>
-            <div class="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
+            <div class="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
               <BaseHeading
                 as="p"
                 size="2xl"
                 weight="bold"
-                class="text-primary-600 dark:text-primary-300 truncate"
+                class="text-primary-600 dark:text-primary-300 truncate flex-1"
                 :title="link.shortUrl"
               >
                 {{ link.shortUrl }}
               </BaseHeading>
-              <BaseButton
-                class="shrink-0 min-w-[130px] bg-transparent shadow-none border-none"
-                size="sm"
-                variant="ghost"
-                :style="isLinkActive
-                  ? { color: '#dc2626' }
-                  : { color: '#16a34a' }"
-                @click="toggleLinkStatus"
-                :aria-pressed="isLinkActive"
-              >
-                <Icon :name="isLinkActive ? 'ph:power-bold' : 'ph:play-circle-bold'" class="size-5" />
-                <span>{{ isLinkActive ? 'Disable' : 'Enable' }}</span>
-              </BaseButton>
-              <BaseParagraph
-                size="xs"
-                class="text-muted-500 dark:text-muted-400 ms-auto"
-              >
-                Created {{ new Date(link.createdAt).toLocaleDateString() }}
-              </BaseParagraph>
+              <div class="flex items-center gap-3 shrink-0">
+                <div class="flex items-center gap-2">
+                  <BaseText size="sm" weight="medium" class="text-muted-700 dark:text-muted-300">
+                    {{ isLinkActive ? 'Active' : 'Disabled' }}
+                  </BaseText>
+                  <BaseSwitchBall
+                    :model-value="isLinkActive"
+                    variant="primary"
+                    @update:model-value="toggleLinkStatus"
+                  />
+                </div>
+                <BaseParagraph
+                  size="xs"
+                  class="text-muted-500 dark:text-muted-400"
+                >
+                  Created {{ new Date(link.createdAt).toLocaleDateString() }}
+                </BaseParagraph>
+              </div>
             </div>
           </div>
         </div>

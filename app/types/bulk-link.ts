@@ -43,6 +43,8 @@ export interface BulkLinkTemplateListItem {
   ruleCount: number
   campaignCount: number
   totalLinks: number
+  isOneTime: boolean
+  hasPassword: boolean
   createdAt: string
   updatedAt: string
 }
@@ -54,6 +56,7 @@ export interface BulkLinkCampaign {
   templateName: string
   name: string
   description?: string | null
+  isActive: boolean
   totalLinks: number
   createdLinks: number
   totalClicks: number
@@ -124,6 +127,7 @@ export interface ApplyTemplateUpdateResult {
   updatedSmartLinks: number
   errors: string[]
 }
+
 
 
 

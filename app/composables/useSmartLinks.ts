@@ -121,6 +121,7 @@ const mapSmartLinkDto = (dto: any): SmartLink => {
     customAlias: dto.customAlias ?? null,
     description: dto.description ?? null,
     fallbackUrl: dto.fallbackUrl ?? null,
+    isActive: dto.isActive !== undefined ? Boolean(dto.isActive) : true,
     isOneTime: Boolean(dto.isOneTime),
     expiresAt: dto.expiresAt ?? null,
     clickLimit: dto.clickLimit ?? null,
@@ -165,7 +166,7 @@ export const useSmartLinks = () => {
     state.value.error = null
   }
 
-  const fetchSmartLinks = async (options: { force?: boolean } = {}) => {
+  const fetchSmartLinks = async (options: { force?: boolean; hasCampaign?: boolean } = {}) => {
     if (!workspaceId.value) {
       state.value.items = []
       return
@@ -183,8 +184,15 @@ export const useSmartLinks = () => {
     state.value.error = null
 
     try {
+      const queryParams = new URLSearchParams()
+      if (options.hasCampaign !== undefined) {
+        queryParams.append('hasCampaign', String(options.hasCampaign))
+      }
+      
+      const url = `/api/workspaces/${workspaceId.value}/url-shortener/smart-links${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
+      
       const response = await api.get<ApiResponse<SmartLink[]> | SmartLink[]>(
-        `/api/workspaces/${workspaceId.value}/url-shortener/smart-links`,
+        url,
         {
           base: 'gateway',
           retry: 0,

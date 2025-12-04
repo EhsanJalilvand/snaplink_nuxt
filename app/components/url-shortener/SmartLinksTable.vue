@@ -46,13 +46,21 @@ function formatDate(dateString: string) {
 function getStatus(link: SmartLink) {
   const now = new Date()
 
+  // Check if disabled first
+  if (!link.isActive) {
+    return {
+      label: 'Disabled',
+      textColor: 'text-red-600 dark:text-red-400',
+      icon: 'ph:x-circle-fill',
+    }
+  }
+
   if (link.expiresAt) {
     const expiresAt = new Date(link.expiresAt)
     if (!Number.isNaN(expiresAt.getTime()) && expiresAt < now) {
       return {
         label: 'Expired',
-        color: 'rgb(220, 38, 38)',
-        bgColor: 'bg-danger-50 dark:bg-danger-900/20',
+        textColor: 'text-red-600 dark:text-red-400',
         icon: 'ph:clock-fill',
       }
     }
@@ -61,8 +69,7 @@ function getStatus(link: SmartLink) {
   if (link.isOneTime && link.currentClicks > 0) {
     return {
       label: 'Consumed',
-      color: 'rgb(245, 158, 11)',
-      bgColor: 'bg-warning-50 dark:bg-warning-900/20',
+      textColor: 'text-orange-600 dark:text-orange-400',
       icon: 'ph:check-circle-fill',
     }
   }
@@ -70,16 +77,14 @@ function getStatus(link: SmartLink) {
   if (link.clickLimit && link.currentClicks >= link.clickLimit) {
     return {
       label: 'Limit Reached',
-      color: 'rgb(245, 158, 11)',
-      bgColor: 'bg-warning-50 dark:bg-warning-900/20',
+      textColor: 'text-orange-600 dark:text-orange-400',
       icon: 'ph:warning-fill',
     }
   }
 
   return {
     label: 'Active',
-    color: 'rgb(22, 163, 74)',
-    bgColor: 'bg-success-50 dark:bg-success-900/20',
+    textColor: 'text-green-600 dark:text-green-400',
     icon: 'ph:check-circle-fill',
   }
 }
@@ -140,7 +145,7 @@ function getRulesSummary(link: SmartLink) {
           <div
             v-for="index in 6"
             :key="`smartlinks-skeleton-${index}`"
-            class="h-40 rounded-xl border-l-4 border-info-300/50 dark:border-info-700/50 border border-info-200/50 dark:border-info-800/50 bg-gradient-to-br from-white to-info-50/30 dark:from-muted-900 dark:to-info-950/30 animate-pulse"
+            class="h-40 rounded-xl border-l-4 border-primary-300/50 dark:border-primary-700/50 border border-primary-200/50 dark:border-primary-800/50 bg-gradient-to-br from-white to-primary-50/30 dark:from-muted-900 dark:to-primary-950/30 animate-pulse"
           />
         </div>
         <div v-else class="space-y-3">
@@ -148,7 +153,7 @@ function getRulesSummary(link: SmartLink) {
           <div
             v-for="link in smartLinks"
             :key="link.id"
-            class="group relative rounded-xl border-l-4 border-info-400 dark:border-info-500 border border-info-200/50 dark:border-info-800/50 bg-gradient-to-br from-white to-info-50/30 dark:from-muted-900 dark:to-info-950/30 hover:border-info-500 dark:hover:border-info-400 hover:shadow-xl hover:shadow-info-500/10 dark:hover:shadow-info-500/20 transition-all duration-300"
+            class="group relative rounded-xl border-l-4 border-primary-400 dark:border-primary-500 border border-primary-200/50 dark:border-primary-800/50 bg-gradient-to-br from-white to-primary-50/30 dark:from-muted-900 dark:to-primary-950/30 hover:border-primary-500 dark:hover:border-primary-400 hover:shadow-xl hover:shadow-primary-500/10 dark:hover:shadow-primary-500/20 transition-all duration-300"
           >
             <div class="p-6">
               <div class="flex items-start gap-4">
@@ -157,7 +162,7 @@ function getRulesSummary(link: SmartLink) {
                   <BaseCheckbox
                     :checked="selectedIds.includes(link.id)"
                     rounded="sm"
-                    color="info"
+                    color="primary"
                     @update:checked="() => handleToggleSelect(link.id)"
                   />
                 </div>
@@ -172,31 +177,31 @@ function getRulesSummary(link: SmartLink) {
                           :to="`/dashboard/url-shortener/smart-links/${link.id}`"
                           class="group/link flex items-center gap-2 min-w-0"
                         >
-                          <BaseText size="base" weight="semibold" class="text-info-600 dark:text-info-400 group-hover/link:text-info-700 dark:group-hover/link:text-info-300 group-hover/link:underline truncate">
+                          <BaseText size="base" weight="semibold" class="text-primary-600 dark:text-primary-400 group-hover/link:text-primary-700 dark:group-hover/link:text-primary-300 group-hover/link:underline truncate">
                             {{ link.shortUrl || `${getDomainDisplay(link.domainType, link.domainValue)}/${link.customAlias || link.shortCode}` }}
                           </BaseText>
                         </NuxtLink>
                         <Icon
                           v-if="link.hasPassword"
                           name="ph:lock-fill"
-                          class="size-4 text-warning-500 shrink-0"
+                          class="size-4 text-secondary-500 shrink-0"
                           title="Password protected"
                         />
-                        <Icon
-                          v-if="link.isOneTime"
-                          name="ph:clock-countdown-fill"
-                          class="size-4 text-info-500 shrink-0"
-                          title="One-time use"
-                        />
-                        <BaseButton
-                          size="sm"
-                          variant="ghost"
-                          icon
-                          class="shrink-0"
-                          @click.stop="handleCopy(link)"
-                        >
-                          <Icon name="ph:copy" class="size-4" />
-                        </BaseButton>
+                      <Icon
+                        v-if="link.isOneTime"
+                        name="ph:clock-countdown-fill"
+                        class="size-4 text-primary-500 shrink-0"
+                        title="One-time use"
+                      />
+                      <BaseButton
+                        size="sm"
+                        variant="ghost"
+                        icon
+                        class="shrink-0"
+                        @click.stop="handleCopy(link)"
+                      >
+                        <Icon name="ph:copy" class="size-4" />
+                      </BaseButton>
                         <BaseButton
                           size="sm"
                           variant="ghost"
@@ -207,7 +212,7 @@ function getRulesSummary(link: SmartLink) {
                           <Icon name="ph:qr-code" class="size-4" />
                         </BaseButton>
                       </div>
-                      <BaseText size="sm" weight="medium" class="text-info-900 dark:text-info-100">
+                      <BaseText size="sm" weight="medium" class="text-primary-900 dark:text-primary-100">
                         {{ link.name }}
                       </BaseText>
                       <BaseText size="xs" class="text-muted-500 dark:text-muted-400 line-clamp-1" v-if="link.description">
@@ -218,9 +223,8 @@ function getRulesSummary(link: SmartLink) {
                     <!-- Status Badge (Center Top) -->
                     <div class="flex items-center justify-center">
                       <div
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
-                        :class="getStatus(link).bgColor"
-                        :style="{ color: getStatus(link).color }"
+                        class="inline-flex items-center gap-1.5 text-sm font-semibold"
+                        :class="getStatus(link).textColor"
                       >
                         <Icon
                           :name="getStatus(link).icon"
@@ -284,7 +288,7 @@ function getRulesSummary(link: SmartLink) {
                       </BaseText>
                       <div class="space-y-2">
                         <div class="flex items-center gap-2">
-                          <Icon name="ph:git-branch" class="size-4 text-info-500 shrink-0" />
+                          <Icon name="ph:git-branch" class="size-4 text-primary-500 shrink-0" />
                           <BaseText size="xs" class="text-muted-600 dark:text-muted-400">
                             {{ getRulesSummary(link) }}
                           </BaseText>
@@ -332,7 +336,7 @@ function getRulesSummary(link: SmartLink) {
                       </BaseText>
                       <div class="space-y-2">
                         <div v-if="link.collectionIds && link.collectionIds.length > 0" class="flex items-center gap-2">
-                          <Icon name="ph:folders" class="size-4 text-info-500 shrink-0" />
+                          <Icon name="ph:folders" class="size-4 text-primary-500 shrink-0" />
                           <BaseText size="xs" class="text-muted-600 dark:text-muted-400">
                             {{ link.collectionIds.length }} collection{{ link.collectionIds.length > 1 ? 's' : '' }}
                           </BaseText>
@@ -348,7 +352,7 @@ function getRulesSummary(link: SmartLink) {
                           class="flex items-center gap-2"
                           :title="getPixelEventsTooltip(link)"
                         >
-                          <Icon name="ph:chart-line" class="size-4 text-success-500 shrink-0" />
+                          <Icon name="ph:chart-line" class="size-4 text-secondary-500 shrink-0" />
                           <BaseText size="xs" class="text-muted-600 dark:text-muted-400 cursor-help">
                             {{ getPixelEventsCount(link) }} pixel{{ getPixelEventsCount(link) > 1 ? 's' : '' }}
                           </BaseText>
@@ -357,7 +361,7 @@ function getRulesSummary(link: SmartLink) {
                           v-if="link.webhookUrl"
                           class="flex items-center gap-2"
                         >
-                          <Icon name="ph:webhook" class="size-4 text-info-500 shrink-0" />
+                          <Icon name="ph:webhook" class="size-4 text-secondary-500 shrink-0" />
                           <BaseText size="xs" class="text-muted-600 dark:text-muted-400 truncate" :title="link.webhookUrl">
                             Webhook active
                           </BaseText>
@@ -371,10 +375,10 @@ function getRulesSummary(link: SmartLink) {
           </div>
 
           <div v-if="!smartLinks.length && !isLoading" class="py-12 text-center">
-            <div class="inline-flex items-center justify-center size-16 rounded-full bg-gradient-to-br from-info-100 to-primary-100 dark:from-info-900/30 dark:to-primary-900/30 mb-4">
-              <Icon name="solar:shuffle-linear" class="size-8 text-info-600 dark:text-info-400" />
+            <div class="inline-flex items-center justify-center size-16 rounded-full bg-gradient-to-br from-primary-100 to-primary-100 dark:from-primary-900/30 dark:to-primary-900/30 mb-4">
+              <Icon name="solar:shuffle-linear" class="size-8 text-primary-600 dark:text-primary-400" />
             </div>
-            <BaseText size="sm" class="text-info-600 dark:text-info-400 mt-2 font-medium">
+            <BaseText size="sm" class="text-primary-600 dark:text-primary-400 mt-2 font-medium">
               No SmartLinks yet. Create your first dynamic routing link.
             </BaseText>
           </div>

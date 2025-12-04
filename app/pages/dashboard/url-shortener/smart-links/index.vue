@@ -42,17 +42,26 @@ const {
   selectMany,
 } = useSmartLinks()
 
-// Fetch smart links when workspaceId is available
-watch(workspaceId, (newWorkspaceId) => {
+const activeTab = ref<'all' | 'standalone' | 'campaigns'>('standalone')
+
+// Determine hasCampaign filter based on active tab
+const hasCampaignFilter = computed(() => {
+  if (activeTab.value === 'standalone') return false
+  if (activeTab.value === 'campaigns') return true
+  return undefined
+})
+
+// Fetch smart links when workspaceId or tab changes
+watch([workspaceId, activeTab], ([newWorkspaceId]) => {
   if (newWorkspaceId) {
-    fetchSmartLinks({ force: true })
+    fetchSmartLinks({ force: true, hasCampaign: hasCampaignFilter.value })
   }
 }, { immediate: true })
 
 // Also fetch on mount in case workspaceId is already available
 onMounted(() => {
   if (workspaceId.value) {
-    fetchSmartLinks({ force: true })
+    fetchSmartLinks({ force: true, hasCampaign: hasCampaignFilter.value })
   }
 })
 
@@ -195,6 +204,42 @@ const handleToggleAll = (selected: boolean) => {
           <Icon name="ph:sparkle" class="size-4" />
           <span>Create SmartLink With AI</span>
         </BaseButton>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="border-b border-muted-200 dark:border-muted-800">
+      <div class="flex gap-2">
+        <button
+          type="button"
+          class="relative px-4 py-3 text-sm font-medium transition-colors duration-200"
+          :class="
+            activeTab === 'standalone'
+              ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-600 dark:border-primary-400'
+              : 'text-muted-500 dark:text-muted-400 hover:text-muted-700 dark:hover:text-muted-300'
+          "
+          @click="activeTab = 'standalone'"
+        >
+          <div class="flex items-center gap-2">
+            <Icon name="solar:shuffle-linear" class="size-4" />
+            <span>Standalone Links</span>
+          </div>
+        </button>
+        <button
+          type="button"
+          class="relative px-4 py-3 text-sm font-medium transition-colors duration-200"
+          :class="
+            activeTab === 'campaigns'
+              ? 'text-primary-600 dark:text-primary-400 border-b-2 border-primary-600 dark:border-primary-400'
+              : 'text-muted-500 dark:text-muted-400 hover:text-muted-700 dark:hover:text-muted-300'
+          "
+          @click="activeTab = 'campaigns'"
+        >
+          <div class="flex items-center gap-2">
+            <Icon name="solar:layers-linear" class="size-4" />
+            <span>Campaign Links</span>
+          </div>
+        </button>
       </div>
     </div>
 
